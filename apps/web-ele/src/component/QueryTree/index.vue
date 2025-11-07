@@ -202,10 +202,12 @@ defineExpose({
   &-header {
     display: flex;
     align-items: center;
+
     &-input {
       width: 90%;
       margin-bottom: 10px;
     }
+
     &-dropdown {
       flex: 1;
       margin-left: 5%;

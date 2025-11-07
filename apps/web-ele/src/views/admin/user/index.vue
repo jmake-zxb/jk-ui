@@ -238,21 +238,25 @@ const handleNodeClick = (e: any) => {
 .div {
   margin-top: 90px;
 }
+
 :deep(.ml8) {
   margin-left: 8px;
 }
+
 :deep(.el-splitter-panel) {
   overflow: hidden;
 }
+
 :deep(.el-splitter-bar__dragger-horizontal)::before {
-  width: 0px;
+  width: 0;
 }
+
 .left-content {
-  background-color: hsl(var(--card));
   width: 100%;
   height: 100%;
-  border-radius: calc(var(--radius) - 2px);
-  overflow: hidden;
   padding: 10px;
+  overflow: hidden;
+  background-color: hsl(var(--card));
+  border-radius: calc(var(--radius) - 2px);
 }
 </style>
