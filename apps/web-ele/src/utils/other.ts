@@ -1,0 +1,110 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import * as CryptoJS from 'crypto-js';
+
+import { validateNull } from './validate';
+
+/**
+ *加密处理
+ */
+export function encryption(src?: string, keyWord?: string) {
+  const key = CryptoJS.enc.Utf8.parse(keyWord);
+  // 加密
+  const encrypted = CryptoJS.AES.encrypt(src, key, {
+    iv: key,
+    mode: CryptoJS.mode.CFB,
+    padding: CryptoJS.pad.NoPadding,
+  });
+  return encrypted.toString();
+}
+
+/**
+ * 解密
+ * @param src  /
+ * @param keyWord /
+ * @returns 明文
+ */
+export function decryption(src: string, keyWord: string) {
+  const key = CryptoJS.enc.Utf8.parse(keyWord);
+  // 解密逻辑
+  const decryptd = CryptoJS.AES.decrypt(src, key, {
+    iv: key,
+    mode: CryptoJS.mode.CFB,
+    padding: CryptoJS.pad.NoPadding,
+  });
+
+  return decryptd.toString(CryptoJS.enc.Utf8);
+}
+
+/**
+ * @description 生成唯一 uuid
+ * @return string
+ */
+export function generateUUID() {
+  if (typeof crypto === 'object') {
+    if (typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    if (
+      typeof crypto.getRandomValues === 'function' &&
+      typeof Uint8Array === 'function'
+    ) {
+      const callback = (c: any) => {
+        const num = Number(c);
+        return (
+          num ^
+          (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (num / 4)))
+        ).toString(16);
+      };
+      return '10000000-1000-4000-8000-100000000000'.replaceAll(
+        /[018]/g,
+        callback,
+      );
+    }
+  }
+  let timestamp = Date.now();
+  let performanceNow =
+    (typeof performance !== 'undefined' &&
+      performance.now &&
+      performance.now() * 1000) ||
+    0;
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replaceAll(/[xy]/g, (c) => {
+    let random = Math.random() * 16;
+    if (timestamp > 0) {
+      random = Math.trunc((timestamp + random) % 16);
+      timestamp = Math.floor(timestamp / 16);
+    } else {
+      random = Math.trunc((performanceNow + random) % 16);
+      performanceNow = Math.floor(performanceNow / 16);
+    }
+    return (c === 'x' ? random : (random & 0x3) | 0x8).toString(16);
+  });
+}
+
+/**
+ * 自动适配不同的后端架构
+ * 1. 例如 /act/oa/task ,在微服务架构保持不变,在单体架构编程 /admin/oa/task
+ * 2. 特殊 /gen/xxx ,在微服务架构、单体架构编程 都需保持不变
+ *
+ * @param originUrl 原始路径
+ */
+export const adaptationUrl = (originUrl?: string) => {
+  // 微服务架构 不做路径转换,为空不做路径转换
+  const isMicro = import.meta.env.VITE_IS_MICRO;
+  if (validateNull(isMicro) || isMicro === 'true') {
+    return originUrl;
+  }
+
+  // 转为 /admin 路由前缀的请求
+  return `/admin/${originUrl?.split('/').splice(2).join('/')}`;
+};
+
+/**
+ * Base64 加密
+ * @param {*} src  明文
+ * @returns 密文
+ */
+export function base64Encrypt(src: string) {
+  const encodedWord = CryptoJS.enc.Utf8.parse(src);
+  return CryptoJS.enc.Base64.stringify(encodedWord);
+}
