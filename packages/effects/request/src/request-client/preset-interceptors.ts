@@ -160,6 +160,12 @@ export const errorMessageResponseInterceptor = (
           errorMessage = $t('ui.fallback.http.unauthorized');
           break;
         }
+        case 500: {
+          errorMessage =
+            error?.response?.data?.msg ||
+            $t('ui.fallback.http.internalServerError');
+          break;
+        }
         default: {
           errorMessage = $t('ui.fallback.http.internalServerError');
         }

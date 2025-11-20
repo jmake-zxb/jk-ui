@@ -6,7 +6,7 @@ import type { BasicUserInfo } from '#/api/core/user';
 
 import { computed, reactive, ref } from 'vue';
 
-import { confirm, Page, VbenIcon } from '@vben/common-ui';
+import { confirm, Page, useVbenModal, VbenIcon } from '@vben/common-ui';
 import { CircumEdit, SolarFolderAdd, WeuiDelete } from '@vben/icons';
 
 import {
@@ -15,42 +15,25 @@ import {
   ElScrollbar,
   ElSplitter,
   ElSplitterPanel,
+  ElSwitch,
   ElTag,
   ElTooltip,
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { deptTree } from '#/api/admin/dept';
-import { delObj, pageList } from '#/api/core/user';
+import { delObj, pageList, putObj } from '#/api/core/user';
 import QueryTree from '#/component/QueryTree/index.vue';
 import { $t } from '#/locales';
 
-import { useColumns } from './data';
+import { querySchema, useColumns } from './data';
+import ExtraModal from './form.vue';
 
 const selectedRows = ref<any[]>([]);
 const deptId = ref();
 
 const formOptions: VbenFormProps = {
-  schema: [
-    {
-      component: 'Input',
-      componentProps: {
-        clearable: true,
-        placeholder: $t('user.sysuser.inputUsernameTip'),
-      },
-      fieldName: 'username',
-      label: $t('user.sysuser.username'),
-    },
-    {
-      component: 'Input',
-      componentProps: {
-        clearable: true,
-        placeholder: $t('user.sysuser.inputPhoneTip'),
-      },
-      fieldName: 'phone',
-      label: $t('user.sysuser.phone'),
-    },
-  ],
+  schema: querySchema,
   // 控制表单是否显示折叠按钮
   showCollapseButton: false,
   submitButtonOptions: {},
@@ -58,8 +41,11 @@ const formOptions: VbenFormProps = {
   submitOnChange: false,
   // 按下回车时是否提交表单
   submitOnEnter: true,
-  handleReset: () => {
+  handleReset: async () => {
     deptId.value = '';
+    await GridApi.formApi.resetForm();
+    const formValues = await GridApi.formApi.getValues();
+    GridApi.formApi.setLatestSubmissionValues(formValues);
     GridApi.reload();
   },
 };
@@ -91,9 +77,6 @@ const gridOptions: VxeGridProps<BasicUserInfo> = {
         });
       },
     },
-  },
-  sortConfig: {
-    multiple: true,
   },
 };
 
@@ -141,6 +124,31 @@ const handleNodeClick = (e: any) => {
   deptId.value = e.id;
   GridApi.query();
 };
+
+const [FormModal, formModalApi] = useVbenModal({
+  // 连接抽离的组件
+  connectedComponent: ExtraModal,
+  onCancel() {
+    GridApi.reload();
+  },
+});
+
+// 打开新增菜单弹窗
+const onOpenAdd = (row?: any) => {
+  formModalApi.setData({ type: 'page.common.addBtn', data: row }).open();
+};
+
+// 打开编辑菜单弹窗
+const onOpenEdit = (row?: any) => {
+  formModalApi.setData({ type: 'page.common.editBtn', data: row }).open();
+};
+
+// 表格内开关 (用户状态)
+const changeSwitch = async (row: object) => {
+  await putObj(row);
+  ElMessage.success($t('page.common.optSuccessText'));
+  GridApi.reload();
+};
 </script>
 
 <template>
@@ -182,6 +190,7 @@ const handleNodeClick = (e: any) => {
               v-access:code="['sys_user_add']"
               :icon="SolarFolderAdd"
               type="primary"
+              @click="onOpenAdd()"
             >
               {{ $t('page.common.addBtn') }}
             </ElButton>
@@ -192,21 +201,41 @@ const handleNodeClick = (e: any) => {
               :disabled="multiple"
               :icon="WeuiDelete"
               type="primary"
+              @click="
+                handleDelete(
+                  GridApi?.grid?.getCheckboxRecords?.().map((item) => item.id),
+                )
+              "
             >
               {{ $t('page.common.delBtn') }}
             </ElButton>
+          </template>
+          <template #post="{ row }">
+            <ElTag v-for="item in row.postList" :key="item.postId">
+              {{ item.postName }}
+            </ElTag>
           </template>
           <template #role="{ row }">
             <ElTag v-for="item in row.roleList" :key="item.roleId">
               {{ item.roleName }}
             </ElTag>
           </template>
+          <template #lockFlag="{ row }">
+            <ElSwitch
+              v-model="row.lockFlag"
+              @change="changeSwitch(row)"
+              :disabled="row.userId === '1'"
+              active-value="0"
+              inactive-value="9"
+            />
+          </template>
           <template #action="{ row }">
             <ElButton
               v-access:code="['sys_user_edit']"
               :icon="CircumEdit"
-              text
+              link
               type="primary"
+              @click="onOpenEdit(row)"
             >
               {{ $t('page.common.editBtn') }}
             </ElButton>
@@ -219,8 +248,8 @@ const handleNodeClick = (e: any) => {
                 <ElButton
                   :icon="WeuiDelete"
                   v-access:code="['sys_user_del']"
-                  :disabled="row.username === 'admin'"
-                  text
+                  :disabled="row.userId === '1'"
+                  link
                   type="primary"
                   @click="handleDelete([row.userId])"
                   >{{ $t('page.common.delBtn') }}
@@ -229,6 +258,7 @@ const handleNodeClick = (e: any) => {
             </ElTooltip>
           </template>
         </Grid>
+        <FormModal @refresh="() => GridApi.reload()" />
       </ElSplitterPanel>
     </ElSplitter>
   </Page>

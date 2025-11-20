@@ -53,6 +53,9 @@ function setIFrameComponent(routes: any[]): void {
       route.component = 'IFrameView';
       route.path = `/iframes/${base64Encrypt(route.path)}`;
     }
+    if (route.meta?.isHide === true) {
+      route.meta.hideInMenu = true;
+    }
 
     // 递归处理子路由
     if (route.children && route.children.length > 0) {

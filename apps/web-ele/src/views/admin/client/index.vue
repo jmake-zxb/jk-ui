@@ -14,7 +14,12 @@ import { ElButton, ElMessage } from 'element-plus';
 
 import { useDict } from '#/adapter/dict';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { delObj, fetchList, refreshCache } from '#/api/admin/client';
+import {
+  delObj,
+  exportData,
+  fetchList,
+  refreshCache,
+} from '#/api/admin/client';
 import { downBlobFile } from '#/api/core/other';
 import DictTag from '#/component/DictTag/index.vue';
 
@@ -87,21 +92,23 @@ const gridOptions: VxeGridProps<BasicUserInfo> = {
     },
   ],
   exportConfig: {
-    type: 'custom',
-    mode: 'all',
-    types: ['xlsx'],
-    download: false,
-    filename: 'client.xlsx',
-    remote: true,
-    exportMethod: ({ options }) => {
-      return downBlobFile('/admin/client/export', options, 'client.xlsx');
-    },
+    excludeFields: ['action'],
   },
   toolbarConfig: {
     custom: true,
     refresh: true,
     zoom: true,
     export: true,
+    tools: [
+      {
+        code: 'JkExport',
+        icon: 'icon-[material-symbols--add-alert]',
+        title: '导出',
+        circle: true,
+      },
+    ],
+    // @ts-ignore 正式环境时有完整的类型声明
+    search: true,
   },
   proxyConfig: {
     ajax: {
@@ -111,6 +118,11 @@ const gridOptions: VxeGridProps<BasicUserInfo> = {
           current: page.currentPage,
           size: page.pageSize,
         });
+      },
+      queryAll: async () => {
+        const params = await gridApi.formApi.getValues();
+        const data = await exportData(params);
+        return { items: data };
       },
     },
   },
@@ -122,6 +134,12 @@ const gridEvents: VxeGridListeners<BasicUserInfo> = {
   },
   checkboxChange: ({ records }) => {
     selectedRows.value = records;
+  },
+  toolbarToolClick: async ({ code, $grid }) => {
+    if (code === 'JkExport') {
+      const params = await $grid?.getFormData();
+      await downBlobFile('/admin/client/export', params, 'client.xlsx');
+    }
   },
 };
 
@@ -162,12 +180,12 @@ const [FormModal, formModalApi] = useVbenModal({
 });
 
 // 打开新增菜单弹窗
-const onOpenAddMenu = (row?: any) => {
+const onOpenAdd = (row?: any) => {
   formModalApi.setData({ type: 'page.common.addBtn', data: row }).open();
 };
 
 // 打开编辑菜单弹窗
-const onOpenEditMenu = (row?: any) => {
+const onOpenEdit = (row?: any) => {
   formModalApi.setData({ type: 'page.common.editBtn', data: row }).open();
 };
 </script>
@@ -180,7 +198,7 @@ const onOpenEditMenu = (row?: any) => {
           v-access:code="['sys_client_add']"
           :icon="SolarFolderAdd"
           type="primary"
-          @click="onOpenAddMenu()"
+          @click="onOpenAdd()"
         >
           {{ $t('page.common.addBtn') }}
         </ElButton>
@@ -219,7 +237,7 @@ const onOpenEditMenu = (row?: any) => {
           link
           type="primary"
           v-access:code="['sys_client_add']"
-          @click="onOpenEditMenu(row)"
+          @click="onOpenEdit(row)"
         >
           {{ $t('page.common.editBtn') }}
         </ElButton>

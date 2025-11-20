@@ -23,6 +23,7 @@ export {
   VbenCountToAnimator,
   VbenFullScreen,
   VbenIcon,
+  VbenIconButton,
   VbenInputPassword,
   VbenLoading,
   VbenLogo,

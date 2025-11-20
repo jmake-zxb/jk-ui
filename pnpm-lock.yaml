@@ -367,7 +367,7 @@ catalogs:
       specifier: ^2.0.0
       version: 2.0.0
     sortablejs:
-      specifier: ^1.15.6
+      specifier: 1.15.6
       version: 1.15.6
     stylelint:
       specifier: ^16.21.0
@@ -640,6 +640,9 @@ importers:
       '@vueuse/core':
         specifier: 'catalog:'
         version: 13.4.0(vue@3.5.17(typescript@5.8.3))
+      codemirror:
+        specifier: ^5.65.20
+        version: 5.65.20
       crypto-js:
         specifier: ^4.2.0
         version: 4.2.0
@@ -652,6 +655,9 @@ importers:
       pinia:
         specifier: ^3.0.3
         version: 3.0.3(typescript@5.8.3)(vue@3.5.17(typescript@5.8.3))
+      sortablejs:
+        specifier: 'catalog:'
+        version: 1.15.6
       vue:
         specifier: ^3.5.17
         version: 3.5.17(typescript@5.8.3)
@@ -5265,6 +5271,9 @@ packages:
   cluster-key-slot@1.1.2:
     resolution: {integrity: sha512-RMr0FhtfXemyinomL4hrWcYJxmX6deFdCxpJzhDttxgO1+bcCnkk+9drydLVDmAMG7NE6aN/fl4F7ucU/90gAA==}
     engines: {node: '>=0.10.0'}
+
+  codemirror@5.65.20:
+    resolution: {integrity: sha512-i5dLDDxwkFCbhjvL2pNjShsojoL3XHyDwsGv1jqETUoW+lzpBKKqNTUWgQwVAOa0tUm4BwekT455ujafi8payA==}
 
   color-convert@1.9.3:
     resolution: {integrity: sha512-QfAUtd+vFdAtFQcC8CCyYt1fYWxSqAiK2cSD6zDB8N3cpsEBAvRxp9zOGg6G/SHHJYAT88/az/IuDGALsNVbGg==}
@@ -14904,6 +14913,8 @@ snapshots:
   clsx@2.1.1: {}
 
   cluster-key-slot@1.1.2: {}
+
+  codemirror@5.65.20: {}
 
   color-convert@1.9.3:
     dependencies:

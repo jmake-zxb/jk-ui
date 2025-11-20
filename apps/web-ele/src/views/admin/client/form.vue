@@ -149,6 +149,7 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     componentProps: {
       placeholder: $t('client.client.inputAccessTokenValidityTip'),
     },
+    controlClass: '!w-[230px]',
     // 字段名
     fieldName: 'accessTokenValidity',
     // 界面显示的label
@@ -163,6 +164,7 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     componentProps: {
       placeholder: $t('client.client.inputRefreshTokenValidityTip'),
     },
+    controlClass: '!w-[230px]',
     // 字段名
     fieldName: 'refreshTokenValidity',
     // 界面显示的label

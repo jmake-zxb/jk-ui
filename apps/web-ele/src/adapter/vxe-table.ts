@@ -1,11 +1,6 @@
 import type { VxeTableGridOptions } from '@vben/plugins/vxe-table';
-import type { Recordable } from '@vben/types';
-
-import { h } from 'vue';
 
 import { setupVbenVxeTable, useVbenVxeGrid } from '@vben/plugins/vxe-table';
-
-import { ElButton, ElImage } from 'element-plus';
 
 import { useVbenForm } from './form';
 
@@ -27,6 +22,9 @@ setupVbenVxeTable({
           // 全局禁用vxe-table的表单配置，使用formOptions
           enabled: false,
         },
+        exportConfig: {
+          excludeFields: ['action'],
+        },
         pagerConfig: {
           pageSize: 20,
         },
@@ -46,41 +44,35 @@ setupVbenVxeTable({
       } as VxeTableGridOptions,
     });
 
-    // 表格配置项可以用 cellRender: { name: 'CellImage' },
-    vxeUI.renderer.add('CellImage', {
-      renderTableDefault(_renderOpts, params) {
-        const { column, row } = params;
-        const src = row[column.field];
-        return h(ElImage, { src, previewSrcList: [src] });
-      },
-    });
-
-    // 表格配置项可以用 cellRender: { name: 'CellLink' },
-    vxeUI.renderer.add('CellLink', {
-      renderTableDefault(renderOpts) {
-        const { props } = renderOpts;
-        return h(
-          ElButton,
-          { size: 'small', link: true },
-          { default: () => props?.text },
-        );
-      },
-    });
+    // 创建一个简单的工具栏-右侧工具渲染
+    // 自定义导出
+    // vxeUI.renderer.add('JkExport', {
+    //   renderToolbarTool(renderOpts, _renderParams) {
+    //     return h(
+    //       VbenIconButton,
+    //       {
+    //         tooltip: '导出',
+    //         circle: true,
+    //         variant: 'outline',
+    //         onClick: renderOpts?.props?.onClick,
+    //       },
+    //       {
+    //         default: () =>
+    //           h(VbenIcon, { icon: 'ant-design:download-outlined' }),
+    //       },
+    //     );
+    //   },
+    // });
 
     // 这里可以自行扩展 vxe-table 的全局配置，比如自定义格式化
     // vxeUI.formats.add
+
+    // 这里可以自定义替换图标
+    // vxeUI.setIcon
   },
   useVbenForm,
 });
 
 export { useVbenVxeGrid };
-
-export type OnActionClickParams<T = Recordable<any>> = {
-  code: string;
-  row: T;
-};
-export type OnActionClickFn<T = Recordable<any>> = (
-  params: OnActionClickParams<T>,
-) => void;
 
 export type * from '@vben/plugins/vxe-table';

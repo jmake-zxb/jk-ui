@@ -3,6 +3,8 @@ import type { VbenFormProps } from '@vben/common-ui';
 
 import type { VxeGridProps } from '#/adapter/vxe-table';
 
+import { ref } from 'vue';
+
 import { confirm, Page, useVbenModal, VbenIcon } from '@vben/common-ui';
 import { CircumEdit, SolarFolderAdd, WeuiDelete } from '@vben/icons';
 
@@ -13,6 +15,8 @@ import { delObj, pageList } from '#/api/core/menu';
 import { $t } from '#/locales';
 
 import ExtraModal from './form.vue';
+
+const isExpand = ref(false);
 
 const formOptions: VbenFormProps = {
   schema: [
@@ -127,6 +131,12 @@ const handleDelete = (id: string) => {
     }
   });
 };
+
+// 展开折叠树
+const handleExpand = async () => {
+  isExpand.value = !isExpand.value;
+  GridApi.grid.setAllTreeExpand(isExpand.value);
+};
 </script>
 
 <template>
@@ -134,12 +144,15 @@ const handleDelete = (id: string) => {
     <Grid>
       <template #toolbar-actions>
         <ElButton
-          v-access:code="['sys_user_add']"
+          v-access:code="['sys_menu_add']"
           :icon="SolarFolderAdd"
           type="primary"
           @click="onOpenAddMenu()"
         >
           {{ $t('page.common.addBtn') }}
+        </ElButton>
+        <ElButton @click="handleExpand" plain>
+          {{ $t('page.common.expandBtn') }}
         </ElButton>
       </template>
       <template #menuType="{ row }">

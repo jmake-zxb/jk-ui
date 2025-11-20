@@ -32,6 +32,10 @@ export function getDetails(obj: object) {
   return requestClient.get(`/admin/client/getClientDetailsById/${obj}`);
 }
 
+export function exportData(obj: object) {
+  return requestClient.get('/admin/client/export', { params: obj });
+}
+
 export function validateclientId(value: any, callback: any, isEdit: boolean) {
   if (isEdit) {
     return callback();

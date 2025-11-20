@@ -4,7 +4,10 @@ import { requestClient } from '#/api/request';
 
 export function downBlobFile(url: any, query: any, fileName: string) {
   return requestClient
-    .download(url, { params: query, responseType: 'blob' })
+    .download(url, {
+      params: query,
+      responseType: 'blob',
+    })
     .then((response) => {
       handleBlobFile(response, fileName);
     });

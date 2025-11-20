@@ -40,34 +40,45 @@ export function decryption(src: string, keyWord: string) {
  * @description 生成唯一 uuid
  * @return string
  */
-export function generateUUID() {
-  if (typeof crypto === 'object') {
-    if (typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-    if (
-      typeof crypto.getRandomValues === 'function' &&
-      typeof Uint8Array === 'function'
-    ) {
-      const callback = (c: any) => {
-        const num = Number(c);
-        return (
-          num ^
-          (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (num / 4)))
-        ).toString(16);
-      };
-      return '10000000-1000-4000-8000-100000000000'.replaceAll(
-        /[018]/g,
-        callback,
-      );
-    }
+export function generateUUID(): string {
+  // 先确认 crypto 存在且安全
+  if (
+    typeof crypto === 'object' &&
+    crypto !== null &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
   }
+
+  if (
+    typeof crypto === 'object' &&
+    crypto !== null &&
+    typeof crypto.getRandomValues === 'function' &&
+    typeof Uint8Array === 'function'
+  ) {
+    // 创建一个安全的随机数生成器闭包
+    const getRandomByte = (): number => {
+      const arr = new Uint8Array(1);
+      crypto.getRandomValues(arr);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      return arr[0]!;
+    };
+
+    return '10000000-1000-4000-8000-100000000000'.replaceAll(/[018]/g, (c) => {
+      const num = Number(c);
+      const r = getRandomByte();
+      return (num ^ (r & (15 >> (num / 4)))).toString(16);
+    });
+  }
+
+  // 降级方案...
   let timestamp = Date.now();
   let performanceNow =
     (typeof performance !== 'undefined' &&
       performance.now &&
       performance.now() * 1000) ||
     0;
+
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replaceAll(/[xy]/g, (c) => {
     let random = Math.random() * 16;
     if (timestamp > 0) {
@@ -107,4 +118,65 @@ export const adaptationUrl = (originUrl?: string) => {
 export function base64Encrypt(src: string) {
   const encodedWord = CryptoJS.enc.Utf8.parse(src);
   return CryptoJS.enc.Base64.stringify(encodedWord);
+}
+
+/**
+ * 解析所有太监节点ID
+ */
+export const resolveAllEunuchNodeId = (
+  json: any[],
+  idArr: any[],
+  temp: any[] = [],
+) => {
+  for (const item of json) {
+    if (item.children && item.children.length > 0) {
+      resolveAllEunuchNodeId(item.children, idArr, temp);
+    } else {
+      temp.push(...idArr.filter((id) => id === item.id));
+    }
+  }
+  return temp;
+};
+
+/**
+ * 列表结构转树结构
+ * @param data
+ * @param id
+ * @param parentId
+ * @param children
+ * @param rootId
+ */
+export function handleTree(
+  data: any,
+  id: any,
+  parentId: any,
+  children: any,
+  rootId: any,
+) {
+  id = id || 'id';
+  parentId = parentId || 'parentId';
+  children = children || 'children';
+  rootId =
+    rootId ||
+    // eslint-disable-next-line prefer-spread
+    Math.min.apply(
+      Math,
+      data.map((item: any) => {
+        return item[parentId];
+      }),
+    ) ||
+    0;
+  // 对源数据深度克隆
+  const cloneData = structuredClone(data);
+  // 循环所有项
+  const treeData = cloneData.filter((father: any) => {
+    const branchArr = cloneData.filter((child: any) => {
+      // 返回每一项的子级数组
+      return father[id] === child[parentId];
+    });
+    branchArr.length > 0 ? (father[children] = branchArr) : '';
+    // 返回第一层
+    return father[parentId] === rootId;
+  });
+  return treeData === '' ? data : treeData;
 }
