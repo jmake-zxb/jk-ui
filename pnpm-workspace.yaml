@@ -188,7 +188,7 @@ catalog:
   vue-tippy: ^6.7.1
   vue-tsc: 2.2.10
   vxe-pc-ui: ^4.9.29
-  vxe-table: ^4.16.11
+  vxe-table: ^4.17.18
   watermark-js-plus: ^1.6.2
   zod: ^3.25.67
   zod-defaults: ^0.1.3

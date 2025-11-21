@@ -6,7 +6,7 @@ import { dict } from '#/store/dict';
 /**
  * 获取字典数据
  */
-export function useDict(...args: any): any {
+export function useDict(...args: string[]): any {
   const res = ref<Record<string, any>>({});
   return (() => {
     args.forEach((dictType: string) => {

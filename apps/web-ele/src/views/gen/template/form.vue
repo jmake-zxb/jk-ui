@@ -59,11 +59,11 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     rules: z.string().min(1, { message: '模板描述不能为空' }),
   },
   {
-    component: 'Input',
+    component: 'CodeEditor',
     componentProps: {
-      type: 'textarea',
-      rows: 4,
-      placeholder: '请输入模板代码',
+      theme: 'darcula',
+      mode: 'velocity',
+      height: '100%',
     },
     fieldName: 'templateCode',
     label: '模板代码',
@@ -79,6 +79,7 @@ const [Form, FormApi] = useVbenForm({
 // Modal定义
 const [Modal, ModalApi] = useVbenModal({
   draggable: true,
+  fullscreen: true,
   closeOnClickModal: false,
   closeOnPressEscape: false,
   async onCancel() {

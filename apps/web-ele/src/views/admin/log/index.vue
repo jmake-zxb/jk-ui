@@ -23,13 +23,13 @@ const formOptions: VbenFormProps = {
   schema: [
     {
       component: 'Select',
-      componentProps: {
+      componentProps: () => ({
         allowClear: true,
         filterOption: true,
         options: log_type?.value,
         showSearch: true,
         placeholder: $t('log.syslog.inputLogTypeTip'),
-      },
+      }),
       fieldName: 'logType',
       label: $t('log.syslog.logType'),
     },
@@ -90,6 +90,9 @@ const gridOptions: VxeGridProps = {
       },
     },
   },
+  zoomConfig: {
+    escRestore: true, // 允许按 ESC 退出全屏
+  },
   toolbarConfig: {
     custom: true,
     refresh: true,
@@ -106,6 +109,28 @@ const gridEvents: VxeGridListeners = {
   },
   checkboxChange: ({ records }) => {
     selectedRows.value = records;
+  },
+  toolbarToolClick: ({ code, $grid }) => {
+    if (code === 'custom_zoom') {
+      $grid?.zoom().then((res) => {
+        const tools = $grid?.props.toolbarConfig?.tools || [];
+        const newTools = tools.map((item) => {
+          if (item.code === 'custom_zoom') {
+            return {
+              ...item,
+              title: res ? '还原' : '全屏',
+              icon: res ? 'vxe-icon-minimize' : 'vxe-icon-fullscreen',
+            };
+          }
+          return item;
+        });
+        gridApi.setGridOptions({
+          toolbarConfig: {
+            tools: newTools,
+          },
+        });
+      });
+    }
   },
 };
 

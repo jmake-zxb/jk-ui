@@ -74,12 +74,17 @@ const gridOptions: VxeGridProps = {
     childrenField: 'children',
   },
   height: 'auto',
+  scrollY: {
+    enabled: true,
+    gt: 0,
+  },
+  showOverflow: true,
   pagerConfig: {
     enabled: false,
   },
   proxyConfig: {
     ajax: {
-      query: (_e, formValues) => {
+      query: (_e: any, formValues: any) => {
         return new Promise<object>((resolve) => {
           pageList(formValues || {}).then((res) => {
             resolve({ items: res });
@@ -135,7 +140,9 @@ const handleDelete = (id: string) => {
 // 展开折叠树
 const handleExpand = async () => {
   isExpand.value = !isExpand.value;
-  GridApi.grid.setAllTreeExpand(isExpand.value);
+  isExpand.value
+    ? await GridApi.grid.setAllTreeExpand(isExpand.value)
+    : await GridApi.grid.clearTreeExpand();
 };
 </script>
 

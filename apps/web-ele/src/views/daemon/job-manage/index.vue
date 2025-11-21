@@ -47,25 +47,25 @@ const formOptions: VbenFormProps = {
     },
     {
       component: 'Select',
-      componentProps: {
+      componentProps: () => ({
         allowClear: true,
         filterOption: true,
         options: job_status?.value,
         showSearch: true,
         placeholder: $t('job.job.inputjobStatusTip'),
-      },
+      }),
       fieldName: 'jobStatus',
       label: $t('job.job.jobStatus'),
     },
     {
       component: 'Select',
-      componentProps: {
+      componentProps: () => ({
         allowClear: true,
         filterOption: true,
         options: job_execute_status?.value,
         showSearch: true,
         placeholder: $t('job.job.inputjobExecuteStatusTip'),
-      },
+      }),
       fieldName: 'jobExecuteStatus',
       label: $t('job.job.jobExecuteStatus'),
     },
