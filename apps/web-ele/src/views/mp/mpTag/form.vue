@@ -1,14 +1,15 @@
-<script setup lang="ts" name="GenTemplateModal">
+<script setup lang="ts" name="MpTagModal">
 import type { VbenFormSchema } from '#/adapter/form';
 
-import { computed, nextTick, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
 import { ElMessage } from 'element-plus';
 
 import { useVbenForm, z } from '#/adapter/form';
-import { addObj, getObj, putObj } from '#/api/gen/template';
+import { getObjs } from '#/api/mp/mpAccount';
+import { addObj, getObj, putObj } from '#/api/mp/mpTag';
 import { $t } from '#/locales';
 
 // 定义子组件向父组件传值/事件
@@ -18,56 +19,48 @@ const emit = defineEmits(['refresh']);
 const state = reactive({
   dataForm: {
     id: '', // 主键
-    templateName: '', // 模板名称
-    generatorPath: '', // 模板路径
-    templateDesc: '', // 模板描述
-    templateCode: '', // 模板代码
+    tag: '', // 标签名称
+    wxAccountName: '', // 微信公众号名称
   },
 });
 
-// 字典数据处理
+// ========== 字典数据 ==========
+
+const wxAccountList = ref([]);
+
+const getWxAccountList = async () => {
+  const data = await getObjs();
+  wxAccountList.value = data;
+};
+
+getWxAccountList();
 
 const formSchema = computed<VbenFormSchema[]>(() => [
   {
-    component: 'Input',
-    componentProps: {
-      placeholder: '请输入模板名称',
-    },
-    fieldName: 'templateName',
-    label: '模板名称',
-    colProps: { span: 12 },
-    rules: z.string().min(1, { message: '模板名称不能为空' }),
+    component: 'Select',
+    componentProps: () => ({
+      allowClear: true,
+      filterOption: true,
+      options: wxAccountList.value,
+      props: {
+        value: 'id',
+        label: 'name',
+      },
+      showSearch: true,
+      placeholder: '请选择微信公众号',
+    }),
+    fieldName: 'wxAccountId',
+    label: '微信公众号',
+    rules: 'selectRequired',
   },
   {
     component: 'Input',
     componentProps: {
-      placeholder: '请输入模板路径',
+      placeholder: '请输入标签名称',
     },
-    fieldName: 'generatorPath',
-    label: '模板路径',
-    colProps: { span: 12 },
-    rules: z.string().min(1, { message: '模板路径不能为空' }),
-  },
-  {
-    component: 'Input',
-    componentProps: {
-      placeholder: '请输入模板描述',
-    },
-    fieldName: 'templateDesc',
-    label: '模板描述',
-    colProps: { span: 12 },
-    rules: z.string().min(1, { message: '模板描述不能为空' }),
-  },
-  {
-    component: 'CodeEditor',
-    componentProps: {
-      theme: 'darcula',
-      mode: 'java',
-      height: '100%',
-    },
-    fieldName: 'templateCode',
-    label: '模板代码',
-    colProps: { span: 12 },
+    fieldName: 'tag',
+    label: '标签名称',
+    rules: z.string().min(1, { message: '标签名称不能为空' }),
   },
 ]);
 
@@ -79,7 +72,6 @@ const [Form, FormApi] = useVbenForm({
 // Modal定义
 const [Modal, ModalApi] = useVbenModal({
   draggable: true,
-  fullscreen: true,
   closeOnClickModal: false,
   closeOnPressEscape: false,
   async onCancel() {
@@ -116,21 +108,18 @@ const [Modal, ModalApi] = useVbenModal({
         title: $t(dat.type),
       });
       if (dat?.data?.id) {
-        await getGenTemplateData(dat?.data?.id);
+        await getMpTagData(dat?.data?.id);
       } else {
         state.dataForm.id = '';
       }
-      nextTick(() => {
-        FormApi.updateSchema(formSchema.value);
-      });
     }
   },
 });
 
 // 初始化表单数据
-const getGenTemplateData = async (id: string) => {
+const getMpTagData = async (id: string) => {
   // 获取数据
-  const res = await getObj(id);
+  const res = await getObj({ id });
   Object.assign(state.dataForm, res);
   FormApi.setValues(state.dataForm);
 };

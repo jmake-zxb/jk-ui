@@ -43,13 +43,13 @@ const formOptions: VbenFormProps = {
     },
     {
       component: 'Select',
-      componentProps: {
+      componentProps: () => ({
         allowClear: true,
         filterOption: true,
         options: dict_type?.value,
         showSearch: true,
         placeholder: $t('param.param.inputsystemFlagTip'),
-      },
+      }),
       fieldName: 'systemFlag',
       label: $t('param.param.systemFlag'),
     },

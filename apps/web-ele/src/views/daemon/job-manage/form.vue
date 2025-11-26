@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { VbenFormSchema } from '#/adapter/form';
 
-import { computed, nextTick, reactive } from 'vue';
+import { computed, reactive } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
@@ -69,9 +69,6 @@ const [Modal, modalApi] = useVbenModal({
       } else {
         state.dataForm.jobId = '';
       }
-      nextTick(() => {
-        FormApi.updateSchema(formSchema.value);
-      });
     }
   },
 });
@@ -112,13 +109,13 @@ const formSchema = computed<VbenFormSchema[]>(() => [
   },
   {
     component: 'Select',
-    componentProps: {
+    componentProps: () => ({
       allowClear: true,
       filterOption: true,
       options: job_type?.value,
       showSearch: true,
       placeholder: $t('job.job.jobType'),
-    },
+    }),
     fieldName: 'jobType',
     label: $t('job.job.jobType'),
     rules: 'selectRequired',
@@ -201,19 +198,20 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     },
     // 字段名
     fieldName: 'cronExpression',
+    defaultValue: '',
     // 界面显示的label
     label: $t('job.job.cronExpression'),
     rules: 'required',
   },
   {
     component: 'Select',
-    componentProps: {
+    componentProps: () => ({
       allowClear: true,
       filterOption: true,
       options: misfire_policy?.value,
       showSearch: true,
       placeholder: $t('job.job.inputmisfirePolicyTip'),
-    },
+    }),
     fieldName: 'misfirePolicy',
     label: $t('job.job.misfirePolicy'),
     rules: 'selectRequired',

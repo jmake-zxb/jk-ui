@@ -2,6 +2,7 @@
 import type { VbenFormProps } from '@vben/common-ui';
 
 import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
+import type { SysLog } from '#/api/admin/log';
 
 import { computed, ref } from 'vue';
 
@@ -56,7 +57,7 @@ const formOptions: VbenFormProps = {
   submitOnEnter: true,
 };
 
-const gridOptions: VxeGridProps = {
+const gridOptions: VxeGridProps<SysLog> = {
   columns: [
     { align: 'center', type: 'checkbox', width: 40 },
     { title: $t('log.syslog.index'), type: 'seq', width: 50 },
@@ -103,7 +104,7 @@ const gridOptions: VxeGridProps = {
   },
 };
 
-const gridEvents: VxeGridListeners = {
+const gridEvents: VxeGridListeners<SysLog> = {
   checkboxAll: ({ records }) => {
     selectedRows.value = records;
   },
@@ -143,7 +144,7 @@ const [Grid, gridApi] = useVbenVxeGrid({
 const multiple = computed(() => selectedRows.value.length === 0);
 
 // 删除操作
-const handleDelete = (ids: string[]) => {
+const handleDelete = (ids: (string | undefined)[]) => {
   confirm($t('page.common.delConfirmText')).then(async () => {
     try {
       await delObj(ids);

@@ -122,6 +122,10 @@ const CodeEditor = defineAsyncComponent(
   () => import('#/component/CodeEditor/index'),
 );
 
+const UploadImg = defineAsyncComponent(
+  () => import('#/component/Upload/index'),
+);
+
 const withDefaultPlaceholder = <T extends Component>(
   component: T,
   type: 'input' | 'select',
@@ -175,6 +179,7 @@ export type ComponentType =
   | 'TimePicker'
   | 'TreeSelect'
   | 'Upload'
+  | 'UploadImg'
   | BaseFormComponentType;
 
 async function initComponentAdapter() {
@@ -314,6 +319,7 @@ async function initComponentAdapter() {
     TreeSelect: withDefaultPlaceholder(ElTreeSelect, 'select'),
     Upload: ElUpload,
     CodeEditor,
+    UploadImg,
   };
 
   // 将组件注册到全局共享状态中

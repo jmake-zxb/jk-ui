@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { PropType } from 'vue';
+
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { VbenIcon } from '@vben/common-ui';
@@ -22,124 +24,70 @@ import {
   ElTabs,
 } from 'element-plus';
 
-// =============== 类型定义 ===============
 interface Shortcut {
   value: string;
   text: string;
 }
 
-interface Range {
-  start: number | string;
-  end: number | string;
-}
-
-interface Loop {
-  start: number | string;
-  end: number | string;
-}
-
-interface ValueItem {
+// 允许 number | undefined，以兼容 input-number 清空时的行为
+interface BasicConfig {
   type: string;
-  range: Range;
-  loop: Loop;
-  last?: string;
+  range: { end: number | undefined; start: number | undefined };
+  loop: { end: number | undefined; start: number | undefined };
   appoint: string[];
 }
 
-interface DataItem {
-  second: string[];
-  minute: string[];
-  hour: string[];
-  day: string[];
-  month: string[];
-  week: { label: string; value: string }[];
-  year: number[];
+interface WeekConfig {
+  type: string;
+  range: { end: string; start: string };
+  loop: { end: string; start: number | undefined };
+  last: string;
+  appoint: string[];
 }
 
-// =============== Props & Emits ===============
-const props = withDefaults(
-  defineProps<{
-    modelValue?: string;
-    shortcuts?: Shortcut[];
-  }>(),
-  {
-    modelValue: '* * * * * ?',
-    shortcuts: () => [],
+interface YearConfig {
+  type: string;
+  range: { end: number | undefined; start: number | undefined };
+  loop: { end: number | undefined; start: number | undefined };
+  appoint: string[];
+}
+
+interface CronValue {
+  second: BasicConfig;
+  minute: BasicConfig;
+  hour: BasicConfig;
+  day: BasicConfig;
+  month: BasicConfig;
+  week: WeekConfig;
+  year: YearConfig;
+}
+
+const props = defineProps({
+  modelValue: {
+    type: String,
+    default: '* * * * * ?',
   },
-);
-
-const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void;
-}>();
-
-// =============== Refs ===============
-const defaultValue = ref<string>(props.modelValue);
-const dialogVisible = ref<boolean>(false);
-
-// =============== 工具函数 ===============
-function getYear(): number[] {
-  const currentYear = new Date().getFullYear();
-  return Array.from({ length: 11 }, (_, i) => currentYear + i);
-}
-
-// =============== 初始化数据 ===============
-const yearList = getYear();
-const initialYearStart = yearList[0] ?? 2025; // 提供默认值
-const initialYearEnd = yearList[1] ?? 2026; // 提供默认值
-
-const data = reactive<DataItem>({
-  second: [
-    '0',
-    '5',
-    '15',
-    '20',
-    '25',
-    '30',
-    '35',
-    '40',
-    '45',
-    '50',
-    '55',
-    '59',
-  ],
-  minute: [
-    '0',
-    '5',
-    '15',
-    '20',
-    '25',
-    '30',
-    '35',
-    '40',
-    '45',
-    '50',
-    '55',
-    '59',
-  ],
-  hour: Array.from({ length: 24 }, (_, i) => String(i)),
-  day: Array.from({ length: 31 }, (_, i) => String(i + 1)),
-  month: Array.from({ length: 12 }, (_, i) => String(i + 1)),
-  week: [
-    { value: '1', label: '周日' },
-    { value: '2', label: '周一' },
-    { value: '3', label: '周二' },
-    { value: '4', label: '周三' },
-    { value: '5', label: '周四' },
-    { value: '6', label: '周五' },
-    { value: '7', label: '周六' },
-  ],
-  year: yearList,
+  shortcuts: {
+    type: Array as PropType<Shortcut[]>,
+    default: () => [],
+  },
 });
 
-const value = reactive<{
-  day: ValueItem;
-  hour: ValueItem;
-  minute: ValueItem;
-  month: ValueItem;
-  second: ValueItem;
-  week: ValueItem;
-  year: ValueItem;
-}>({
+const emit = defineEmits(['update:modelValue']);
+
+const defaultValue = ref('');
+const dialogVisible = ref(false);
+
+const getYear = (): number[] => {
+  const v: number[] = [];
+  const y = new Date().getFullYear();
+  for (let i = 0; i < 11; i++) {
+    v.push(y + i);
+  }
+  return v;
+};
+
+const value = reactive<CronValue>({
   second: {
     type: '0',
     range: { start: 1, end: 2 },
@@ -179,75 +127,194 @@ const value = reactive<{
   },
   year: {
     type: '-1',
-    range: { start: initialYearStart, end: initialYearEnd },
-    loop: { start: initialYearStart, end: 1 },
+    range: { start: getYear()[0], end: getYear()[1] },
+    loop: { start: getYear()[0], end: 1 },
     appoint: [],
   },
 });
 
-// =============== Computed ===============
-const value_second = computed<string>(() =>
-  formatCronField(value.second, 'second'),
-);
-const value_minute = computed<string>(() =>
-  formatCronField(value.minute, 'minute'),
-);
-const value_hour = computed<string>(() => formatCronField(value.hour, 'hour'));
-const value_day = computed<string>(() => formatCronField(value.day, 'day'));
-const value_month = computed<string>(() =>
-  formatCronField(value.month, 'month'),
-);
-const value_week = computed<string>(() => formatCronField(value.week, 'week'));
-const value_year = computed<string>(() => formatCronField(value.year, 'year'));
+const dateOptions = reactive({
+  second: [
+    '0',
+    '5',
+    '15',
+    '20',
+    '25',
+    '30',
+    '35',
+    '40',
+    '45',
+    '50',
+    '55',
+    '59',
+  ],
+  minute: [
+    '0',
+    '5',
+    '15',
+    '20',
+    '25',
+    '30',
+    '35',
+    '40',
+    '45',
+    '50',
+    '55',
+    '59',
+  ],
+  hour: [
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '10',
+    '11',
+    '12',
+    '13',
+    '14',
+    '15',
+    '16',
+    '17',
+    '18',
+    '19',
+    '20',
+    '21',
+    '22',
+    '23',
+  ],
+  day: [
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '10',
+    '11',
+    '12',
+    '13',
+    '14',
+    '15',
+    '16',
+    '17',
+    '18',
+    '19',
+    '20',
+    '21',
+    '22',
+    '23',
+    '24',
+    '25',
+    '26',
+    '27',
+    '28',
+    '29',
+    '30',
+    '31',
+  ],
+  month: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+  week: [
+    { value: '1', label: '周日' },
+    { value: '2', label: '周一' },
+    { value: '3', label: '周二' },
+    { value: '4', label: '周三' },
+    { value: '5', label: '周四' },
+    { value: '6', label: '周五' },
+    { value: '7', label: '周六' },
+  ],
+  year: getYear(),
+});
 
-function formatCronField(
-  item: ValueItem,
-  field: 'day' | 'hour' | 'minute' | 'month' | 'second' | 'week' | 'year',
-): string {
-  switch (item.type) {
-    case '-1': {
-      return '';
-    }
-    case '0': {
-      return field === 'year' ? '' : '*';
-    }
-    case '1': {
-      return `${item.range.start}-${item.range.end}`;
-    }
-    case '2': {
-      if (field === 'week') {
-        return `${item.loop.end}#${item.loop.start}`;
-      }
-      return `${item.loop.start}/${item.loop.end}`;
-    }
-    case '3': {
-      if (item.appoint.length > 0) {
-        return item.appoint.join(',');
-      } else if (field === 'year') {
-        return '';
-      } else {
-        return '*';
-      }
-    }
-    case '4': {
-      if (field === 'day') return 'L';
-      if (field === 'week' && typeof item.last === 'string')
-        return `${item.last}L`;
-      return '*';
-    }
-    case '5': {
-      return '?';
-    }
-    default: {
-      return field === 'year' ? '' : '*';
-    }
-  }
-}
+const getRangeStr = (v: BasicConfig | YearConfig) => {
+  return `${v.range.start ?? 0}-${v.range.end ?? 0}`;
+};
 
-// =============== Watchers ===============
+const getLoopStr = (v: BasicConfig | YearConfig) => {
+  return `${v.loop.start ?? 0}/${v.loop.end ?? 0}`;
+};
+
+// Computed properties
+const value_second = computed(() => {
+  const v = value.second;
+  if (v.type === '0') return '*';
+  if (v.type === '1') return getRangeStr(v);
+  if (v.type === '2') return getLoopStr(v);
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '*';
+  return '*';
+});
+
+const value_minute = computed(() => {
+  const v = value.minute;
+  if (v.type === '0') return '*';
+  if (v.type === '1') return getRangeStr(v);
+  if (v.type === '2') return getLoopStr(v);
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '*';
+  return '*';
+});
+
+const value_hour = computed(() => {
+  const v = value.hour;
+  if (v.type === '0') return '*';
+  if (v.type === '1') return getRangeStr(v);
+  if (v.type === '2') return getLoopStr(v);
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '*';
+  return '*';
+});
+
+const value_day = computed(() => {
+  const v = value.day;
+  if (v.type === '0') return '*';
+  if (v.type === '1') return getRangeStr(v);
+  if (v.type === '2') return getLoopStr(v);
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '*';
+  if (v.type === '4') return 'L';
+  if (v.type === '5') return '?';
+  return '*';
+});
+
+const value_month = computed(() => {
+  const v = value.month;
+  if (v.type === '0') return '*';
+  if (v.type === '1') return getRangeStr(v);
+  if (v.type === '2') return getLoopStr(v);
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '*';
+  return '*';
+});
+
+const value_week = computed(() => {
+  const v = value.week;
+  if (v.type === '0') return '*';
+  if (v.type === '1') return `${v.range.start}-${v.range.end}`;
+  if (v.type === '2') return `${v.loop.end}#${v.loop.start ?? 1}`;
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '*';
+  if (v.type === '4') return `${v.last}L`;
+  if (v.type === '5') return '?';
+  return '*';
+});
+
+const value_year = computed(() => {
+  const v = value.year;
+  if (v.type === '-1') return '';
+  if (v.type === '0') return '*';
+  if (v.type === '1') return getRangeStr(v);
+  if (v.type === '2') return getLoopStr(v);
+  if (v.type === '3') return v.appoint.length > 0 ? v.appoint.join(',') : '';
+  return '';
+});
+
+// Watchers
 watch(
   () => value.week.type,
-  (val: string) => {
+  (val) => {
     if (val !== '5') {
       value.day.type = '5';
     }
@@ -256,7 +323,7 @@ watch(
 
 watch(
   () => value.day.type,
-  (val: string) => {
+  (val) => {
     if (val !== '5') {
       value.week.type = '5';
     }
@@ -265,166 +332,221 @@ watch(
 
 watch(
   () => props.modelValue,
-  (newVal: string) => {
-    defaultValue.value = newVal;
+  () => {
+    defaultValue.value = props.modelValue;
   },
 );
 
-// =============== Methods ===============
-function handleShortcuts(command: string) {
+// Methods
+const set = () => {
+  defaultValue.value = props.modelValue;
+  // 使用正则分割以处理多个空格的情况
+  let arr: string[] = (props.modelValue || '* * * * * ?').trim().split(/\s+/);
+
+  // 简单检查，如果不足6位，重置为默认
+  if (arr.length < 6) {
+    ElMessage.warning('cron表达式错误，已转换为默认表达式');
+    arr = ['*', '*', '*', '*', '*', '?'];
+  }
+
+  // 使用解构赋值提供默认值，彻底解决 "undefined" 类型报错
+  // year (index 6) 是可选的，所以这里允许 undefined
+  const [
+    sec = '*',
+    min = '*',
+    hour = '*',
+    day = '*',
+    month = '*',
+    week = '?',
+    year,
+  ] = arr;
+
+  // 秒
+  if (sec === '*') {
+    value.second.type = '0';
+  } else if (sec.includes('-')) {
+    value.second.type = '1';
+    value.second.range.start = Number(sec.split('-')[0]);
+    value.second.range.end = Number(sec.split('-')[1]);
+  } else if (sec.includes('/')) {
+    value.second.type = '2';
+    value.second.loop.start = Number(sec.split('/')[0]);
+    value.second.loop.end = Number(sec.split('/')[1]);
+  } else {
+    value.second.type = '3';
+    value.second.appoint = sec.split(',');
+  }
+
+  // 分
+  if (min === '*') {
+    value.minute.type = '0';
+  } else if (min.includes('-')) {
+    value.minute.type = '1';
+    value.minute.range.start = Number(min.split('-')[0]);
+    value.minute.range.end = Number(min.split('-')[1]);
+  } else if (min.includes('/')) {
+    value.minute.type = '2';
+    value.minute.loop.start = Number(min.split('/')[0]);
+    value.minute.loop.end = Number(min.split('/')[1]);
+  } else {
+    value.minute.type = '3';
+    value.minute.appoint = min.split(',');
+  }
+
+  // 小时
+  if (hour === '*') {
+    value.hour.type = '0';
+  } else if (hour.includes('-')) {
+    value.hour.type = '1';
+    value.hour.range.start = Number(hour.split('-')[0]);
+    value.hour.range.end = Number(hour.split('-')[1]);
+  } else if (hour.includes('/')) {
+    value.hour.type = '2';
+    value.hour.loop.start = Number(hour.split('/')[0]);
+    value.hour.loop.end = Number(hour.split('/')[1]);
+  } else {
+    value.hour.type = '3';
+    value.hour.appoint = hour.split(',');
+  }
+
+  // 日
+  switch (day) {
+    case '*': {
+      value.day.type = '0';
+
+      break;
+    }
+    case '?': {
+      value.day.type = '5';
+
+      break;
+    }
+    case 'L': {
+      value.day.type = '4';
+
+      break;
+    }
+    default: {
+      if (day.includes('-')) {
+        value.day.type = '1';
+        value.day.range.start = Number(day.split('-')[0]);
+        value.day.range.end = Number(day.split('-')[1]);
+      } else if (day.includes('/')) {
+        value.day.type = '2';
+        value.day.loop.start = Number(day.split('/')[0]);
+        value.day.loop.end = Number(day.split('/')[1]);
+      } else {
+        value.day.type = '3';
+        value.day.appoint = day.split(',');
+      }
+    }
+  }
+
+  // 月
+  if (month === '*') {
+    value.month.type = '0';
+  } else if (month.includes('-')) {
+    value.month.type = '1';
+    value.month.range.start = Number(month.split('-')[0]);
+    value.month.range.end = Number(month.split('-')[1]);
+  } else if (month.includes('/')) {
+    value.month.type = '2';
+    value.month.loop.start = Number(month.split('/')[0]);
+    value.month.loop.end = Number(month.split('/')[1]);
+  } else {
+    value.month.type = '3';
+    value.month.appoint = month.split(',');
+  }
+
+  // 周
+  if (week === '*') {
+    value.week.type = '0';
+  } else if (week === '?') {
+    value.week.type = '5';
+  } else if (week.includes('-')) {
+    value.week.type = '1';
+    value.week.range.start = week.split('-')[0] || '';
+    value.week.range.end = week.split('-')[1] || '';
+  } else if (week.includes('#')) {
+    value.week.type = '2';
+    // 安全处理 Number 转换
+    value.week.loop.start = Number(week.split('#')[1]);
+    value.week.loop.end = week.split('#')[0] || '';
+  } else if (week.includes('L')) {
+    value.week.type = '4';
+    value.week.last = week.split('L')[0] || '';
+  } else {
+    value.week.type = '3';
+    value.week.appoint = week.split(',');
+  }
+
+  // 年 (Optional)
+  if (!year) {
+    value.year.type = '-1';
+  } else if (year === '*') {
+    value.year.type = '0';
+  } else if (year.includes('-')) {
+    value.year.type = '1';
+    value.year.range.start = Number(year.split('-')[0]);
+    value.year.range.end = Number(year.split('-')[1]);
+  } else if (year.includes('/')) {
+    value.year.type = '2';
+    value.year.loop.start = Number(year.split('/')[0]);
+    value.year.loop.end = Number(year.split('/')[1]);
+  } else {
+    value.year.type = '3';
+    value.year.appoint = year.split(',');
+  }
+};
+
+const open = () => {
+  set();
+  dialogVisible.value = true;
+};
+
+const submit = () => {
+  const year = value_year.value ? ` ${value_year.value}` : '';
+  defaultValue.value = `${value_second.value} ${value_minute.value} ${
+    value_hour.value
+  } ${value_day.value} ${value_month.value} ${value_week.value}${year}`;
+  emit('update:modelValue', defaultValue.value);
+  dialogVisible.value = false;
+};
+
+const handleShortcuts = (command: string) => {
   if (command === 'custom') {
     open();
   } else {
     defaultValue.value = command;
     emit('update:modelValue', defaultValue.value);
   }
-}
+};
 
-function open() {
-  set();
-  dialogVisible.value = true;
-}
+const handleClear = () => {
+  defaultValue.value = '';
+  emit('update:modelValue', '');
+};
 
-function set() {
-  const cronStr = props.modelValue; // 类型为 string
-  const arr: string[] = cronStr.split(' ') as string[]; // 强制类型转换
-
-  if (arr.length < 6) {
-    ElMessage.warning('cron表达式错误，已转换为默认表达式');
-    const defaultArr: string[] = '* * * * * ?'.split(' ') as string[];
-    parseField(defaultArr[0]!, value.second, 'second');
-    parseField(defaultArr[1]!, value.minute, 'minute');
-    parseField(defaultArr[2]!, value.hour, 'hour');
-    parseField(defaultArr[3]!, value.day, 'day');
-    parseField(defaultArr[4]!, value.month, 'month');
-    parseField(defaultArr[5]!, value.week, 'week');
-    value.year.type = '-1';
-    return;
-  }
-
-  parseField(arr[0]!, value.second, 'second');
-  parseField(arr[1]!, value.minute, 'minute');
-  parseField(arr[2]!, value.hour, 'hour');
-  parseField(arr[3]!, value.day, 'day');
-  parseField(arr[4]!, value.month, 'month');
-  parseField(arr[5]!, value.week, 'week');
-
-  if (arr[6] === undefined) {
-    value.year.type = '-1';
-  } else {
-    parseField(arr[6]!, value.year, 'year');
-  }
-}
-
-function parseField(
-  cronPart: string,
-  target: ValueItem,
-  field: 'day' | 'hour' | 'minute' | 'month' | 'second' | 'week' | 'year',
-) {
-  switch (cronPart) {
-    case '*': {
-      target.type = '0';
-
-      break;
-    }
-    case '?': {
-      target.type = '5';
-
-      break;
-    }
-    case 'L': {
-      target.type = '4';
-      if (field === 'week' && target.last === undefined) {
-        target.last = '1';
-      }
-
-      break;
-    }
-    default: {
-      if (cronPart.includes('-')) {
-        target.type = '1';
-        const parts = cronPart.split('-');
-        const start = parts[0];
-        const end = parts[1];
-
-        if (start !== undefined && end !== undefined) {
-          if (field === 'week') {
-            target.range.start = start;
-            target.range.end = end;
-          } else {
-            target.range.start = Number(start);
-            target.range.end = Number(end);
-          }
-        } else {
-          // 默认值，避免 undefined
-          if (field === 'week') {
-            target.range.start = '1';
-            target.range.end = '2';
-          } else {
-            target.range.start = 1;
-            target.range.end = 2;
-          }
-        }
-      } else if (cronPart.includes('/')) {
-        target.type = '2';
-        const parts = cronPart.split('/');
-        const start = parts[0];
-        const step = parts[1];
-
-        if (start !== undefined && step !== undefined) {
-          target.loop.start = Number(start);
-          target.loop.end = Number(step);
-        } else {
-          target.loop.start = 0;
-          target.loop.end = 1;
-        }
-      } else if (cronPart.includes('#') && field === 'week') {
-        target.type = '2';
-        const parts = cronPart.split('#');
-        const day = parts[0];
-        const nth = parts[1];
-
-        if (day !== undefined && nth !== undefined) {
-          target.loop.end = day;
-          target.loop.start = Number(nth);
-        } else {
-          target.loop.end = '1';
-          target.loop.start = 1;
-        }
-      } else if (cronPart.includes('L') && field === 'week') {
-        target.type = '4';
-        target.last = cronPart.replace('L', '');
-      } else {
-        target.type = '3';
-        target.appoint = cronPart.split(',');
-      }
-    }
-  }
-}
-
-function submit() {
-  const yearStr = value_year.value ? ` ${value_year.value}` : '';
-  const cron = `${value_second.value} ${value_minute.value} ${value_hour.value} ${value_day.value} ${value_month.value} ${value_week.value}${yearStr}`;
-  defaultValue.value = cron;
-  emit('update:modelValue', cron);
-  dialogVisible.value = false;
-}
-
-// =============== Lifecycle ===============
 onMounted(() => {
   defaultValue.value = props.modelValue;
 });
 </script>
 
-<!-- 模板部分保持不变 -->
 <template>
   <ElInput v-model="defaultValue" v-bind="$attrs">
+    <!-- 手动实现 clearable -->
+    <template #suffix>
+      {{ defaultValue }}
+      <VbenIcon
+        v-if="defaultValue && defaultValue !== ''"
+        icon="ant-design:close-circle-twotone"
+        @click="handleClear"
+      />
+    </template>
     <template #append>
       <ElDropdown size="medium" @command="handleShortcuts">
         <ElButton>
-          <template #icon>
-            <VbenIcon icon="ant-design:down-outlined" />
-          </template>
+          <VbenIcon icon="ant-design:down-outlined" />
         </ElButton>
         <template #dropdown>
           <ElDropdownMenu>
@@ -448,7 +570,8 @@ onMounted(() => {
             >
               {{ item.text }}
             </ElDropdownItem>
-            <ElDropdownItem icon="el-icon-plus" divided command="custom">
+            <ElDropdownItem divided command="custom">
+              <VbenIcon icon="ant-design:plus-outlined" />
               自定义
             </ElDropdownItem>
           </ElDropdownMenu>
@@ -466,7 +589,6 @@ onMounted(() => {
   >
     <div class="sc-cron">
       <ElTabs>
-        <!-- 秒 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -477,22 +599,22 @@ onMounted(() => {
           <ElForm>
             <ElFormItem label="类型">
               <ElRadioGroup v-model="value.second.type">
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
+                <ElRadioButton value="0">任意值</ElRadioButton>
+                <ElRadioButton value="1">范围</ElRadioButton>
+                <ElRadioButton value="2">间隔</ElRadioButton>
+                <ElRadioButton value="3">指定</ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
             <ElFormItem label="范围" v-if="value.second.type === '1'">
               <ElInputNumber
-                v-model.number="value.second.range.start"
+                v-model="value.second.range.start"
                 :min="0"
                 :max="59"
                 controls-position="right"
               />
               <span style="padding: 0 15px">-</span>
               <ElInputNumber
-                v-model.number="value.second.range.end"
+                v-model="value.second.range.end"
                 :min="0"
                 :max="59"
                 controls-position="right"
@@ -500,15 +622,15 @@ onMounted(() => {
             </ElFormItem>
             <ElFormItem label="间隔" v-if="value.second.type === '2'">
               <ElInputNumber
-                v-model.number="value.second.loop.start"
+                v-model="value.second.loop.start"
                 :min="0"
                 :max="59"
                 controls-position="right"
               />
               秒开始，每
               <ElInputNumber
-                v-model.number="value.second.loop.end"
-                :min="1"
+                v-model="value.second.loop.end"
+                :min="0"
                 :max="59"
                 controls-position="right"
               />
@@ -521,8 +643,8 @@ onMounted(() => {
                 style="width: 100%"
               >
                 <ElOption
-                  v-for="item in data.second"
-                  :key="item"
+                  v-for="(item, index) in dateOptions.second"
+                  :key="index"
                   :label="item"
                   :value="item"
                 />
@@ -530,8 +652,6 @@ onMounted(() => {
             </ElFormItem>
           </ElForm>
         </ElTabPane>
-
-        <!-- 分 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -542,22 +662,22 @@ onMounted(() => {
           <ElForm>
             <ElFormItem label="类型">
               <ElRadioGroup v-model="value.minute.type">
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
+                <ElRadioButton value="0">任意值</ElRadioButton>
+                <ElRadioButton value="1">范围</ElRadioButton>
+                <ElRadioButton value="2">间隔</ElRadioButton>
+                <ElRadioButton value="3">指定</ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
             <ElFormItem label="范围" v-if="value.minute.type === '1'">
               <ElInputNumber
-                v-model.number="value.minute.range.start"
+                v-model="value.minute.range.start"
                 :min="0"
                 :max="59"
                 controls-position="right"
               />
               <span style="padding: 0 15px">-</span>
               <ElInputNumber
-                v-model.number="value.minute.range.end"
+                v-model="value.minute.range.end"
                 :min="0"
                 :max="59"
                 controls-position="right"
@@ -565,15 +685,15 @@ onMounted(() => {
             </ElFormItem>
             <ElFormItem label="间隔" v-if="value.minute.type === '2'">
               <ElInputNumber
-                v-model.number="value.minute.loop.start"
+                v-model="value.minute.loop.start"
                 :min="0"
                 :max="59"
                 controls-position="right"
               />
               分钟开始，每
               <ElInputNumber
-                v-model.number="value.minute.loop.end"
-                :min="1"
+                v-model="value.minute.loop.end"
+                :min="0"
                 :max="59"
                 controls-position="right"
               />
@@ -586,8 +706,8 @@ onMounted(() => {
                 style="width: 100%"
               >
                 <ElOption
-                  v-for="item in data.minute"
-                  :key="item"
+                  v-for="(item, index) in dateOptions.minute"
+                  :key="index"
                   :label="item"
                   :value="item"
                 />
@@ -595,8 +715,6 @@ onMounted(() => {
             </ElFormItem>
           </ElForm>
         </ElTabPane>
-
-        <!-- 小时 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -607,22 +725,22 @@ onMounted(() => {
           <ElForm>
             <ElFormItem label="类型">
               <ElRadioGroup v-model="value.hour.type">
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
+                <ElRadioButton value="0">任意值</ElRadioButton>
+                <ElRadioButton value="1">范围</ElRadioButton>
+                <ElRadioButton value="2">间隔</ElRadioButton>
+                <ElRadioButton value="3">指定</ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
             <ElFormItem label="范围" v-if="value.hour.type === '1'">
               <ElInputNumber
-                v-model.number="value.hour.range.start"
+                v-model="value.hour.range.start"
                 :min="0"
                 :max="23"
                 controls-position="right"
               />
               <span style="padding: 0 15px">-</span>
               <ElInputNumber
-                v-model.number="value.hour.range.end"
+                v-model="value.hour.range.end"
                 :min="0"
                 :max="23"
                 controls-position="right"
@@ -630,15 +748,15 @@ onMounted(() => {
             </ElFormItem>
             <ElFormItem label="间隔" v-if="value.hour.type === '2'">
               <ElInputNumber
-                v-model.number="value.hour.loop.start"
+                v-model="value.hour.loop.start"
                 :min="0"
                 :max="23"
                 controls-position="right"
               />
               小时开始，每
               <ElInputNumber
-                v-model.number="value.hour.loop.end"
-                :min="1"
+                v-model="value.hour.loop.end"
+                :min="0"
                 :max="23"
                 controls-position="right"
               />
@@ -651,8 +769,8 @@ onMounted(() => {
                 style="width: 100%"
               >
                 <ElOption
-                  v-for="item in data.hour"
-                  :key="item"
+                  v-for="(item, index) in dateOptions.hour"
+                  :key="index"
                   :label="item"
                   :value="item"
                 />
@@ -660,8 +778,6 @@ onMounted(() => {
             </ElFormItem>
           </ElForm>
         </ElTabPane>
-
-        <!-- 日 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -672,24 +788,24 @@ onMounted(() => {
           <ElForm>
             <ElFormItem label="类型">
               <ElRadioGroup v-model="value.day.type">
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
-                <ElRadioButton label="4">本月最后一天</ElRadioButton>
-                <ElRadioButton label="5">不指定</ElRadioButton>
+                <ElRadioButton value="0">任意值</ElRadioButton>
+                <ElRadioButton value="1">范围</ElRadioButton>
+                <ElRadioButton value="2">间隔</ElRadioButton>
+                <ElRadioButton value="3">指定</ElRadioButton>
+                <ElRadioButton value="4">本月最后一天</ElRadioButton>
+                <ElRadioButton value="5">不指定</ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
             <ElFormItem label="范围" v-if="value.day.type === '1'">
               <ElInputNumber
-                v-model.number="value.day.range.start"
+                v-model="value.day.range.start"
                 :min="1"
                 :max="31"
                 controls-position="right"
               />
               <span style="padding: 0 15px">-</span>
               <ElInputNumber
-                v-model.number="value.day.range.end"
+                v-model="value.day.range.end"
                 :min="1"
                 :max="31"
                 controls-position="right"
@@ -697,14 +813,14 @@ onMounted(() => {
             </ElFormItem>
             <ElFormItem label="间隔" v-if="value.day.type === '2'">
               <ElInputNumber
-                v-model.number="value.day.loop.start"
+                v-model="value.day.loop.start"
                 :min="1"
                 :max="31"
                 controls-position="right"
               />
               号开始，每
               <ElInputNumber
-                v-model.number="value.day.loop.end"
+                v-model="value.day.loop.end"
                 :min="1"
                 :max="31"
                 controls-position="right"
@@ -718,8 +834,8 @@ onMounted(() => {
                 style="width: 100%"
               >
                 <ElOption
-                  v-for="item in data.day"
-                  :key="item"
+                  v-for="(item, index) in dateOptions.day"
+                  :key="index"
                   :label="item"
                   :value="item"
                 />
@@ -727,8 +843,6 @@ onMounted(() => {
             </ElFormItem>
           </ElForm>
         </ElTabPane>
-
-        <!-- 月 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -739,22 +853,22 @@ onMounted(() => {
           <ElForm>
             <ElFormItem label="类型">
               <ElRadioGroup v-model="value.month.type">
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
+                <ElRadioButton value="0">任意值</ElRadioButton>
+                <ElRadioButton value="1">范围</ElRadioButton>
+                <ElRadioButton value="2">间隔</ElRadioButton>
+                <ElRadioButton value="3">指定</ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
             <ElFormItem label="范围" v-if="value.month.type === '1'">
               <ElInputNumber
-                v-model.number="value.month.range.start"
+                v-model="value.month.range.start"
                 :min="1"
                 :max="12"
                 controls-position="right"
               />
               <span style="padding: 0 15px">-</span>
               <ElInputNumber
-                v-model.number="value.month.range.end"
+                v-model="value.month.range.end"
                 :min="1"
                 :max="12"
                 controls-position="right"
@@ -762,14 +876,14 @@ onMounted(() => {
             </ElFormItem>
             <ElFormItem label="间隔" v-if="value.month.type === '2'">
               <ElInputNumber
-                v-model.number="value.month.loop.start"
+                v-model="value.month.loop.start"
                 :min="1"
                 :max="12"
                 controls-position="right"
               />
               月开始，每
               <ElInputNumber
-                v-model.number="value.month.loop.end"
+                v-model="value.month.loop.end"
                 :min="1"
                 :max="12"
                 controls-position="right"
@@ -783,8 +897,8 @@ onMounted(() => {
                 style="width: 100%"
               >
                 <ElOption
-                  v-for="item in data.month"
-                  :key="item"
+                  v-for="(item, index) in dateOptions.month"
+                  :key="index"
                   :label="item"
                   :value="item"
                 />
@@ -792,8 +906,6 @@ onMounted(() => {
             </ElFormItem>
           </ElForm>
         </ElTabPane>
-
-        <!-- 周 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -802,82 +914,82 @@ onMounted(() => {
             </div>
           </template>
           <ElForm>
-            <ElFormItem label="类型">
-              <ElRadioGroup v-model="value.week.type">
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
-                <ElRadioButton label="4">本月最后一周</ElRadioButton>
-                <ElRadioButton label="5">不指定</ElRadioButton>
-              </ElRadioGroup>
-            </ElFormItem>
-            <ElFormItem label="范围" v-if="value.week.type === '1'">
-              <ElSelect v-model="value.week.range.start" style="width: 120px">
-                <ElOption
-                  v-for="item in data.week"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+            <ElForm>
+              <ElFormItem label="类型">
+                <ElRadioGroup v-model="value.week.type">
+                  <ElRadioButton value="0">任意值</ElRadioButton>
+                  <ElRadioButton value="1">范围</ElRadioButton>
+                  <ElRadioButton value="2">间隔</ElRadioButton>
+                  <ElRadioButton value="3">指定</ElRadioButton>
+                  <ElRadioButton value="4">本月最后一周</ElRadioButton>
+                  <ElRadioButton value="5">不指定</ElRadioButton>
+                </ElRadioGroup>
+              </ElFormItem>
+              <ElFormItem label="范围" v-if="value.week.type === '1'">
+                <ElSelect v-model="value.week.range.start">
+                  <ElOption
+                    v-for="(item, index) in dateOptions.week"
+                    :key="index"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </ElSelect>
+                <span style="padding: 0 15px">-</span>
+                <ElSelect v-model="value.week.range.end">
+                  <ElOption
+                    v-for="(item, index) in dateOptions.week"
+                    :key="index"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="间隔" v-if="value.week.type === '2'">
+                第
+                <ElInputNumber
+                  v-model="value.week.loop.start"
+                  :min="1"
+                  :max="4"
+                  controls-position="right"
                 />
-              </ElSelect>
-              <span style="padding: 0 15px">-</span>
-              <ElSelect v-model="value.week.range.end" style="width: 120px">
-                <ElOption
-                  v-for="item in data.week"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="间隔" v-if="value.week.type === '2'">
-              第
-              <ElInputNumber
-                v-model.number="value.week.loop.start"
-                :min="1"
-                :max="5"
-                controls-position="right"
-              />
-              周的星期
-              <ElSelect v-model="value.week.loop.end" style="width: 100px">
-                <ElOption
-                  v-for="item in data.week"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </ElSelect>
-              执行一次
-            </ElFormItem>
-            <ElFormItem label="指定" v-if="value.week.type === '3'">
-              <ElSelect
-                v-model="value.week.appoint"
-                multiple
-                style="width: 100%"
-              >
-                <ElOption
-                  v-for="item in data.week"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="最后一周" v-if="value.week.type === '4'">
-              <ElSelect v-model="value.week.last" style="width: 120px">
-                <ElOption
-                  v-for="item in data.week"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </ElSelect>
-            </ElFormItem>
+                周的星期
+                <ElSelect v-model="value.week.loop.end">
+                  <ElOption
+                    v-for="(item, index) in dateOptions.week"
+                    :key="index"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </ElSelect>
+                执行一次
+              </ElFormItem>
+              <ElFormItem label="指定" v-if="value.week.type === '3'">
+                <ElSelect
+                  v-model="value.week.appoint"
+                  multiple
+                  style="width: 100%"
+                >
+                  <ElOption
+                    v-for="(item, index) in dateOptions.week"
+                    :key="index"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="最后一周" v-if="value.week.type === '4'">
+                <ElSelect v-model="value.week.last">
+                  <ElOption
+                    v-for="(item, index) in dateOptions.week"
+                    :key="index"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+            </ElForm>
           </ElForm>
         </ElTabPane>
-
-        <!-- 年 -->
         <ElTabPane>
           <template #label>
             <div class="sc-cron-num">
@@ -888,38 +1000,32 @@ onMounted(() => {
           <ElForm>
             <ElFormItem label="类型">
               <ElRadioGroup v-model="value.year.type">
-                <ElRadioButton label="-1">忽略</ElRadioButton>
-                <ElRadioButton label="0">任意值</ElRadioButton>
-                <ElRadioButton label="1">范围</ElRadioButton>
-                <ElRadioButton label="2">间隔</ElRadioButton>
-                <ElRadioButton label="3">指定</ElRadioButton>
+                <ElRadioButton value="-1">忽略</ElRadioButton>
+                <ElRadioButton value="0">任意值</ElRadioButton>
+                <ElRadioButton value="1">范围</ElRadioButton>
+                <ElRadioButton value="2">间隔</ElRadioButton>
+                <ElRadioButton value="3">指定</ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
             <ElFormItem label="范围" v-if="value.year.type === '1'">
               <ElInputNumber
-                v-model.number="value.year.range.start"
-                :min="yearList[0]"
-                :max="yearList[yearList.length - 1]"
+                v-model="value.year.range.start"
                 controls-position="right"
               />
               <span style="padding: 0 15px">-</span>
               <ElInputNumber
-                v-model.number="value.year.range.end"
-                :min="yearList[0]"
-                :max="yearList[yearList.length - 1]"
+                v-model="value.year.range.end"
                 controls-position="right"
               />
             </ElFormItem>
             <ElFormItem label="间隔" v-if="value.year.type === '2'">
               <ElInputNumber
-                v-model.number="value.year.loop.start"
-                :min="yearList[0]"
-                :max="yearList[yearList.length - 1]"
+                v-model="value.year.loop.start"
                 controls-position="right"
               />
               年开始，每
               <ElInputNumber
-                v-model.number="value.year.loop.end"
+                v-model="value.year.loop.end"
                 :min="1"
                 controls-position="right"
               />
@@ -932,10 +1038,10 @@ onMounted(() => {
                 style="width: 100%"
               >
                 <ElOption
-                  v-for="item in data.year"
-                  :key="item"
+                  v-for="(item, index) in dateOptions.year"
+                  :key="index"
                   :label="item"
-                  :value="String(item)"
+                  :value="item"
                 />
               </ElSelect>
             </ElFormItem>

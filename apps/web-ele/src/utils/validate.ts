@@ -234,3 +234,74 @@ const validateFn = (
     callback(new Error(errTxt));
   }
 };
+
+/**
+ * 创建一个带防抖的 Zod 异步校验函数
+ * @param checkFn 实际执行校验的异步函数，返回 true(通过) 或 false(不通过)
+ * @param delay 防抖时间，默认为 500ms
+ */
+export function createDebouncedRefine(
+  checkFn: (value: string) => Promise<boolean>,
+  delay: number = 500,
+) {
+  let timer: null | ReturnType<typeof setTimeout> = null;
+  let prevResolve: ((result: boolean) => void) | null = null;
+
+  return (value: string): Promise<boolean> => {
+    // 1. 如果有上一次还在挂起的校验，直接让它通过
+    // (防止快速输入时 Zod 一直等待旧的 Promise，导致卡死)
+    if (prevResolve) {
+      prevResolve(true);
+    }
+
+    // 2. 清除旧的定时器
+    if (timer) {
+      clearTimeout(timer);
+    }
+
+    // 3. 返回新的 Promise 给 Zod
+    return new Promise((resolve) => {
+      prevResolve = resolve; // 保存 resolve 引用以便下次取消
+
+      timer = setTimeout(async () => {
+        try {
+          // 执行业务传入的校验逻辑
+          const result = await checkFn(value);
+          resolve(result);
+        } catch (error) {
+          console.error('Validation API Error:', error);
+          // 接口报错时，通常建议视为校验通过(以免阻断表单)或失败，根据业务决定
+          resolve(false);
+        } finally {
+          // 清理状态
+          prevResolve = null;
+          timer = null;
+        }
+      }, delay);
+    });
+  };
+}
+
+/**
+ * 快速生成通用的唯一性校验规则
+ * @param fieldName 传给后端的字段名，如 'appid', 'username'
+ * @param getObjApi 你的通用查询接口
+ * @param getIdFn 一个获取当前 ID 的函数(用于判断是否是编辑模式)
+ */
+export function createUniqueFieldRule(
+  fieldName: string,
+  getObjApi: (params: any) => Promise<any>,
+  getIdFn: () => null | string | undefined,
+  delay: number = 500,
+) {
+  return createDebouncedRefine(async (value) => {
+    if (!value) return true;
+    // 1. 动态检查是否为编辑模式
+    const currentId = getIdFn();
+    if (currentId) return true; // 有 ID 视为编辑，跳过
+
+    // 2. 查重
+    const res = await getObjApi({ [fieldName]: value });
+    return !(res && res.length > 0);
+  }, delay);
+}

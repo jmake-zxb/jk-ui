@@ -141,8 +141,8 @@ const handleDelete = (id: string) => {
 const handleExpand = async () => {
   isExpand.value = !isExpand.value;
   isExpand.value
-    ? await GridApi.grid.setAllTreeExpand(isExpand.value)
-    : await GridApi.grid.clearTreeExpand();
+    ? await GridApi?.grid.setAllTreeExpand(isExpand.value)
+    : await GridApi?.grid.clearTreeExpand();
 };
 </script>
 
@@ -168,7 +168,7 @@ const handleExpand = async () => {
         <ElTag type="success" v-if="row.menuType === '1'">按钮</ElTag>
       </template>
       <template #icon="{ row }">
-        <VbenIcon :icon="row.icon" fallback />
+        <VbenIcon v-if="row.icon" :icon="row.icon" fallback />
       </template>
       <template #keepAlive="{ row }">
         <ElTag v-if="row.meta.isKeepAlive">开启</ElTag>

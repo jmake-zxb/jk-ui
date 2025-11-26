@@ -8,14 +8,12 @@ setupVbenVxeTable({
   configVxeTable: (vxeUI) => {
     vxeUI.setConfig({
       grid: {
-        align: 'center',
         border: true,
         columnConfig: {
           resizable: true,
         },
         height: 'auto',
         rowConfig: {
-          isCurrent: true,
           isHover: true,
         },
         formConfig: {

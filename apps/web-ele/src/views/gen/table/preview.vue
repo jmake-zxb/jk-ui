@@ -173,7 +173,7 @@ defineExpose({
             ref="codeEditorRef"
             theme="darcula"
             v-model="previewCodeStr"
-            mode="go"
+            mode="java"
             read-only
             height="calc(100vh - 100px)"
           />

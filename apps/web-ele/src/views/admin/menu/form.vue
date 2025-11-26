@@ -70,7 +70,6 @@ const [Modal, modalApi] = useVbenModal({
       }
       // 渲染上级菜单列表树
       getAllMenuData();
-      FormApi.updateSchema(formSchema.value);
     }
   },
 });
@@ -122,12 +121,12 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     // 组件需要在 #/adapter.ts内注册，并加上类型
     component: 'TreeSelect',
     // 对应组件的参数
-    componentProps: {
+    componentProps: () => ({
       placeholder: $t('menu.sysmenu.inputParentIdTip'),
       data: state.parentData,
       props: { value: 'id', label: 'name', children: 'children' },
       'check-strictly': true,
-    },
+    }),
     // 字段名
     fieldName: 'parentId',
     // 界面显示的label

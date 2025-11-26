@@ -103,6 +103,9 @@ function setupAccessGuard(router: Router) {
       routes: accessRoutes,
     });
 
+    // 写入权限
+    accessStore.setAccessCodes(userInfo.permissions);
+
     // 保存菜单信息和路由信息
     accessStore.setAccessMenus(accessibleMenus);
     accessStore.setAccessRoutes(accessibleRoutes);
