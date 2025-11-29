@@ -82,9 +82,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       dataField: (response: any) => {
         return response?.data ?? response;
       },
-      successCode: (_code: any) => {
-        return true;
-      },
+      successCode: 0,
     }),
   );
 

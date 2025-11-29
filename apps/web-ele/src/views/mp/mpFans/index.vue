@@ -16,7 +16,6 @@ import { useDict } from '#/adapter/dict';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { getObjs } from '#/api/mp/mpAccount';
 import { delObjs, exportData, fetchList, syncMpFansApi } from '#/api/mp/mpFans';
-import DictTag from '#/component/DictTag/index.vue';
 import { $t } from '#/locales';
 
 // ========== 字典数据 ==========
@@ -90,7 +89,12 @@ const gridOptions: VxeGridProps = {
       align: 'center',
       field: 'subscribeStatus',
       title: '订阅状态',
-      slots: { default: 'subscribeStatusColumn' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: subscribe,
+        },
+      },
     },
     {
       field: 'subscribeTime',
@@ -116,7 +120,12 @@ const gridOptions: VxeGridProps = {
       align: 'center',
       field: 'isBlack',
       title: '黑名单',
-      slots: { default: 'isBlackColumn' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: yes_no_type,
+        },
+      },
     },
     {
       field: 'action',
@@ -220,12 +229,6 @@ onMounted(() => {
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>
-      </template>
-      <template #subscribeStatusColumn="{ row }">
-        <DictTag :options="subscribe" :value="row.subscribeStatus" />
-      </template>
-      <template #isBlackColumn="{ row }">
-        <DictTag :options="yes_no_type" :value="row.isBlack" />
       </template>
       <template #action="{ row }">
         <ElButton

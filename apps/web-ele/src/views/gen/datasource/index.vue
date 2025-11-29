@@ -13,8 +13,8 @@ import { ElButton, ElMessage } from 'element-plus';
 
 import { useDict } from '#/adapter/dict';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { downBlobFile } from '#/api/core/other';
 import { delObj, fetchList } from '#/api/gen/datasource';
-import DictTag from '#/component/DictTag/index.vue';
 import { $t } from '#/locales';
 
 // ========== 组件声明 ==========
@@ -68,7 +68,12 @@ const gridOptions: VxeGridProps = {
     {
       field: 'dsType',
       title: '数据库类型',
-      slots: { default: 'dsTypeColumn' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: ds_type,
+        },
+      },
     },
     {
       field: 'username',
@@ -82,7 +87,7 @@ const gridOptions: VxeGridProps = {
       field: 'action',
       title: '操作',
       slots: { default: 'action' },
-      width: 150,
+      width: 200,
     },
   ],
   proxyConfig: {
@@ -150,6 +155,10 @@ const handleDelete = (ids: string[]) => {
     }
   });
 };
+
+const downloadDoc = (dsName: string) => {
+  downBlobFile('/gen/dsconf/doc', { dsName }, `${dsName}.html`);
+};
 </script>
 
 <template>
@@ -174,10 +183,10 @@ const handleDelete = (ids: string[]) => {
           {{ $t('page.common.delBtn') }}
         </ElButton>
       </template>
-      <template #dsTypeColumn="{ row }">
-        <DictTag :options="ds_type" :value="row.dsType" />
-      </template>
       <template #action="{ row }">
+        <ElButton @click="downloadDoc(row.name)" link type="primary">
+          <span class="icon-[ep--document]"></span>文档
+        </ElButton>
         <ElButton
           :icon="CircumEdit"
           link

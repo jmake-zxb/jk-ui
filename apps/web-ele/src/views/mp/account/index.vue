@@ -6,11 +6,10 @@ import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
 
 import { computed, defineAsyncComponent, ref } from 'vue';
 
-import { useAccess } from '@vben/access';
 import { confirm, Page, useVbenModal } from '@vben/common-ui';
 import { CircumEdit, SolarFolderAdd, WeuiDelete } from '@vben/icons';
 
-import { ElButton, ElImage, ElMessage } from 'element-plus';
+import { ElButton, ElMessage } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { delObjs, exportData, fetchList } from '#/api/mp/mpAccount';
@@ -23,7 +22,6 @@ const FormModalComponent = defineAsyncComponent(() => import('./form.vue'));
 // ========== 字典数据 ==========
 
 // ========== table表格 ==========
-const { hasAccessByCodes } = useAccess();
 const selectedRows = ref<any[]>([]);
 
 const formSchema = computed<VbenFormSchema[]>(() => [
@@ -98,7 +96,10 @@ const gridOptions: VxeGridProps = {
       align: 'center',
       field: 'qrUrl',
       title: '二维码图片',
-      slots: { default: 'qrUrl' },
+      cellRender: {
+        name: 'CellImage',
+        props: { style: { width: '100px', height: '100px' } },
+      },
     },
     {
       field: 'action',
@@ -131,7 +132,7 @@ const gridOptions: VxeGridProps = {
     custom: true,
     refresh: true,
     zoom: true,
-    export: hasAccessByCodes(['AC_100100']),
+    export: true,
     // @ts-ignore 正式环境时有完整的类型声明
     search: true,
   },
@@ -210,16 +211,6 @@ const handleDelete = (ids: string[]) => {
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>
-      </template>
-      <template #qrUrl="{ row }">
-        <ElImage
-          style="width: 100px; height: 100px"
-          :src="row.qrUrl"
-          fit="fill"
-          loading="lazy"
-          :preview-src-list="[row.qrUrl]"
-          preview-teleported
-        />
       </template>
       <template #action="{ row }">
         <ElButton

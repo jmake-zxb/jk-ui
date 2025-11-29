@@ -20,7 +20,6 @@ import {
   shutDownJobRa,
   startJobRa,
 } from '#/api/daemon/job';
-import DictTag from '#/component/DictTag/index.vue';
 
 import ExtraModal from './form.vue';
 
@@ -94,13 +93,23 @@ const gridOptions: VxeGridProps = {
       field: 'jobStatus',
       title: $t('job.job.jobStatus'),
       width: 120,
-      slots: { default: 'jobStatus' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: job_status,
+        },
+      },
     },
     {
       field: 'jobExecuteStatus',
       title: $t('job.job.jobExecuteStatus'),
       width: 120,
-      slots: { default: 'jobExecuteStatus' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: job_execute_status,
+        },
+      },
     },
     { field: 'startTime', title: $t('job.job.startTime'), width: 120 },
     { field: 'previousTime', title: $t('job.job.previousTime'), width: 120 },
@@ -109,7 +118,12 @@ const gridOptions: VxeGridProps = {
       field: 'jobType',
       title: $t('job.job.jobType'),
       width: 120,
-      slots: { default: 'jobType' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: job_type,
+        },
+      },
     },
     { field: 'executePath', title: $t('job.job.executePath'), width: 120 },
     { field: 'className', title: $t('job.job.className'), width: 120 },
@@ -128,7 +142,12 @@ const gridOptions: VxeGridProps = {
       field: 'misfirePolicy',
       title: $t('job.job.misfirePolicy'),
       width: 200,
-      slots: { default: 'misfirePolicy' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: misfire_policy,
+        },
+      },
     },
     {
       field: 'action',
@@ -294,18 +313,6 @@ const handleRunJob = async (row: { jobId: string; jobName: any }) => {
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>
-      </template>
-      <template #jobStatus="{ row }">
-        <DictTag :options="job_status" :value="row.jobStatus" />
-      </template>
-      <template #jobExecuteStatus="{ row }">
-        <DictTag :options="job_execute_status" :value="row.jobExecuteStatus" />
-      </template>
-      <template #jobType="{ row }">
-        <DictTag :options="job_type" :value="row.jobType" />
-      </template>
-      <template #misfirePolicy="{ row }">
-        <DictTag :options="misfire_policy" :value="row.misfirePolicy" />
       </template>
       <template #action="{ row }">
         <ElButton @click="handleJobLog(row)" link type="primary">

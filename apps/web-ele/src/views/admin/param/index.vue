@@ -14,7 +14,6 @@ import { ElButton, ElMessage } from 'element-plus';
 import { useDict } from '#/adapter/dict';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { delObj, fetchList } from '#/api/admin/param';
-import DictTag from '#/component/DictTag/index.vue';
 
 import ExtraModal from './form.vue';
 
@@ -73,13 +72,23 @@ const gridOptions: VxeGridProps = {
     {
       field: 'status',
       title: $t('param.param.status'),
-      slots: { default: 'status' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: status_type,
+        },
+      },
     },
     { field: 'createTime', title: $t('param.param.createTime') },
     {
       field: 'systemFlag',
       title: $t('param.param.systemFlag'),
-      slots: { default: 'systemFlag' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: dict_type,
+        },
+      },
     },
     {
       field: 'action',
@@ -183,12 +192,6 @@ const handleDelete = (ids: string[]) => {
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>
-      </template>
-      <template #status="{ row }">
-        <DictTag :options="status_type" :value="row.status" />
-      </template>
-      <template #systemFlag="{ row }">
-        <DictTag :options="dict_type" :value="row.systemFlag" />
       </template>
       <template #action="{ row }">
         <ElButton

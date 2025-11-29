@@ -21,7 +21,6 @@ import {
   refreshCache,
 } from '#/api/admin/client';
 import { downBlobFile } from '#/api/core/other';
-import DictTag from '#/component/DictTag/index.vue';
 
 import ExtraModal from './form.vue';
 
@@ -72,7 +71,12 @@ const gridOptions: VxeGridProps<BasicUserInfo> = {
     {
       field: 'authorizedGrantTypes',
       title: $t('client.client.authorizedGrantTypes'),
-      slots: { default: 'authorizedGrantTypes' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: grant_types,
+        },
+      },
     },
     {
       field: 'accessTokenValidity',
@@ -227,9 +231,6 @@ const onOpenEdit = (row?: any) => {
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>
-      </template>
-      <template #authorizedGrantTypes="{ row }">
-        <DictTag :options="grant_types" :value="row.authorizedGrantTypes" />
       </template>
       <template #action="{ row }">
         <ElButton

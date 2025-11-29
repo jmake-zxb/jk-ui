@@ -298,10 +298,19 @@ export function createUniqueFieldRule(
     if (!value) return true;
     // 1. 动态检查是否为编辑模式
     const currentId = getIdFn();
-    if (currentId) return true; // 有 ID 视为编辑，跳过
+    if (currentId && currentId !== '') return true; // 有 ID 视为编辑，跳过
 
     // 2. 查重
     const res = await getObjApi({ [fieldName]: value });
-    return !(res && res.length > 0);
+    if (!res) return false;
+
+    // 情况1: 直接是数组
+    if (Array.isArray(res)) {
+      return res.length > 0;
+    }
+    if (typeof res === 'object' && Boolean(res[fieldName])) {
+      return false;
+    }
+    return true;
   }, delay);
 }

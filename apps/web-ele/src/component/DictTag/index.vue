@@ -3,17 +3,17 @@ import { computed } from 'vue';
 
 import { ElTag } from 'element-plus';
 
-const props = defineProps({
+// 定义组件 Props 接口
+interface Props {
+  options?: any[];
+  value?: any[] | null | number | string;
+}
+
+const props = withDefaults(defineProps<Props>(), {
   // 数据
-  options: {
-    type: Array as any,
-    default: null,
-  },
+  options: () => [],
   // 当前的值
-  value: {
-    type: [Number, String, Array],
-    default: null,
-  },
+  value: null,
 });
 
 const values = computed(() => {

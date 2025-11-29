@@ -15,7 +15,6 @@ import { ElButton, ElMessage } from 'element-plus';
 import { useDict } from '#/adapter/dict';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { delObj, pageList } from '#/api/admin/log';
-import DictTag from '#/component/DictTag/index.vue';
 
 const { log_type } = useDict('log_type');
 const selectedRows = ref<any[]>([]);
@@ -64,7 +63,12 @@ const gridOptions: VxeGridProps<SysLog> = {
     {
       field: 'logType',
       title: $t('log.syslog.logType'),
-      slots: { default: 'logType' },
+      cellRender: {
+        name: 'CellDictTag',
+        props: {
+          options: log_type,
+        },
+      },
     },
     { field: 'title', title: $t('log.syslog.title') },
     { field: 'remoteAddr', title: $t('log.syslog.remoteAddr') },
@@ -176,9 +180,6 @@ const handleDelete = (ids: (string | undefined)[]) => {
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>
-      </template>
-      <template #logType="{ row }">
-        <DictTag :options="log_type" :value="row.logType" />
       </template>
       <template #action="{ row }">
         <ElButton

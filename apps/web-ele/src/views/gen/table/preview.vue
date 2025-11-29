@@ -3,6 +3,7 @@ import { defineAsyncComponent, reactive, ref } from 'vue';
 
 import { VbenIcon } from '@vben/common-ui';
 
+import { useClipboard } from '@vueuse/core';
 import {
   ElDialog,
   ElScrollbar,
@@ -32,6 +33,8 @@ const preview = reactive({
 const previewCodegen: Record<string, any> = ref([]);
 const previewCodeStr = ref('');
 const fileTreeOriginal = ref([] as any[]);
+
+const { copy } = useClipboard({ legacy: true, source: previewCodeStr });
 
 const openDialog = async (id: string) => {
   await getGenCodeFile(id);
@@ -167,6 +170,7 @@ defineExpose({
               icon="ant-design:copy-outlined"
               :size="25"
               class="copy-btn"
+              @click="copy(previewCodeStr)"
             />
           </ElTabPane>
           <CodeEditor

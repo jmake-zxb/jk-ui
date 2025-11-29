@@ -10,6 +10,12 @@ export function fetchList(query: any) {
   });
 }
 
+export function fetchPage(query: any) {
+  return requestClient.get('/admin/dict/page', {
+    params: query,
+  });
+}
+
 export function fetchItemList(query: any) {
   return requestClient.get('/admin/dict/item/page', {
     params: query,
@@ -17,9 +23,7 @@ export function fetchItemList(query: any) {
 }
 
 export function addItemObj(obj: any) {
-  return requestClient.post('/admin/dict/item', {
-    data: obj,
-  });
+  return requestClient.post('/admin/dict/item', obj);
 }
 
 export function getItemObj(id: string) {
@@ -37,15 +41,11 @@ export function delItemObj(id: string) {
 }
 
 export function putItemObj(obj: any) {
-  return requestClient.put('/admin/dict/item', {
-    data: obj,
-  });
+  return requestClient.put('/admin/dict/item', obj);
 }
 
 export function addObj(obj: any) {
-  return requestClient.post('/admin/dict', {
-    data: obj,
-  });
+  return requestClient.post('/admin/dict', obj);
 }
 
 export function getObj(id: string) {
@@ -65,9 +65,7 @@ export function delObj(ids: object) {
 }
 
 export function putObj(obj: any) {
-  return requestClient.put('/admin/dict', {
-    data: obj,
-  });
+  return requestClient.put('/admin/dict', obj);
 }
 
 export function refreshCache() {
@@ -84,8 +82,8 @@ export function validateDictType(
     return callback();
   }
 
-  getObjDetails({ dictType: value }).then((response) => {
-    const result = response.data;
+  getObjDetails(value).then((data) => {
+    const result = data;
     if (result === null) {
       callback();
     } else {

@@ -180,3 +180,21 @@ export function handleTree(
   });
   return treeData === '' ? data : treeData;
 }
+
+export function getQueryString(url: string, paraName: string) {
+  const arrObj = url.split('?');
+  if (arrObj.length > 1 && arrObj[1]) {
+    const arrPara = arrObj[1].split('&');
+    let arr;
+    for (const element of arrPara) {
+      arr = element.split('=');
+      // eslint-disable-next-line eqeqeq
+      if (arr != null && arr[0] == paraName) {
+        return arr[1];
+      }
+    }
+    return '';
+  } else {
+    return '';
+  }
+}

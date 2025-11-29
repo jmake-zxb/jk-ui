@@ -4,6 +4,7 @@ import type { VbenFormProps, VbenFormSchema } from '@vben/common-ui';
 import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
 
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { CircumEdit, WeuiDelete } from '@vben/icons';
@@ -14,9 +15,9 @@ import { ElButton, ElMessage } from 'element-plus';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { list } from '#/api/gen/datasource';
 import { fetchList, useSyncTableApi, useTableApi } from '#/api/gen/table';
-import { router } from '#/router';
 import { validateNull } from '#/utils/validate';
 
+const router = useRouter();
 // 多选变量
 const datasourceList: any = ref([]);
 

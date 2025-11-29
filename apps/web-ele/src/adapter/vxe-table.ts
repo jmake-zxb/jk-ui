@@ -1,6 +1,12 @@
 import type { VxeTableGridOptions } from '@vben/plugins/vxe-table';
 
+import { h } from 'vue';
+
 import { setupVbenVxeTable, useVbenVxeGrid } from '@vben/plugins/vxe-table';
+
+import { ElImage } from 'element-plus';
+
+import DictTag from '#/component/DictTag/index.vue';
 
 import { useVbenForm } from './form';
 
@@ -8,6 +14,7 @@ setupVbenVxeTable({
   configVxeTable: (vxeUI) => {
     vxeUI.setConfig({
       grid: {
+        keepSource: false,
         border: true,
         columnConfig: {
           resizable: true,
@@ -40,6 +47,43 @@ setupVbenVxeTable({
         showOverflow: true,
         size: 'small',
       } as VxeTableGridOptions,
+    });
+
+    /**
+     * 解决vxeTable在热更新时可能会出错的问题
+     */
+    vxeUI.renderer.forEach((_item, key) => {
+      if (key.startsWith('Cell')) {
+        vxeUI.renderer.delete(key);
+      }
+    });
+
+    // 表格配置项可以用 cellRender: { name: 'CellImage' },
+    vxeUI.renderer.add('CellImage', {
+      renderTableDefault(renderOpts, params) {
+        const { column, row } = params;
+        const { props } = renderOpts;
+        return h(ElImage, {
+          src: row[column.field],
+          lazy: true,
+          loading: 'lazy',
+          previewSrcList: [row[column.field]],
+          previewTeleported: true,
+          style: { width: '50px', height: '50px' },
+          ...props,
+        });
+      },
+    });
+
+    vxeUI.renderer.add('CellDictTag', {
+      renderTableDefault(renderOpts, params) {
+        const { column, row } = params;
+        const { props } = renderOpts;
+        return h(DictTag, {
+          value: row[column.field],
+          options: props?.options || [],
+        });
+      },
     });
 
     // 创建一个简单的工具栏-右侧工具渲染

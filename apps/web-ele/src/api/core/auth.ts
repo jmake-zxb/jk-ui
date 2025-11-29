@@ -67,6 +67,7 @@ export async function loginApi(data: AuthApi.LoginParams) {
         'Content-Type': FORM_CONTENT_TYPE,
         Authorization: basicAuth,
       },
+      responseReturn: 'body',
     },
   );
 }
