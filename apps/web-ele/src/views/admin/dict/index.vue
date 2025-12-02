@@ -55,6 +55,7 @@ const formOptions: VbenFormProps = {
   resetButtonOptions: {
     show: false,
   },
+  wrapperClass: 'grid-cols-1 md:grid-cols-2',
 };
 
 const gridOptions: VxeGridProps = {

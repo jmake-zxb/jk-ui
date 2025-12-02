@@ -30,6 +30,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function authLogin(
     params: Recordable<any>,
     onSuccess?: () => Promise<void> | void,
+    onError?: () => Promise<void> | void,
   ) {
     // 异步处理用户登录操作并获取 accessToken
     let userInfo: BasicUserInfo | null = null;
@@ -60,17 +61,17 @@ export const useAuthStore = defineStore('auth', () => {
             : await router.push(preferences.app.defaultHomePath);
         }
 
-        if (userInfo?.realName) {
+        if (userInfo?.username) {
           ElNotification({
-            message: `${$t('authentication.loginSuccessDesc')}:${userInfo?.realName}`,
+            message: `${$t('authentication.loginSuccessDesc')}:${userInfo?.username}`,
             title: $t('authentication.loginSuccess'),
             type: 'success',
           });
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      onError?.();
       console.error('authLogin error:', error);
-      throw error;
     } finally {
       loginLoading.value = false;
     }
@@ -89,6 +90,11 @@ export const useAuthStore = defineStore('auth', () => {
     resetAllStores();
     accessStore.setLoginExpired(false);
 
+    // 如果本来就是登录页就无需回调
+    if (router.currentRoute.value.fullPath.includes(LOGIN_PATH)) {
+      return;
+    }
+
     // 回登录页带上当前路由地址
     await router.replace({
       path: LOGIN_PATH,
@@ -101,6 +107,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchUserInfo() {
+    const accessToken = accessStore.accessToken;
+    if (!accessToken) return {} as BasicUserInfo;
     let userInfo: BasicUserInfo | null = null;
     userInfo = await getUserInfoApi();
     userStore.setUserInfo(userInfo);

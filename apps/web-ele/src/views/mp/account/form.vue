@@ -131,20 +131,20 @@ const [Form, FormApi] = useVbenForm({
 });
 
 // Modal定义
-const [Modal, ModalApi] = useVbenModal({
+const [Modal, modalApi] = useVbenModal({
   draggable: true,
   closeOnClickModal: false,
   closeOnPressEscape: false,
   async onCancel() {
     state.dataForm.id = '';
     await FormApi.resetForm();
-    ModalApi.close();
+    modalApi.close();
   },
   onConfirm() {
     FormApi.validateAndSubmitForm().then(async (values) => {
       if (!values) return;
       try {
-        ModalApi.setState({ loading: true });
+        await modalApi.setState({ loading: true });
         const form = Object.assign(state.dataForm, values);
         state.dataForm.id ? await putObj(form) : await addObj(form);
         ElMessage.success(
@@ -154,18 +154,17 @@ const [Modal, ModalApi] = useVbenModal({
               : 'page.common.addSuccessText',
           ),
         );
-        ModalApi.setState({ loading: false });
-        ModalApi.close();
+        modalApi.close();
         emit('refresh');
       } finally {
-        ModalApi.setState({ loading: false });
+        modalApi.setState({ loading: false });
       }
     });
   },
   async onOpenChange(isOpen) {
     if (isOpen) {
-      const dat = ModalApi.getData<Record<string, any>>();
-      ModalApi.setState({
+      const dat = modalApi.getData<Record<string, any>>();
+      modalApi.setState({
         title: $t(dat.type),
       });
       if (dat?.data?.id) {

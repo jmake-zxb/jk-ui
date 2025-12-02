@@ -89,6 +89,6 @@ const formSchema = computed((): VbenFormSchema[] => {
     :show-register="false"
     :show-qrcode-login="false"
     :show-code-login="false"
-    @submit="authStore.authLogin"
+    @submit="(values) => authStore.authLogin(values, undefined, refreshCaptcha)"
   />
 </template>

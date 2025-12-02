@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { VbenFormSchema } from '#/adapter/form';
 
-import { computed, nextTick, ref } from 'vue';
+import { computed, h, nextTick, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
@@ -27,6 +27,8 @@ const getsysOauthClientDetailsData = (id: string) => {
   // 获取数据
   getObj(id).then((res: any) => {
     const formData = Object.assign(pageData.value, res);
+    formData.additionalInformation =
+      JSON.parse(formData.additionalInformation) || {};
     FormApi.setValues(formData || {});
   });
 };
@@ -44,6 +46,7 @@ const [Modal, modalApi] = useVbenModal({
       try {
         modalApi.setState({ loading: true });
         const form = Object.assign(pageData.value, values);
+        form.additionalInformation = JSON.stringify(form.additionalInformation);
         pageData.value.id ? await putObj(form) : await addObj(form);
         ElMessage.success(
           $t(
@@ -205,7 +208,6 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     fieldName: 'authorities',
     // 界面显示的label
     label: $t('client.client.authorities'),
-    rules: 'required',
   },
   {
     // 组件需要在 #/adapter.ts内注册，并加上类型
@@ -226,15 +228,60 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     label: $t('client.client.webServerRedirectUri'),
     rules: z.string().url('请输入有效的URL'),
   },
+  {
+    component: 'Divider',
+    componentProps: {
+      contentPosition: 'left',
+    },
+    fieldName: '_divider',
+    hideLabel: true,
+    renderComponentContent: () => {
+      return {
+        default: () => h('div', $t('client.client.divider1Tip')),
+      };
+    },
+  },
+  {
+    // 组件需要在 #/adapter.ts内注册，并加上类型
+    component: 'InputNumber',
+    // 对应组件的参数
+    componentProps: {
+      placeholder: $t('menu.sysmenu.inputNameTip'),
+    },
+    controlClass: '!w-[130px]',
+    // 字段名
+    fieldName: 'additionalInformation.client_session_limit',
+    // 界面显示的label
+    label: $t('client.client.onlineQuantity'),
+    defaultValue: 0,
+    description: '0为不限制登录数量',
+    rules: 'required',
+  },
+  {
+    component: 'RadioGroup',
+    componentProps: {
+      options: [
+        { label: '关', value: '0' },
+        { label: '开', value: '1' },
+      ],
+    },
+    defaultValue: '1',
+    fieldName: 'additionalInformation.captcha_flag',
+    label: $t('client.client.captchaFlag'),
+    rules: 'selectRequired',
+  },
 ]);
 
 const [Form, FormApi] = useVbenForm({
   showDefaultActions: false,
   schema: formSchema.value,
+  commonConfig: {
+    labelWidth: 130,
+  },
 });
 </script>
 <template>
-  <Modal>
+  <Modal class="w-[600px]">
     <Form />
   </Modal>
 </template>

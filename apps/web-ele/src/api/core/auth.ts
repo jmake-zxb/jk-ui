@@ -1,9 +1,7 @@
 import type { BasicUserInfo } from '#/api/core/user';
 
-import { useAccessStore } from '@vben/stores';
-
 import { baseRequestClient, requestClient } from '#/api/request';
-import { encryption } from '#/utils/other';
+import { adaptationUrl, encryption } from '#/utils/other';
 
 export namespace AuthApi {
   /** 登录接口参数 */
@@ -51,15 +49,15 @@ const FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded';
  */
 export async function loginApi(data: AuthApi.LoginParams) {
   const basicAuth = `Basic ${window.btoa(import.meta.env.VITE_OAUTH2_PASSWORD_CLIENT)}`;
-  const accessStore = useAccessStore();
-  accessStore.setAccessToken(basicAuth);
   let encPassword = data.password;
   // 密码加密
   if (import.meta.env.VITE_PWD_ENC_KEY) {
     encPassword = encryption(data.password, import.meta.env.VITE_PWD_ENC_KEY);
   }
-  return requestClient.post<AuthApi.LoginResult>(
-    '/auth/oauth2/token',
+  // 自动适配单体和微服务架构不同的URL
+  const url = adaptationUrl('/auth/oauth2/token') || '';
+  return requestClient.post(
+    url,
     { ...data, password: encPassword, grant_type: 'password' },
     {
       headers: {
@@ -76,12 +74,9 @@ export async function loginApi(data: AuthApi.LoginParams) {
  * 刷新accessToken
  */
 export async function refreshTokenApi() {
-  return baseRequestClient.post<AuthApi.RefreshTokenResult>(
-    '/auth/oauth2/token',
-    {
-      withCredentials: true,
-    },
-  );
+  return baseRequestClient.post('/auth/oauth2/token', {
+    withCredentials: true,
+  });
 }
 
 /**

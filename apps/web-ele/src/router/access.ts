@@ -56,6 +56,9 @@ function setIFrameComponent(routes: any[]): void {
     if (route.meta?.isHide === true) {
       route.meta.hideInMenu = true;
     }
+    if (route?.meta && preferences.app.locale === 'en-US') {
+      route.meta.title = route?.meta.enName;
+    }
 
     // 递归处理子路由
     if (route.children && route.children.length > 0) {

@@ -21,7 +21,7 @@
     "tenantId": "所属租户",
     "captchaFlag": "验证码开关",
     "encFlag": "前端密码加密",
-    "onlineQuantity": "允许同时在线",
+    "onlineQuantity": "允许同时在线数量",
     "inputIdTip": "请输入ID",
     "inputClientIdTip": "请输入客户端id",
     "inputResourceIdsTip": "请输入",
