@@ -1,13 +1,13 @@
 <script setup lang="ts" name="query-tree">
 import { computed, onMounted, reactive, ref, unref } from 'vue';
 
-import { VbenIcon } from '@vben/common-ui';
-
+import { Fold, More } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
+  ElIcon,
   ElInput,
   ElMessage,
   ElTree,
@@ -160,7 +160,7 @@ defineExpose({
       </div>
       <div class="head-container-header-dropdown" v-if="showExpand">
         <ElDropdown :hide-on-click="false">
-          <VbenIcon icon="ant-design:more-outlined" />
+          <ElIcon><More /></ElIcon>
           <template #dropdown>
             <ElDropdownMenu>
               <ElDropdownItem>
@@ -170,7 +170,7 @@ defineExpose({
                   type="primary"
                   @click="toggleRowExpansionAll(isExpand ? false : true)"
                 >
-                  <VbenIcon icon="ant-design:align-left-outlined" />
+                  <ElIcon><Fold /></ElIcon>
                   {{ isExpand ? '折叠' : '展开' }}
                 </ElButton>
               </ElDropdownItem>

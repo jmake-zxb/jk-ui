@@ -2,63 +2,26 @@ import { acceptHMRUpdate, defineStore } from 'pinia';
 
 interface BasicUserInfo {
   [key: string]: any;
+  /**
+   * 头像
+   */
   avatar: string;
-  createTime: Date;
-  delFlag: string;
-  dept: Dept;
-  email: string;
-  giteeOpenId: string;
-  lockFlag: string;
-  name: string;
-  nickname: string;
-  oscOpenId?: any;
-  password?: any;
-  permissions: Array<string>;
-  phone: string;
-  postList: Array<PostList>;
-  qqOpenid?: any;
-  roleList: Array<RoleList>;
-  salt?: any;
-  updateTime: Date;
+  /**
+   * 用户昵称
+   */
+  realName: string;
+  /**
+   * 用户角色
+   */
+  roles?: string[];
+  /**
+   * 用户id
+   */
   userId: string;
+  /**
+   * 用户名
+   */
   username: string;
-  wxOpenid?: any;
-}
-
-interface Dept {
-  createBy: string;
-  createTime: Date;
-  delFlag: string;
-  deptId: string;
-  name: string;
-  parentId: string;
-  sortOrder: number;
-  updateBy: string;
-  updateTime: Date;
-}
-
-interface RoleList {
-  createBy?: any;
-  createTime: Date;
-  delFlag: string;
-  roleCode: string;
-  roleDesc: string;
-  roleId: string;
-  roleName: string;
-  updateBy?: any;
-  updateTime: Date;
-}
-interface PostList {
-  createBy?: any;
-  createTime: Date;
-  delFlag: string;
-  postCode: string;
-  postId: string;
-  postName: string;
-  postSort: number;
-  remark: string;
-  updateBy?: any;
-  updateTime: Date;
 }
 
 interface AccessState {

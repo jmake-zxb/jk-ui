@@ -42,13 +42,12 @@
   "dependencies": {
     "@vben-core/composables": "workspace:*",
     "@vben-core/icons": "workspace:*",
-    "@vben-core/shadcn-ui": "workspace:*",
     "@vben-core/shared": "workspace:*",
     "@vben-core/typings": "workspace:*",
     "@vueuse/core": "catalog:",
     "class-variance-authority": "catalog:",
     "lucide-vue-next": "catalog:",
-    "radix-vue": "catalog:",
+    "reka-ui": "catalog:",
     "vee-validate": "catalog:",
     "vue": "catalog:"
   }

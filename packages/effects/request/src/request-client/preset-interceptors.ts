@@ -60,9 +60,8 @@ export const authenticateResponseInterceptor = ({
   return {
     rejected: async (error) => {
       const { config, response } = error;
-      // 如果不是 401 424 错误，直接抛出异常
-      const allowedStatuses = [401, 424];
-      if (!allowedStatuses.includes(response?.status)) {
+      // 如果不是 401 错误，直接抛出异常
+      if (response?.status !== 401) {
         throw error;
       }
       // 判断是否启用了 refreshToken 功能
@@ -133,10 +132,10 @@ export const errorMessageResponseInterceptor = (
 
       let errorMessage = '';
       const status = error?.response?.status;
+
       switch (status) {
         case 400: {
-          errorMessage =
-            error?.response?.data?.msg || $t('ui.fallback.http.badRequest');
+          errorMessage = $t('ui.fallback.http.badRequest');
           break;
         }
         case 401: {
@@ -153,10 +152,6 @@ export const errorMessageResponseInterceptor = (
         }
         case 408: {
           errorMessage = $t('ui.fallback.http.requestTimeout');
-          break;
-        }
-        case 424: {
-          errorMessage = $t('ui.fallback.http.unauthorized');
           break;
         }
         default: {

@@ -1,7 +1,12 @@
 <script>
-import { VbenIcon, VbenIconButton } from '@vben/common-ui';
-
-import { ElTable, ElTableColumn, ElTooltip } from 'element-plus';
+import { Delete, Plus, Rank, Sort } from '@element-plus/icons-vue';
+import {
+  ElButton,
+  ElIcon,
+  ElTable,
+  ElTableColumn,
+  ElTooltip,
+} from 'element-plus';
 import Sortable from 'sortablejs';
 
 export default {
@@ -9,8 +14,12 @@ export default {
     ElTable,
     ElTableColumn,
     ElTooltip,
-    VbenIcon,
-    VbenIconButton,
+    ElButton,
+    ElIcon,
+    Plus,
+    Delete,
+    Rank,
+    Sort,
   },
   props: {
     /**
@@ -149,9 +158,9 @@ export default {
     >
       <ElTableColumn type="index" width="50" fixed="left">
         <template #header>
-          <VbenIconButton v-if="!hideAdd" variant="outline" @click="rowAdd">
-            <VbenIcon icon="ant-design:plus-outlined" />
-          </VbenIconButton>
+          <ElButton v-if="!hideAdd" type="text" @click="rowAdd">
+            <ElIcon><Plus /></ElIcon>
+          </ElButton>
           <ElTooltip v-else content="序号" placement="top"> # </ElTooltip>
         </template>
         <template #default="scope">
@@ -160,25 +169,25 @@ export default {
             :class="[{ 'form-table-handle-delete': !hideDelete }]"
           >
             <span>{{ scope.$index + 1 }}</span>
-            <VbenIconButton
+            <ElButton
               v-if="!hideDelete"
-              variant="outline"
+              type="text"
               @click="rowDel(scope.row, scope.$index)"
             >
-              <VbenIcon icon="ant-design:delete-outlined" />
-            </VbenIconButton>
+              <ElIcon><Delete /></ElIcon>
+            </ElButton>
           </div>
         </template>
       </ElTableColumn>
       <ElTableColumn label="" width="50" v-if="dragSort">
         <template #header>
           <ElTooltip content="拖动排序" placement="top">
-            <VbenIcon icon="ant-design:exclamation-circle-filled" />
+            <ElIcon><Rank /></ElIcon>
           </ElTooltip>
         </template>
         <template #default>
           <div class="move" style="cursor: move">
-            <VbenIcon icon="ant-design:sort-ascending-outlined" />
+            <ElIcon><Sort /></ElIcon>
           </div>
         </template>
       </ElTableColumn>

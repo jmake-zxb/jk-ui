@@ -5,6 +5,10 @@
       "path": "apps/web-ele",
     },
     {
+      "name": "@vben/docs",
+      "path": "docs",
+    },
+    {
       "name": "@vben/commitlint-config",
       "path": "internal/lint-configs/commitlint-config",
     },
@@ -139,6 +143,10 @@
     {
       "name": "@vben/utils",
       "path": "packages/utils",
+    },
+    {
+      "name": "@vben/playground",
+      "path": "playground",
     },
     {
       "name": "@vben/turbo-run",

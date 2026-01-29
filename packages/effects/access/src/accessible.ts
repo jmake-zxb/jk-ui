@@ -134,6 +134,7 @@ async function generateRoutes(
         });
       };
     }
+
     // 如果有redirect或者没有子路由，则直接返回
     if (route.redirect || !route.children || route.children.length === 0) {
       return route;

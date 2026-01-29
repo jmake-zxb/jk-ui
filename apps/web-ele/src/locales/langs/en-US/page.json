@@ -32,7 +32,8 @@
     "codeLogin": "Code Login",
     "qrcodeLogin": "Qr Code Login",
     "forgetPassword": "Forget Password",
-    "codeTip": "Please enter code"
+    "codeTip": "Please enter code",
+    "profile": "Profile"
   },
   "dashboard": {
     "title": "Dashboard",

@@ -4,12 +4,12 @@ import type { VbenFormProps } from '@vben/common-ui';
 import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
 import type { BasicUserInfo } from '#/api/core/user';
 
-import { computed, h, ref } from 'vue';
+import { computed, ref } from 'vue';
 
-import { confirm, Page, useVbenModal, VbenIcon } from '@vben/common-ui';
-import { CircumEdit, SolarFolderAdd, WeuiDelete } from '@vben/icons';
+import { confirm, Page, useVbenModal } from '@vben/common-ui';
 import { $t } from '@vben/locales';
 
+import { Delete, Edit, Operation, Plus } from '@element-plus/icons-vue';
 import { ElButton, ElMessage, ElTooltip } from 'element-plus';
 
 import { useDict } from '#/adapter/dict';
@@ -22,8 +22,6 @@ import ExtraPermessionModal from './permession.vue';
 
 const selectedRows = ref<any[]>([]);
 const { grant_types } = useDict('grant_types');
-
-const ControlOutlined = h(VbenIcon, { icon: 'ant-design:control-outlined' });
 
 const formOptions: VbenFormProps = {
   schema: [
@@ -164,7 +162,7 @@ const onOpenPermession = (row?: any) => {
       <template #toolbar-actions>
         <ElButton
           v-access:code="['sys_role_add']"
-          :icon="SolarFolderAdd"
+          :icon="Plus"
           type="primary"
           @click="onOpenAddMenu()"
         >
@@ -175,7 +173,7 @@ const onOpenPermession = (row?: any) => {
           v-access:code="['sys_user_del']"
           class="ml10"
           :disabled="multiple"
-          :icon="WeuiDelete"
+          :icon="Delete"
           type="primary"
           @click="
             handleDelete(
@@ -191,7 +189,7 @@ const onOpenPermession = (row?: any) => {
       </template>
       <template #action="{ row }">
         <ElButton
-          :icon="CircumEdit"
+          :icon="Edit"
           link
           type="primary"
           :disabled="row.roleId === '1'"
@@ -201,7 +199,7 @@ const onOpenPermession = (row?: any) => {
           {{ $t('page.common.editBtn') }}
         </ElButton>
         <ElButton
-          :icon="ControlOutlined"
+          :icon="Operation"
           @click="onOpenPermession(row)"
           link
           type="primary"
@@ -215,7 +213,7 @@ const onOpenPermession = (row?: any) => {
           placement="top"
         >
           <ElButton
-            :icon="WeuiDelete"
+            :icon="Delete"
             :disabled="row.roleId === '1'"
             @click="handleDelete([row.roleId])"
             link
