@@ -133,7 +133,6 @@ export const errorMessageResponseInterceptor = (
 
       let errorMessage = '';
       const status = error?.response?.status;
-
       switch (status) {
         case 400: {
           errorMessage =
@@ -158,12 +157,6 @@ export const errorMessageResponseInterceptor = (
         }
         case 424: {
           errorMessage = $t('ui.fallback.http.unauthorized');
-          break;
-        }
-        case 500: {
-          errorMessage =
-            error?.response?.data?.msg ||
-            $t('ui.fallback.http.internalServerError');
           break;
         }
         default: {

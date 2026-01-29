@@ -4,6 +4,7 @@
 import type { RequestClientOptions } from '@vben/request';
 
 import { useAppConfig } from '@vben/hooks';
+import { $t } from '@vben/locales';
 import { preferences } from '@vben/preferences';
 import {
   authenticateResponseInterceptor,
@@ -102,13 +103,17 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     errorMessageResponseInterceptor((msg: string, error) => {
       // 这里可以根据业务进行定制,你可以拿到 error 内的信息进行定制化处理，根据不同的 code 做不同的提示，而不是直接使用 message.error 提示 msg
       // 当前mock接口返回的错误字段是 error 或者 message
-      const responseData = error?.response?.data ?? {};
-      if (responseData?.code === 1) {
-        ElMessage.error(responseData?.msg || msg);
-      } else {
-        const errorMessage = responseData?.error ?? responseData?.message ?? '';
-        // 如果没有错误信息，则会根据状态码进行提示
-        ElMessage.error(errorMessage || msg);
+      const status = error?.response?.status;
+      switch (status) {
+        case 500: {
+          msg =
+            error?.response?.data?.msg ||
+            $t('ui.fallback.http.internalServerError');
+          break;
+        }
+      }
+      if (msg) {
+        ElMessage.error(msg);
       }
     }),
   );

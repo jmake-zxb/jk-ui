@@ -49,15 +49,6 @@ setupVbenVxeTable({
       } as VxeTableGridOptions,
     });
 
-    /**
-     * 解决vxeTable在热更新时可能会出错的问题
-     */
-    vxeUI.renderer.forEach((_item, key) => {
-      if (key.startsWith('Cell')) {
-        vxeUI.renderer.delete(key);
-      }
-    });
-
     // 表格配置项可以用 cellRender: { name: 'CellImage' },
     vxeUI.renderer.add('CellImage', {
       renderTableDefault(renderOpts, params) {

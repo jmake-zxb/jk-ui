@@ -128,7 +128,7 @@ const values = computed(() => {
       <div
         v-for="(label, index) in labels"
         :key="index"
-        class="relative flex flex-grow !flex-row flex-col items-center rounded-[10px] border-[1px] border-gray-200 bg-white bg-clip-border shadow-md shadow-[#F3F3F3] hover:scale-105 hover:shadow-lg dark:border-[#ffffff33] dark:!bg-[#1d1d1d] dark:text-white dark:shadow-none"
+        class="relative flex flex-grow !flex-row items-center rounded-[10px] border-[1px] border-gray-200 bg-white bg-clip-border shadow-md shadow-[#F3F3F3] hover:scale-105 hover:shadow-lg dark:border-[#ffffff33] dark:!bg-[#1d1d1d] dark:text-white dark:shadow-none"
       >
         <div class="ml-[18px] flex h-[90px] w-auto flex-row items-center">
           <div class="bg-lightPrimary dark:bg-navy-700 rounded-full p-3">
@@ -163,19 +163,13 @@ const values = computed(() => {
     </div>
 
     <!-- 图表区域 -->
-    <div class="mt-4 sm:flex">
-      <ElCard
-        class="flex-1 !border-none !bg-transparent sm:mr-4 dark:!bg-transparent"
-        shadow="never"
-      >
+    <div class="mt-4 gap-5 p-4 sm:flex">
+      <ElCard class="flex-1 !border-none hover:shadow-lg" shadow="never">
         <div class="mb-4 font-semibold dark:text-gray-200">命令统计</div>
         <EchartsUI ref="commandChartRef" class="h-[30vh]" />
       </ElCard>
 
-      <ElCard
-        class="flex-1 !border-none !bg-transparent dark:!bg-transparent"
-        shadow="never"
-      >
+      <ElCard class="flex-1 !border-none hover:shadow-lg" shadow="never">
         <div class="mb-4 font-semibold dark:text-gray-200">内存信息</div>
         <EchartsUI ref="memoryChartRef" class="h-[30vh]" />
       </ElCard>

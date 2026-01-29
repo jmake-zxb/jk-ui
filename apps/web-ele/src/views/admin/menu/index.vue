@@ -3,7 +3,7 @@ import type { VbenFormProps } from '@vben/common-ui';
 
 import type { VxeGridProps } from '#/adapter/vxe-table';
 
-import { ref } from 'vue';
+import { h, markRaw, nextTick, ref } from 'vue';
 
 import { confirm, Page, useVbenModal, VbenIcon } from '@vben/common-ui';
 import { CircumEdit, SolarFolderAdd, WeuiDelete } from '@vben/icons';
@@ -15,6 +15,18 @@ import { delObj, pageList } from '#/api/core/menu';
 import { $t } from '#/locales';
 
 import ExtraModal from './form.vue';
+
+interface MenuRow {
+  id: string;
+  parentId?: string;
+  menuType: string;
+  children?: MenuRow[];
+  icon: string;
+  meta?: {
+    isKeepAlive?: boolean;
+  };
+  [key: string]: any;
+}
 
 const isExpand = ref(false);
 
@@ -39,8 +51,13 @@ const formOptions: VbenFormProps = {
   submitOnEnter: true,
 };
 
-const gridOptions: VxeGridProps = {
-  stripe: false,
+const MENU_TYPE_MAP: Record<string, { text: string; type: string }> = {
+  '0': { text: '左菜单', type: 'info' },
+  '2': { text: '顶菜单', type: 'info' },
+  '1': { text: '按钮', type: 'success' },
+};
+
+const gridOptions: VxeGridProps<MenuRow> = {
   columns: [
     { field: 'name', title: $t('menu.sysmenu.name'), treeNode: true },
     { field: 'sortOrder', title: $t('menu.sysmenu.sortOrder') },
@@ -54,7 +71,23 @@ const gridOptions: VxeGridProps = {
     {
       field: 'menuType',
       title: $t('menu.sysmenu.menuType'),
-      slots: { default: 'menuType' },
+      slots: {
+        // 使用 default 函数代替模板插槽，减少 Vue 指令解析开销
+        default: (params: any) => {
+          const { row } = params;
+          const config = MENU_TYPE_MAP[row.menuType] || {
+            text: '未知',
+            type: 'info',
+          };
+          return [
+            h(
+              ElTag,
+              { type: config.type as any, size: 'small' },
+              () => config.text,
+            ),
+          ];
+        },
+      },
     },
     {
       field: 'keepAlive',
@@ -64,7 +97,6 @@ const gridOptions: VxeGridProps = {
     { field: 'permission', title: $t('menu.sysmenu.permission') },
     {
       field: 'action',
-      fixed: 'right',
       slots: { default: 'action' },
       title: $t('page.common.action'),
       width: 210,
@@ -72,24 +104,23 @@ const gridOptions: VxeGridProps = {
   ],
   treeConfig: {
     childrenField: 'children',
+    hasChildField: 'children',
+    rowField: 'id',
+    parentField: 'parentId',
+    reserve: true,
   },
-  height: 'auto',
   scrollY: {
     enabled: true,
-    gt: 0,
+    gt: 20,
   },
-  showOverflow: true,
   pagerConfig: {
     enabled: false,
   },
   proxyConfig: {
     ajax: {
-      query: (_e: any, formValues: any) => {
-        return new Promise<object>((resolve) => {
-          pageList(formValues || {}).then((res) => {
-            resolve({ items: res });
-          });
-        });
+      query: async (_e: any, formValues: any) => {
+        const res = await pageList(formValues || {});
+        return { items: markRaw(res) };
       },
     },
   },
@@ -102,10 +133,9 @@ const gridOptions: VxeGridProps = {
   },
 };
 
-const [Grid, GridApi] = useVbenVxeGrid({ formOptions, gridOptions });
+const [Grid, GridApi] = useVbenVxeGrid<MenuRow>({ formOptions, gridOptions });
 
 const [FormModal, formModalApi] = useVbenModal({
-  // 连接抽离的组件
   connectedComponent: ExtraModal,
 });
 
@@ -140,9 +170,16 @@ const handleDelete = (id: string) => {
 // 展开折叠树
 const handleExpand = async () => {
   isExpand.value = !isExpand.value;
-  isExpand.value
-    ? await GridApi?.grid.setAllTreeExpand(isExpand.value)
-    : await GridApi?.grid.clearTreeExpand();
+  const grid = GridApi?.grid;
+  if (!grid) return;
+  GridApi.setLoading(true);
+  await nextTick();
+  setTimeout(async () => {
+    await (isExpand.value
+      ? grid.setAllTreeExpand(true)
+      : grid.clearTreeExpand());
+    GridApi.setLoading(false);
+  }, 150);
 };
 </script>
 
@@ -162,16 +199,11 @@ const handleExpand = async () => {
           {{ $t('page.common.expandBtn') }}
         </ElButton>
       </template>
-      <template #menuType="{ row }">
-        <ElTag v-if="row.menuType === '0'">左菜单</ElTag>
-        <ElTag v-if="row.menuType === '2'">顶菜单</ElTag>
-        <ElTag type="success" v-if="row.menuType === '1'">按钮</ElTag>
-      </template>
       <template #icon="{ row }">
         <VbenIcon v-if="row.icon" :icon="row.icon" fallback />
       </template>
       <template #keepAlive="{ row }">
-        <ElTag v-if="row.meta.isKeepAlive">开启</ElTag>
+        <ElTag v-if="row?.meta?.isKeepAlive">开启</ElTag>
         <ElTag type="info" v-else>关闭</ElTag>
       </template>
       <template #action="{ row }">

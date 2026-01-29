@@ -12,4 +12,7 @@ export const overridesPreferences = defineOverridesPreferences({
     accessMode: 'mixed',
     loginExpiredMode: 'modal',
   },
+  logo: {
+    source: 'https://hongzhitech.com/images/logo_03.png',
+  },
 });
