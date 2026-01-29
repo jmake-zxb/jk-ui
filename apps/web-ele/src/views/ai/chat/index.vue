@@ -387,24 +387,26 @@ onMounted(() => {
 }
 
 .header {
-  height: 50px;
-  border-bottom: 1px solid #e5e6eb;
-  background: #fff;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
+  height: 50px;
   padding: 0 20px;
-  flex-shrink: 0;
+  background: #fff;
+  border-bottom: 1px solid #e5e6eb;
 
   .title {
     font-weight: 600;
     color: #1d2129;
   }
+
   .text-btn {
-    border: none;
-    background: none;
     color: #86909c;
     cursor: pointer;
+    background: none;
+    border: none;
+
     &:hover {
       color: #409eff;
     }
@@ -414,14 +416,15 @@ onMounted(() => {
 .message-area {
   flex: 1;
   padding: 20px 16px;
+
   /* ElABubbleList 会自动处理滚动，这里不需要 overflow */
 }
 
 .input-area {
+  flex-shrink: 0;
+  padding: 16px 20px;
   background: #fff;
   border: 1px solid #eee;
-  padding: 16px 20px;
-  flex-shrink: 0;
   border-radius: 4px;
 }
 
@@ -434,13 +437,16 @@ onMounted(() => {
       width: 6px;
       height: 6px;
     }
+
     &::-webkit-scrollbar-thumb {
+      background-color: rgb(144 147 153 / 30%);
       border-radius: 6px;
-      background-color: rgba(144, 147, 153, 0.3);
+
       &:hover {
-        background-color: rgba(144, 147, 153, 0.5);
+        background-color: rgb(144 147 153 / 50%);
       }
     }
+
     &::-webkit-scrollbar-track {
       background-color: transparent;
     }
@@ -449,18 +455,19 @@ onMounted(() => {
 
 /* 头像微调 */
 .avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  width: 32px;
+  height: 32px;
   margin-top: 2px;
+  color: #fff;
+  border-radius: 50%;
 
   &.user {
     background: #409eff;
   }
+
   &.ai {
     background: #00b42a;
   }
@@ -482,18 +489,22 @@ onMounted(() => {
   &:hover {
     opacity: 1;
   }
+
   .action-btn {
-    cursor: pointer;
     font-size: 14px;
+    cursor: pointer;
+
     &:hover {
       transform: scale(1.1);
     }
   }
 }
+
 :deep(.el-ai-bubble.el-ai-bubble-end .el-ai-bubble__content) {
-  margin-bottom: 25px;
   margin-top: 25px;
+  margin-bottom: 25px;
 }
+
 .footer-wrapper {
   display: flex;
   flex-direction: column;
@@ -503,16 +514,16 @@ onMounted(() => {
 
 /* 引用区域容器 */
 .sources-container {
-  margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed #e5e6eb;
+  margin-top: 8px;
   font-size: 12px;
+  border-top: 1px dashed #e5e6eb;
 }
 
 .sources-title {
-  margin: 0 0 6px 0;
-  color: #86909c;
+  margin: 0 0 6px;
   font-weight: 500;
+  color: #86909c;
 }
 
 .sources-list {
@@ -523,12 +534,12 @@ onMounted(() => {
 
 /* 单个引用卡片 */
 .source-card {
-  background: #f7f8fa;
-  border-radius: 4px;
   padding: 6px 10px;
-  border: 1px solid #eee;
-  transition: all 0.2s;
   cursor: pointer;
+  background: #f7f8fa;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  transition: all 0.2s;
 
   &:hover {
     background: #f2f3f5;
@@ -538,11 +549,11 @@ onMounted(() => {
 
 .source-header {
   display: flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
   margin-bottom: 2px;
-  color: #1d2129;
   font-weight: 500;
+  color: #1d2129;
 
   .filename {
     flex: 1;
@@ -552,23 +563,23 @@ onMounted(() => {
   }
 
   .score {
+    padding: 1px 4px;
     font-size: 10px;
     color: #00b42a;
-    background: rgba(0, 180, 42, 0.1);
-    padding: 1px 4px;
+    background: rgb(0 180 42 / 10%);
     border-radius: 2px;
   }
 }
 
 .source-text {
-  color: #4e5969;
-  line-height: 1.4;
-  font-size: 11px;
   /* 限制行数 */
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #4e5969;
+  -webkit-box-orient: vertical;
 }
 
 /* 调整原有按钮位置 */

@@ -486,26 +486,31 @@ watch(
   line-height: 20px;
   color: var(--el-text-color-secondary);
 }
+
 .el-upload__text {
   .hover {
     color: var(--el-color-primary);
     cursor: pointer;
+
     &:hover {
       color: var(--el-color-primary-light-3);
     }
   }
 }
+
 .file-List-card {
   :deep(.el-card__body) {
     padding: 10px;
   }
+
   p {
     margin: 0;
   }
 }
+
 .lighter {
   font-size: 12px;
-  color: #666;
   line-height: 1.5;
+  color: #666;
 }
 </style>

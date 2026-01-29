@@ -126,26 +126,28 @@ const onOpenNodeAdd = (row?: any) => {
   overflow: hidden;
   background-color: hsl(var(--card));
   border-radius: calc(var(--radius) - 2px);
+
   :deep(.el-divider--horizontal) {
     margin: 12px 0;
   }
 }
 
 .node-item {
+  box-sizing: border-box;
   padding: 10px;
+  cursor: pointer;
   border-radius: var(--radius);
   transition: all 0.3s;
-  cursor: pointer;
-  box-sizing: border-box;
+
   &:hover {
-    background-color: hsl(var(--primary) / 15%);
     color: hsl(var(--primary));
+    background-color: hsl(var(--primary) / 15%);
   }
 }
 
 .is-active {
-  background-color: hsl(var(--primary) / 15%);
   color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 15%);
 }
 
 .rw-tabs {
@@ -154,8 +156,9 @@ const onOpenNodeAdd = (row?: any) => {
 
 .rw-tabs :deep(.el-tabs__content) {
   display: flex;
-  height: 100%;
   width: 100%;
+  height: 100%;
+
   .el-tab-pane {
     width: 100%;
   }
@@ -163,10 +166,11 @@ const onOpenNodeAdd = (row?: any) => {
 
 .rw-tabs :deep(.el-tabs__header) {
   padding: 5px 16px;
-  border-radius: var(--radius);
   background-color: hsl(var(--card));
+  border-radius: var(--radius);
 }
-.rw-tabs :deep(.el-tabs__nav-wrap:after) {
+
+.rw-tabs :deep(.el-tabs__nav-wrap::after) {
   display: none;
 }
 </style>
