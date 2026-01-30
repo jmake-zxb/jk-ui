@@ -45,7 +45,7 @@
     "codemirror": "^6.0.2",
     "crypto-js": "^4.2.0",
     "dayjs": "catalog:",
-    "element-ai-vue": "^0.1.1",
+    "element-ai-vue": "^0.1.2",
     "element-plus": "catalog:",
     "pinia": "catalog:",
     "sortablejs": "catalog:",
