@@ -1,6 +1,10 @@
 {
   "folders": [
     {
+      "name": "@vben/web-antdv-next",
+      "path": "apps/web-antdv-next",
+    },
+    {
       "name": "@vben/web-ele",
       "path": "apps/web-ele",
     },
