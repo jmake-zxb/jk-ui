@@ -13,21 +13,19 @@ packages:
   - docs
   - playground
 
-overrides:
-  '@ast-grep/napi': 'catalog:'
-  '@ctrl/tinycolor': 'catalog:'
-  clsx: 'catalog:'
-  esbuild: 'catalog:'
-  jiti: 'catalog:'
-  pinia: 'catalog:'
-  vue: 'catalog:'
-
 catalog:
   '@ast-grep/napi': ^0.39.9
   '@changesets/changelog-github': ^0.5.2
   '@changesets/cli': ^2.29.8
   '@changesets/git': ^3.0.4
   '@clack/prompts': ^0.11.0
+  '@codemirror/commands': ^6.10.1
+  '@codemirror/lang-java': ^6.0.2
+  '@codemirror/lang-javascript': ^6.2.4
+  '@codemirror/lang-json': ^6.0.2
+  '@codemirror/state': ^6.5.4
+  '@codemirror/theme-one-dark': ^6.1.3
+  '@codemirror/view': ^6.39.12
   '@commitlint/cli': ^19.8.1
   '@commitlint/config-conventional': ^19.8.1
   '@ctrl/tinycolor': ^4.2.0
@@ -83,9 +81,11 @@ catalog:
   circular-dependency-scanner: ^2.3.0
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
+  codemirror: 'catalog:'
   commitlint-plugin-function-rules: ^4.3.1
   consola: ^3.4.2
   cross-env: ^10.1.0
+  crypto-js: ^4.2.0
   cspell: ^9.6.2
   cssnano: ^7.1.2
   cz-git: ^1.12.0
@@ -95,6 +95,7 @@ catalog:
   depcheck: ^1.4.7
   dotenv: ^16.6.1
   echarts: ^6.0.0
+  element-ai-vue: ^0.1.3
   element-plus: ^2.13.1
   es-toolkit: ^1.44.0
   esbuild: ^0.25.12
@@ -159,6 +160,7 @@ catalog:
   sass: ^1.97.3
   secure-ls: ^2.0.0
   sortablejs: ^1.15.6
+  spark-md5: ^3.0.2
   stylelint: ^16.26.1
   stylelint-config-recess-order: ^7.6.0
   stylelint-config-recommended: ^17.0.0
@@ -202,3 +204,12 @@ catalog:
   yaml-eslint-parser: ^1.3.2
   zod: ^3.25.76
   zod-defaults: 0.1.3
+
+overrides:
+  '@ast-grep/napi': 'catalog:'
+  '@ctrl/tinycolor': 'catalog:'
+  clsx: 'catalog:'
+  esbuild: 'catalog:'
+  jiti: 'catalog:'
+  pinia: 'catalog:'
+  vue: 'catalog:'

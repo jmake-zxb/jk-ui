@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useAppConfig } from '@vben/hooks';
+import { usePreferences } from '@vben/preferences';
 import { useAccessStore } from '@vben/stores';
 
 import {
   Avatar,
   ChatDotRound,
   CopyDocument,
+  Delete,
   Document,
+  MagicStick,
   Refresh,
+  VideoPause,
 } from '@element-plus/icons-vue';
 import {
   ElABubble,
@@ -19,35 +23,58 @@ import {
   ElAMarkdown,
   ElASender,
 } from 'element-ai-vue';
-import { ElIcon, ElMessage, ElTooltip } from 'element-plus';
+import { ElButton, ElIcon, ElMessage, ElTag, ElTooltip } from 'element-plus';
 
 import { fetchList } from '#/api/ai/chat';
 import { adaptationUrl } from '#/utils/other';
 
 // --- 类型定义 ---
+interface SourceItem {
+  id: string;
+  score: number;
+  metadata?: {
+    filename?: string;
+    title?: string;
+  };
+  content?: string;
+}
+
 interface ChatItem {
   id: string;
   content: string;
   placement: 'end' | 'start';
-  // 根据文档优化 variant 类型
   variant: 'borderless' | 'filled' | 'outlined' | 'shadow';
   isMarkdown: boolean;
   typing: boolean;
   loading: boolean;
-  sources?: Array<{
-    id: string;
-    score: number;
-  }>;
+  sources?: Array<SourceItem>;
+  error?: boolean;
 }
 
 // --- 状态 ---
 const isReady = ref(false);
 const senderRef = ref<InstanceType<typeof ElASender> | null>(null);
-
 const chatListRef = ref<InstanceType<typeof ElABubbleList> | null>(null);
+
 const inputContent = ref('');
-const loading = ref(false); // 全局 loading 控制输入框
+const loading = ref(false);
 const messageList = ref<ChatItem[]>([]);
+const abortController = ref<AbortController | null>(null);
+
+// [核心优化] 字符缓冲队列 & 动画ID
+let charQueue: string[] = [];
+let animationFrameId: null | number = null;
+
+const { isDark } = usePreferences();
+const accessStore = useAccessStore();
+const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+
+const suggestions = [
+  '维修资金的使用流程是什么？',
+  '如何查询维修资金余额？',
+  '紧急情况下如何使用维修资金？',
+  '新房维修资金的缴纳标准是多少？',
+];
 
 const setChatListRef = (el: any) => {
   chatListRef.value = el;
@@ -56,167 +83,246 @@ const setChatListRef = (el: any) => {
 // --- 逻辑方法 ---
 
 function formatToken(token: null | string) {
-  return token ? `Bearer ${token}` : null;
+  return token ? `Bearer ${token}` : '';
+}
+
+/**
+ * 停止生成
+ */
+function stopGenerate() {
+  // 1. 中断网络
+  if (abortController.value) {
+    abortController.value.abort();
+    abortController.value = null;
+  }
+
+  // 2. [关键] 停止动画并清空队列，防止停止后还在继续打字
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+  charQueue = [];
+
+  loading.value = false;
+
+  // 3. 更新 UI
+  const lastMsg = messageList.value[messageList.value.length - 1];
+  if (lastMsg && (lastMsg.loading || lastMsg.typing)) {
+    lastMsg.loading = false;
+    lastMsg.typing = false;
+    lastMsg.content += '\n\n*(用户已停止生成)*';
+  }
 }
 
 /**
  * 发送消息处理
- * ElASender 的 @send 事件会直接把输入内容作为参数传出来
  */
 async function handleSend(content: string) {
   let question = content.trim();
-  if (!question || loading.value) return;
+  if (!question) return;
+
+  if (loading.value) stopGenerate();
 
   loading.value = true;
-
   question = question.replaceAll('\n', '\n\n');
 
-  // 1. 添加用户消息
+  // 用户消息
   messageList.value.push({
     id: `user_${Date.now()}`,
     content: question,
     placement: 'end',
-    variant: 'filled', // 用户消息通常用填充色
+    variant: 'filled',
     isMarkdown: true,
     typing: false,
     loading: false,
   });
 
-  // 清空输入框 (v-model)
   inputContent.value = '';
+  scrollToBottom();
 
-  // 2. 添加 AI 占位消息
+  await requestAI(question);
+}
+
+/**
+ * 封装请求逻辑
+ */
+async function requestAI(question: string) {
+  // AI 占位消息
   messageList.value.push({
     id: `ai_${Date.now()}`,
-    content: '',
+    content: '', // 初始为空，全靠动画填充
     placement: 'start',
-    variant: 'filled', // AI 消息推荐无边框或 shadow，更像文档流
+    variant: 'filled',
     isMarkdown: true,
-    typing: false, // 开启打字机效果
-    loading: true, // 初始显示 Loading 状态
+    typing: true,
+    loading: true,
   });
 
   const aiMsgIndex = messageList.value.length - 1;
+  scrollToBottom();
+
+  abortController.value = new AbortController();
 
   try {
-    const accessStore = useAccessStore();
-    const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
     const response = await fetch(
       `${apiURL}${adaptationUrl('/ai/api/chat/stream')}`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: formatToken(accessStore.accessToken) as string,
+          Authorization: formatToken(accessStore.accessToken),
         },
         body: JSON.stringify({ content: question }),
+        signal: abortController.value.signal,
       },
     );
 
     if (messageList.value[aiMsgIndex]) {
       messageList.value[aiMsgIndex].loading = false;
       if (!response.body) throw new Error('No body');
+
+      // 开始流式处理
       await processStream(response.body, aiMsgIndex);
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') return;
     console.error(error);
     if (messageList.value[aiMsgIndex]) {
-      messageList.value[aiMsgIndex].content =
-        '**出错啦**：请求失败，请稍后重试。';
+      messageList.value[aiMsgIndex].content +=
+        '\n\n**请求失败**：请检查网络或稍后重试。';
+      messageList.value[aiMsgIndex].error = true;
     }
   } finally {
-    loading.value = false; // 恢复输入框输入
-    // 结束 AI 气泡的打字机状态
-    if (messageList.value[aiMsgIndex]) {
-      messageList.value[aiMsgIndex].loading = false;
-    }
+    // 这里只设置 loading，不要关 typing，因为可能队列里还有字没打完
+    // typing 的关闭交给 renderLoop
+    loading.value = false;
+    abortController.value = null;
   }
 }
 
 /**
- * 流处理通用方法 (适配 JSON 协议)
+ * [核心] 流处理 + 强制逐字动画 + 性能优化
  */
 async function processStream(body: ReadableStream<Uint8Array>, index: number) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
-  let accumulated = '';
 
+  // 1. 初始化队列
+  charQueue = [];
+  let isStreamDone = false;
+  let frameCount = 0; // 用于滚动节流计数
+
+  // 2. 定义消费者：打字机动画循环
+  const renderLoop = () => {
+    // 只要队列里有字，或者网络还没结束，就一直循环
+    if (charQueue.length > 0 || !isStreamDone) {
+      frameCount++;
+
+      if (charQueue.length > 0) {
+        // [动态速度控制 & ESLint 修复]
+        // 浏览器 requestAnimationFrame 约 16ms 执行一次
+        // 积压越多，每一帧吐字越多
+        let speed = 1;
+        if (charQueue.length > 100) {
+          speed = 5;
+        } else if (charQueue.length > 50) {
+          speed = 3;
+        }
+
+        // 从队列头部取出 speed 个字符
+        const chars = charQueue.splice(0, speed).join('');
+
+        if (messageList.value[index]) {
+          messageList.value[index].content += chars;
+
+          // [性能优化] 滚动节流：每 3 帧 (约50ms) 滚动一次，减少 Layout Thrashing
+          if (frameCount % 3 === 0) {
+            chatListRef.value?.scrollToBottom();
+          }
+        }
+      }
+      animationFrameId = requestAnimationFrame(renderLoop);
+    } else {
+      // 结束时确保滚到底部
+      chatListRef.value?.scrollToBottom();
+
+      // 队列空了且网络断了 -> 结束
+      animationFrameId = null;
+      if (messageList.value[index]) {
+        messageList.value[index].typing = false; // 隐藏光标
+      }
+    }
+  };
+
+  // 启动动画
+  animationFrameId = requestAnimationFrame(renderLoop);
+
+  // 3. 定义生产者：读取网络流并填充队列
+  let buffer = '';
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      isStreamDone = true; // 告诉动画：货源断了，你把库存清完就休息吧
+      break;
+    }
 
     buffer += decoder.decode(value, { stream: true });
-    // SSE 通常以 \n\n 分隔每个 event
     const events = buffer.split('\n\n');
-    // 保留最后一个可能不完整的 chunk
     buffer = events.pop() || '';
 
     for (const eventChunk of events) {
       if (!eventChunk.trim()) continue;
 
-      // 提取 data: 后的内容
       const lines = eventChunk.split('\n');
-      // 过滤出以 data: 开头的行并去掉前缀
       const dataLines = lines
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5));
 
       if (dataLines.length === 0) continue;
-
       const rawData = dataLines.join('\n').trim();
-
-      // 处理结束标志
       if (rawData === '[DONE]') continue;
 
       try {
-        // [修改核心] 解析 JSON 协议
-        // 后端返回格式: { "type": "sources"|"content"|"error", "data": ... }
         const payload = JSON.parse(rawData);
 
         switch (payload.type) {
           case 'content': {
-            if (messageList.value[index]) {
-              messageList.value[index].content += payload.data;
+            // [Unicode 修复] 使用 spread operator 处理 Emoji 和代理对
+            if (payload.data) {
+              charQueue.push(...payload.data);
             }
-
             break;
           }
           case 'error': {
             if (messageList.value[index]) {
-              messageList.value[index].content += `\n\n> ${payload.data}`;
+              messageList.value[index].content += `\n\n> ⚠️ ${payload.data}`;
+              messageList.value[index].error = true;
             }
-
             break;
           }
           case 'sources': {
+            // 引用源直接显示，不走打字机
             if (messageList.value[index]) {
               messageList.value[index].sources = payload.data;
             }
-
             break;
           }
           // No default
         }
-      } catch (error) {
-        // 容错：如果后端返回的不是JSON（比如直接返回纯文本），则直接拼接到内容
-        // 这段逻辑用于兼容旧接口或非结构化错误
-        console.warn('JSON parse error, treating as text:', error);
-        accumulated += rawData;
-        if (messageList.value[index]) {
-          messageList.value[index].content = accumulated;
-        }
+      } catch {
+        // 容错：非 JSON 文本拆散进队
+        charQueue.push(...rawData);
       }
     }
   }
   reader.releaseLock();
 }
 
-/**
- * 辅助功能
- */
+// --- 辅助功能 ---
 const clearChat = () => {
+  if (loading.value) stopGenerate();
   messageList.value = [];
+  ElMessage.success('对话已清空');
 };
 
 const copyText = (text: string) => {
@@ -224,17 +330,31 @@ const copyText = (text: string) => {
   ElMessage.success('已复制');
 };
 
-const regenerate = (index: number) => {
-  // 简单示例：找到最近的一条用户消息重新发送
-  // 实际场景可能需要更复杂的上下文处理
-  console.log('重新生成', index);
+const regenerate = async (index: number) => {
+  if (loading.value) return;
+  const aiMsg = messageList.value[index];
+  if (aiMsg?.placement !== 'start') return;
+
+  const prevUserMsg = messageList.value[index - 1];
+  if (!prevUserMsg || prevUserMsg.placement !== 'end') {
+    ElMessage.warning('无法找到上下文');
+    return;
+  }
+
+  messageList.value.splice(index, 1);
+  loading.value = true;
+  await requestAI(prevUserMsg.content);
+};
+
+const scrollToBottom = () => {
+  nextTick(() => chatListRef.value?.scrollToBottom('smooth'));
 };
 
 const getMessageList = async () => {
-  loading.value = true;
-  const resData = await fetchList({ sessionId: '1234567890' });
-  messageList.value = resData.map(
-    (item: { id: any; messageContent: any; messageType: string }) => ({
+  try {
+    loading.value = true;
+    const resData = await fetchList({ sessionId: '1234567890' });
+    messageList.value = resData.map((item: any) => ({
       id: item.id,
       content: item.messageContent,
       placement: item.messageType === 'USER' ? 'end' : 'start',
@@ -242,12 +362,18 @@ const getMessageList = async () => {
       isMarkdown: true,
       typing: false,
       loading: false,
-    }),
-  );
-  setTimeout(() => {
-    chatListRef?.value?.scrollToBottom('smooth');
-  }, 500);
-  loading.value = false;
+    }));
+    scrollToBottom();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleSuggestionClick = (text: string) => {
+  inputContent.value = text;
+  handleSend(text);
 };
 
 onMounted(() => {
@@ -255,119 +381,159 @@ onMounted(() => {
   getMessageList();
   senderRef.value?.focus();
 });
+
+onUnmounted(() => {
+  stopGenerate(); // 销毁组件时确保停止所有任务
+});
 </script>
 
 <template>
   <Page auto-content-height>
     <div class="chat-wrapper">
-      <!-- 头部 -->
       <header class="header">
-        <span class="title">维修资金AI 助手</span>
+        <div class="title-area">
+          <span class="title">维修资金 AI 助手</span>
+          <ElTag
+            v-if="loading"
+            size="small"
+            type="success"
+            effect="plain"
+            class="ml-2"
+          >
+            生成中...
+          </ElTag>
+        </div>
         <div class="controls">
-          <button @click="clearChat" class="text-btn">清空</button>
+          <ElTooltip content="清空对话" placement="bottom">
+            <ElButton link :icon="Delete" @click="clearChat" />
+          </ElTooltip>
         </div>
       </header>
 
-      <!-- 消息列表区域 -->
-      <ElABubbleList
-        v-if="isReady"
-        :ref="setChatListRef"
-        :key="messageList.length"
-        class="message-area"
-      >
-        <ElABubble
-          v-for="(item, index) in messageList"
-          :key="item.id"
-          :placement="item.placement"
-          :variant="item.variant"
-          :typing="item.typing"
-          :loading="item.loading"
-          footer-trigger="hover"
-        >
-          <!-- 头像插槽 -->
-          <template #avatar>
-            <div
-              class="avatar"
-              :class="item.placement === 'end' ? 'user' : 'ai'"
-            >
-              <!-- 用户头像 Icon -->
-              <ElIcon v-if="item.placement === 'end'"><Avatar /></ElIcon>
-              <!-- AI 头像 Icon -->
-              <ElIcon v-else><ChatDotRound /></ElIcon>
-            </div>
-          </template>
+      <div class="message-container">
+        <div v-if="messageList.length === 0 && !loading" class="empty-state">
+          <div class="empty-icon">
+            <ElIcon :size="48"><MagicStick /></ElIcon>
+          </div>
+          <h3 class="empty-title">你好，我是维修资金 AI 助手</h3>
+          <p class="empty-desc">
+            我可以帮您解答关于维修资金的使用、查询、补交等问题。
+          </p>
 
-          <!-- AI回答内容插槽 -->
-          <ElAMarkdown :content="item.content">
-            <template #code="props">
-              <!-- <div v-if="props.language === 'echarts'">
-              <echartsTest
-                :content="props.content"
-                :theme="props.theme"
-              ></echartsTest>
-            </div> -->
-              <ElACodeHighlight v-bind="props" />
-            </template>
-          </ElAMarkdown>
-          <!-- 底部操作栏插槽 (仅 AI 消息且打字结束后显示) -->
-          <template #footer v-if="item.placement === 'start'">
-            <div class="footer-wrapper">
-              <!-- [新增] 知识库引用来源卡片 -->
+          <div class="suggestions">
+            <div
+              v-for="(text, idx) in suggestions"
+              :key="idx"
+              class="suggestion-item"
+              @click="handleSuggestionClick(text)"
+            >
+              {{ text }}
+            </div>
+          </div>
+        </div>
+
+        <ElABubbleList
+          v-else
+          :ref="setChatListRef"
+          :key="messageList.length"
+          class="message-list"
+        >
+          <ElABubble
+            v-for="(item, index) in messageList"
+            :key="item.id"
+            :placement="item.placement"
+            :variant="item.variant"
+            :typing="item.typing"
+            :loading="item.loading"
+            footer-trigger="hover"
+          >
+            <template #avatar>
               <div
-                v-if="item.sources && item.sources.length > 0"
-                class="sources-container"
+                class="avatar"
+                :class="item.placement === 'end' ? 'user' : 'ai'"
               >
-                <p class="sources-title">📚 参考知识：</p>
-                <div class="sources-list">
-                  <div
-                    v-for="(source, sIndex) in item.sources"
-                    :key="sIndex"
-                    class="source-card"
-                  >
-                    <!-- 显示文件名或标题 -->
-                    <div class="source-header">
-                      <ElIcon><Document /></ElIcon>
-                      <!-- <span class="filename">{{ source.metadata?.filename || source.metadata?.title || '未知文档' }}</span> -->
-                      <span class="score" v-if="source.score">
-                        匹配度: {{ (source.score * 100).toFixed(0) }}%
-                      </span>
+                <ElIcon v-if="item.placement === 'end'"><Avatar /></ElIcon>
+                <ElIcon v-else><ChatDotRound /></ElIcon>
+              </div>
+            </template>
+
+            <ElAMarkdown :content="item.content">
+              <template #code="props">
+                <ElACodeHighlight
+                  :content="props.content"
+                  :language="props.language"
+                  :extend-themes="props.extendThemes"
+                  :show-line-numbers="true"
+                  :theme="isDark ? 'dark' : 'light'"
+                />
+              </template>
+            </ElAMarkdown>
+
+            <template #footer v-if="item.placement === 'start'">
+              <div class="footer-wrapper">
+                <div
+                  v-if="item.sources && item.sources.length > 0"
+                  class="sources-container"
+                >
+                  <p class="sources-title">
+                    <ElIcon class="mr-1"><Document /></ElIcon> 参考知识库
+                  </p>
+                  <div class="sources-grid">
+                    <div
+                      v-for="(source, sIndex) in item.sources"
+                      :key="sIndex"
+                      class="source-card"
+                    >
+                      <div class="source-header">
+                        <span class="filename" :title="source.metadata?.title">
+                          {{
+                            source.metadata?.filename ||
+                            source.metadata?.title ||
+                            '未命名文档'
+                          }}
+                        </span>
+                        <span class="score" v-if="source.score">
+                          {{ (source.score * 100).toFixed(0) }}%
+                        </span>
+                      </div>
                     </div>
-                    <!-- 显示摘要片段 -->
-                    <!-- <div class="source-text" :title="source.content">{{ source.content.slice(0, 60) }}...</div> -->
                   </div>
                 </div>
-              </div>
 
-              <!--原有操作按钮 -->
-              <div class="bubble-actions">
-                <span class="action-btn" @click="copyText(item.content)">
-                  <ElTooltip content="复制" placement="bottom">
-                    <ElIcon><CopyDocument /></ElIcon>
-                  </ElTooltip>
-                </span>
-                <span class="action-btn" @click="regenerate(index)">
-                  <ElTooltip content="重新生成" placement="bottom">
-                    <ElIcon><Refresh /></ElIcon>
-                  </ElTooltip>
-                </span>
+                <div class="bubble-actions">
+                  <span class="action-btn" @click="copyText(item.content)">
+                    <ElTooltip content="复制内容" placement="top">
+                      <ElIcon><CopyDocument /></ElIcon>
+                    </ElTooltip>
+                  </span>
+                  <span
+                    class="action-btn"
+                    @click="regenerate(index)"
+                    v-if="!loading"
+                  >
+                    <ElTooltip content="重新生成" placement="top">
+                      <ElIcon><Refresh /></ElIcon>
+                    </ElTooltip>
+                  </span>
+                </div>
               </div>
-            </div>
-          </template>
-        </ElABubble>
-      </ElABubbleList>
+            </template>
+          </ElABubble>
+        </ElABubbleList>
+      </div>
 
-      <!-- 底部输入框 -->
       <div class="input-area">
-        <!-- 
-        1. 使用 @send 事件直接获取内容，无需 ref 操作 DOM
-        2. enter-break: false 表示回车发送，Shift+回车换行 (符合大多数 IM 习惯)
-        3. 绑定 loading 控制输入框禁用状态
-      -->
+        <div v-if="loading" class="stop-btn-wrapper">
+          <ElButton round size="small" :icon="VideoPause" @click="stopGenerate">
+            停止生成
+          </ElButton>
+        </div>
+
         <ElASender
           ref="senderRef"
           v-model="inputContent"
-          v-model:loading="loading"
-          placeholder="请输入您的问题..."
+          :loading="loading"
+          placeholder="请输入您的问题，Shift + Enter 换行..."
           variant="default"
           :enter-break="false"
           @send="handleSend"
@@ -383,7 +549,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: #f7f8fa; /* 稍微给点背景色，区分气泡 */
+  overflow: hidden;
+  background-color: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
 }
 
 .header {
@@ -391,200 +560,229 @@ onMounted(() => {
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  height: 50px;
+  height: 56px;
   padding: 0 20px;
-  background: #fff;
-  border-bottom: 1px solid #e5e6eb;
+  background-color: var(--el-bg-color-overlay);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 
   .title {
+    font-size: 16px;
     font-weight: 600;
-    color: #1d2129;
-  }
-
-  .text-btn {
-    color: #86909c;
-    cursor: pointer;
-    background: none;
-    border: none;
-
-    &:hover {
-      color: #409eff;
-    }
+    color: var(--el-text-color-primary);
   }
 }
 
-.message-area {
+.message-container {
+  position: relative;
   flex: 1;
+  overflow: hidden;
+  line-height: 28px;
+}
+
+.message-list {
+  height: 100%;
   padding: 20px 16px;
-
-  /* ElABubbleList 会自动处理滚动，这里不需要 overflow */
 }
 
-.input-area {
-  flex-shrink: 0;
-  padding: 16px 20px;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 4px;
-}
-
-.sender {
-  :deep(.el-ai-sender__content) {
-    max-height: 200px;
-    overflow-y: auto;
-
-    &::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background-color: rgb(144 147 153 / 30%);
-      border-radius: 6px;
-
-      &:hover {
-        background-color: rgb(144 147 153 / 50%);
-      }
-    }
-
-    &::-webkit-scrollbar-track {
-      background-color: transparent;
-    }
-  }
-}
-
-/* 头像微调 */
-.avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  margin-top: 2px;
-  color: #fff;
-  border-radius: 50%;
-
-  &.user {
-    background: #409eff;
-  }
-
-  &.ai {
-    background: #00b42a;
-  }
-
-  svg {
-    width: 18px;
-    height: 18px;
-  }
-}
-
-/* 操作栏微调 */
-.bubble-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-
-  &:hover {
-    opacity: 1;
-  }
-
-  .action-btn {
-    font-size: 14px;
-    cursor: pointer;
-
-    &:hover {
-      transform: scale(1.1);
-    }
-  }
-}
-
-:deep(.el-ai-bubble.el-ai-bubble-end .el-ai-bubble__content) {
+:deep(.el-ai-bubble.el-ai-bubble-end) {
   margin-top: 25px;
   margin-bottom: 25px;
 }
 
-.footer-wrapper {
+/* --- 空状态样式 --- */
+.empty-state {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+  color: var(--el-text-color-regular);
+  text-align: center;
+
+  .empty-icon {
+    padding: 20px;
+    margin-bottom: 16px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    border-radius: 50%;
+  }
+
+  .empty-title {
+    margin-bottom: 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .empty-desc {
+    max-width: 400px;
+    margin-bottom: 32px;
+    font-size: 14px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    max-width: 600px;
+  }
+
+  .suggestion-item {
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 20px;
+    transition: all 0.3s;
+
+    &:hover {
+      color: var(--el-color-primary);
+      background-color: var(--el-color-primary-light-9);
+      border-color: var(--el-color-primary);
+    }
+  }
+}
+
+/* --- 输入区域样式 --- */
+.input-area {
+  position: relative;
+  flex-shrink: 0;
+  padding: 16px 20px;
+  background-color: var(--el-bg-color);
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.stop-btn-wrapper {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  z-index: 10;
+  transform: translateX(-50%);
+}
+
+.sender {
+  :deep(.el-ai-sender__content) {
+    max-height: 150px;
+    overflow-y: auto;
+    // 统一 Element Plus 输入框风格
+    border-radius: 8px;
+  }
+}
+
+/* --- 气泡内部样式优化 --- */
+
+/* 头像 */
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+
+  &.user {
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-8);
+  }
+
+  &.ai {
+    color: var(--el-color-success);
+    background: var(--el-color-success-light-8);
+  }
+}
+
+/* 底部操作栏 */
+.footer-wrapper {
   width: 100%;
 }
 
-/* 引用区域容器 */
+/* 引用源卡片 */
 .sources-container {
-  padding-top: 8px;
-  margin-top: 8px;
-  font-size: 12px;
-  border-top: 1px dashed #e5e6eb;
+  padding: 10px;
+  margin-top: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
 }
 
 .sources-title {
-  margin: 0 0 6px;
-  font-weight: 500;
-  color: #86909c;
-}
-
-.sources-list {
   display: flex;
-  flex-direction: column; /* 或者 row wrap 做横向卡片 */
-  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
 }
 
-/* 单个引用卡片 */
+.sources-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .source-card {
-  padding: 6px 10px;
-  cursor: pointer;
-  background: #f7f8fa;
-  border: 1px solid #eee;
+  max-width: 200px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: default;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
-  transition: all 0.2s;
 
   &:hover {
-    background: #f2f3f5;
-    border-color: #dcdfe6;
+    border-color: var(--el-color-primary-light-5);
   }
 }
 
 .source-header {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
-  margin-bottom: 2px;
-  font-weight: 500;
-  color: #1d2129;
+  justify-content: space-between;
 
   .filename {
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--el-text-color-regular);
     white-space: nowrap;
   }
 
   .score {
-    padding: 1px 4px;
+    padding: 1px 3px;
     font-size: 10px;
-    color: #00b42a;
-    background: rgb(0 180 42 / 10%);
+    color: var(--el-color-success);
+    background: var(--el-color-success-light-9);
     border-radius: 2px;
   }
 }
 
-.source-text {
-  /* 限制行数 */
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  font-size: 11px;
-  line-height: 1.4;
-  color: #4e5969;
-  -webkit-box-orient: vertical;
+/* 工具栏按钮 */
+.bubble-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  opacity: 0; // 默认隐藏，hover 时显示
+  transition: opacity 0.2s;
+
+  .action-btn {
+    padding: 2px;
+    font-size: 14px;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+  }
 }
 
-/* 调整原有按钮位置 */
-.bubble-actions {
-  justify-content: flex-end; /* 让按钮靠右，或者 flex-start 靠左 */
-  margin-top: 0;
+// hover 整个气泡时显示操作栏
+:deep(.el-ai-bubble):hover .bubble-actions {
+  opacity: 1;
 }
 </style>

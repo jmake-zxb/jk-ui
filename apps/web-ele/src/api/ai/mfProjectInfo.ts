@@ -1,0 +1,115 @@
+import { requestClient } from '#/api/request';
+
+// ========== 基础CRUD接口 ==========
+
+/**
+ * 分页查询列表数据
+ * @param query - 查询参数对象
+ * @returns Promise<分页数据>
+ */
+export function fetchList(query?: object) {
+  return requestClient.get('/admin/mfProjectInfo/page', {
+    params: query,
+  });
+}
+
+/**
+ * 新增数据
+ * @param obj - 要新增的数据对象
+ * @returns Promise<boolean> - 操作结果
+ */
+export function addObj(obj?: object) {
+  return requestClient.post('/admin/mfProjectInfo', obj);
+}
+
+/**
+ * 获取详情数据
+ * @param obj - 查询参数对象（包含ID等）
+ * @returns Promise<数据详情>
+ */
+export function getObj(obj?: object) {
+  return requestClient.get('/admin/mfProjectInfo/detail', {
+    params: obj,
+  });
+}
+
+/**
+ * 获取数据列
+ * @param obj - 查询参数对象（包含ID等）
+ * @returns Promise<数据详情>
+ */
+export function getObjs(obj?: object) {
+  return requestClient.get('/admin/mfProjectInfo/details', {
+    params: obj,
+  });
+}
+
+/**
+ * 批量删除数据
+ * @param ids - 要删除的ID数组
+ * @returns Promise<操作结果>
+ */
+export function delObjs(ids?: object) {
+  return requestClient.delete('/admin/mfProjectInfo', {
+    data: ids,
+  });
+}
+
+/**
+ * 更新数据
+ * @param obj - 要更新的数据对象
+ * @returns Promise<操作结果>
+ */
+export function putObj(obj?: object) {
+  return requestClient.put('/admin/mfProjectInfo', obj);
+}
+
+/**
+ * 导出数据
+ * @param obj - 查询参数对象（包含ID等）
+ * @returns Promise<数据详情>
+ */
+export function exportData(obj: object) {
+  return requestClient.get('/admin/mfProjectInfo/export', { params: obj });
+}
+
+// ========== 工具函数 ==========
+
+/**
+ * 验证字段值唯一性
+ * @param rule - 验证规则对象
+ * @param value - 要验证的值
+ * @param callback - 验证回调函数
+ * @param isEdit - 是否为编辑模式
+ * @example
+ * // 在表单验证规则中使用
+ * fieldName: [
+ *   {
+ *     validator: (rule, value, callback) => {
+ *       validateExist(rule, value, callback, form.id !== '');
+ *     },
+ *     trigger: 'blur',
+ *   },
+ * ]
+ */
+export function validateExist(
+  rule: any,
+  value: any,
+  callback: any,
+  isEdit: boolean,
+) {
+  // 编辑模式下跳过验证
+  if (isEdit) {
+    return callback();
+  }
+
+  // 查询是否存在相同值
+  getObj({ [rule.field]: value }).then((response) => {
+    const result = response.data;
+    if (result !== null && result.length > 0) {
+      callback(new Error('数据已经存在'));
+    } else {
+      callback();
+    }
+  });
+}

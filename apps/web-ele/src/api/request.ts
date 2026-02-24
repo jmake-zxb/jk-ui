@@ -104,7 +104,18 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       // 这里可以根据业务进行定制,你可以拿到 error 内的信息进行定制化处理，根据不同的 code 做不同的提示，而不是直接使用 message.error 提示 msg
       // 当前mock接口返回的错误字段是 error 或者 message
       const status = error?.response?.status;
+      const errMsg = error?.response?.data?.msg;
       switch (status) {
+        case 401: {
+          msg = errMsg || $t('ui.fallback.http.unauthorized');
+          doReAuthenticate();
+          break;
+        }
+        case 424: {
+          msg = errMsg || $t('ui.fallback.http.unauthorized');
+          doReAuthenticate();
+          break;
+        }
         case 500: {
           msg =
             error?.response?.data?.msg ||

@@ -2,7 +2,6 @@
 import type { VbenFormProps } from '@vben/common-ui';
 
 import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
-import type { BasicUserInfo } from '#/api/core/user';
 
 import { computed, ref } from 'vue';
 
@@ -44,7 +43,7 @@ const formOptions: VbenFormProps = {
   submitOnEnter: true,
 };
 
-const gridOptions: VxeGridProps<BasicUserInfo> = {
+const gridOptions: VxeGridProps = {
   columns: [
     { align: 'center', type: 'checkbox', width: 40 },
     { title: $t('role.sysrole.index'), type: 'seq', width: 50 },
@@ -98,7 +97,7 @@ const gridOptions: VxeGridProps<BasicUserInfo> = {
   },
 };
 
-const gridEvents: VxeGridListeners<BasicUserInfo> = {
+const gridEvents: VxeGridListeners = {
   checkboxAll: ({ records }) => {
     selectedRows.value = records;
   },
