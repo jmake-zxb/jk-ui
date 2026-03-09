@@ -70,14 +70,17 @@ const gridOptions: VxeGridProps = {
     {
       field: 'projectId',
       title: '外部系统项目ID',
+      width: 150,
     },
     {
       field: 'createTime',
       title: '创建时间',
+      width: 150,
     },
     {
       field: 'updateTime',
       title: '更新时间',
+      width: 150,
     },
     {
       field: 'action',
@@ -163,17 +166,11 @@ const handleDelete = (ids: string[]) => {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <ElButton
-          v-access:code="['admin_mfProjectInfo_add']"
-          :icon="SolarFolderAdd"
-          type="primary"
-          @click="onOpenAdd()"
-        >
+        <ElButton :icon="SolarFolderAdd" type="primary" @click="onOpenAdd()">
           {{ $t('page.common.addBtn') }}
         </ElButton>
         <ElButton
           plain
-          v-access:code="['admin_mfProjectInfo_del']"
           class="ml10"
           :disabled="multiple"
           :icon="WeuiDelete"
@@ -192,7 +189,6 @@ const handleDelete = (ids: string[]) => {
           :icon="CircumEdit"
           link
           type="primary"
-          v-access:code="['admin_mfProjectInfo_edit']"
           @click="onOpenEdit(row)"
         >
           {{ $t('page.common.editBtn') }}
@@ -202,7 +198,6 @@ const handleDelete = (ids: string[]) => {
           @click="handleDelete([row.id])"
           link
           type="primary"
-          v-access:code="['admin_mfProjectInfo_del']"
         >
           {{ $t('page.common.delBtn') }}
         </ElButton>

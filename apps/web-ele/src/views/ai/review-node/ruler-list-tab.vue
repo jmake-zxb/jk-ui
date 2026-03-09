@@ -8,7 +8,7 @@ import { computed, ref } from 'vue';
 import { confirm } from '@vben/common-ui';
 import { SolarFolderAdd, WeuiDelete } from '@vben/icons';
 
-import { ElButton, ElMessage, ElTooltip } from 'element-plus';
+import { ElButton, ElMessage } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { delObjs, fetchList } from '#/api/ai/auditRules';
@@ -59,7 +59,7 @@ const gridOptions: VxeGridProps<RowType> = {
       fixed: 'right',
       slots: { default: 'action' },
       title: $t('page.common.action'),
-      width: 150,
+      width: 80,
     },
   ],
   toolbarConfig: {
@@ -69,9 +69,6 @@ const gridOptions: VxeGridProps<RowType> = {
     zoom: true,
     // @ts-ignore 正式环境时有完整的类型声明
     search: true,
-  },
-  pagerConfig: {
-    pageSize: 10,
   },
   proxyConfig: {
     ajax: {
@@ -156,21 +153,14 @@ const isSelectionEmpty = computed(() => selectedRows.value.length === 0);
         </ElButton>
       </template>
       <template #action="{ row }">
-        <ElButton link type="primary"> 分段 </ElButton>
-        <ElTooltip
-          :content="$t('user.sysuser.deleteDisabledTip')"
-          placement="top"
+        <ElButton
+          :icon="WeuiDelete"
+          link
+          type="primary"
+          @click="handleDelete([row.id])"
         >
-          <span style="margin-left: 12px">
-            <ElButton
-              :icon="WeuiDelete"
-              link
-              type="primary"
-              @click="handleDelete([row.id])"
-              >{{ $t('page.common.delBtn') }}
-            </ElButton>
-          </span>
-        </ElTooltip>
+          {{ $t('page.common.delBtn') }}
+        </ElButton>
       </template>
     </GridRuler>
   </div>

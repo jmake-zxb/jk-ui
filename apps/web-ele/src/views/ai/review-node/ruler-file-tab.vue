@@ -58,9 +58,6 @@ const gridOptions: VxeGridProps = {
     // @ts-ignore 正式环境时有完整的类型声明
     search: true,
   },
-  pagerConfig: {
-    pageSize: 10,
-  },
   proxyConfig: {
     ajax: {
       query: async ({ page }, formValues) => {
