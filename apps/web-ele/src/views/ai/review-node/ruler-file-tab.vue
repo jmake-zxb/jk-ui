@@ -10,6 +10,7 @@ import { SolarFolderAdd, WeuiDelete } from '@vben/icons';
 import { ElButton, ElMessage, ElSwitch, ElTooltip } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { generateByDocument } from '#/api/ai/auditRules';
 import { delObj, pageList, putObj } from '#/api/ai/reviewDocument';
 import { $t } from '#/locales';
 import { filesize } from '#/utils/file-util';
@@ -47,7 +48,7 @@ const gridOptions: VxeGridProps = {
       fixed: 'right',
       slots: { default: 'action' },
       title: $t('page.common.action'),
-      width: 150,
+      width: 200,
     },
   ],
   toolbarConfig: {
@@ -142,6 +143,17 @@ const [ChunkViewModal, ChunkViewModalApi] = useVbenModal({
   // 连接抽离的组件
   connectedComponent: ChunkViewModalComponent,
 });
+
+// 单个文件生成规则
+const documentRules = (id: string) => {
+  generateByDocument(id)
+    .then((_res) => {
+      ElMessage.success('提交成功，等待规则生成');
+    })
+    .catch((error) => {
+      console.error(error);
+    });
+};
 </script>
 
 <template>
@@ -186,6 +198,11 @@ const [ChunkViewModal, ChunkViewModalApi] = useVbenModal({
         >
           分段
         </ElButton>
+        <span style="margin-left: 12px">
+          <ElButton link type="primary" @click="documentRules(row.id)">
+            生成规则
+          </ElButton>
+        </span>
         <ElTooltip
           :content="$t('user.sysuser.deleteDisabledTip')"
           placement="top"

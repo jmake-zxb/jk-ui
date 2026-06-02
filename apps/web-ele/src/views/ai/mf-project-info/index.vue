@@ -5,6 +5,7 @@ import type { VbenFormProps, VbenFormSchema } from '@vben/common-ui';
 import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
 
 import { computed, defineAsyncComponent, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
 import { confirm, Page, useVbenModal } from '@vben/common-ui';
@@ -25,6 +26,7 @@ const FormModalComponent = defineAsyncComponent(() => import('./form.vue'));
 // ========== table表格 ==========
 const { hasAccessByCodes } = useAccess();
 const selectedRows = ref<any[]>([]);
+const router = useRouter();
 
 const formSchema = computed<VbenFormSchema[]>(() => [
   {
@@ -83,10 +85,11 @@ const gridOptions: VxeGridProps = {
       width: 150,
     },
     {
+      fixed: 'right',
       field: 'action',
       title: '操作',
       slots: { default: 'action' },
-      width: 150,
+      width: 230,
     },
   ],
   proxyConfig: {
@@ -160,6 +163,13 @@ const handleDelete = (ids: string[]) => {
     }
   });
 };
+
+const onOpenAnalysis = (row: { id: string }) => {
+  router.push({
+    path: '/ai/mf-project-info/analysis/index',
+    query: { id: row.id },
+  });
+};
 </script>
 
 <template>
@@ -189,9 +199,17 @@ const handleDelete = (ids: string[]) => {
           :icon="CircumEdit"
           link
           type="primary"
+          @click="onOpenAnalysis(row)"
+        >
+          分析
+        </ElButton>
+        <ElButton
+          :icon="CircumEdit"
+          link
+          type="primary"
           @click="onOpenEdit(row)"
         >
-          {{ $t('page.common.editBtn') }}
+          查看报告
         </ElButton>
         <ElButton
           :icon="WeuiDelete"

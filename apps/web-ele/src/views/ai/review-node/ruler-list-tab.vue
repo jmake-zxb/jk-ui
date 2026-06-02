@@ -3,7 +3,7 @@ import type { VbenFormProps } from '@vben/common-ui';
 
 import type { VxeGridListeners, VxeGridProps } from '#/adapter/vxe-table';
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { confirm } from '@vben/common-ui';
 import { SolarFolderAdd, WeuiDelete } from '@vben/icons';
@@ -23,6 +23,13 @@ interface RowType {
   createdAt: string;
   updatedAt: string;
 }
+
+const props = defineProps({
+  nodeActiveId: {
+    type: String,
+    default: () => null,
+  },
+});
 
 const selectedRows = ref<any[]>([]);
 
@@ -71,10 +78,12 @@ const gridOptions: VxeGridProps<RowType> = {
     search: true,
   },
   proxyConfig: {
+    autoLoad: false,
     ajax: {
       query: async ({ page }, formValues) => {
         return await fetchList({
           ...formValues,
+          groupId: props.nodeActiveId,
           current: page.currentPage,
           size: page.pageSize,
         });
@@ -108,6 +117,15 @@ const [GridRuler, GridRulerApi] = useVbenVxeGrid<RowType>({
   gridEvents,
   formOptions,
 });
+
+watch(
+  () => props.nodeActiveId,
+  (newVal, oldVal) => {
+    if (newVal !== oldVal) {
+      GridRulerApi.reload();
+    }
+  },
+);
 
 // 删除操作
 const handleDelete = (ids: string[]) => {

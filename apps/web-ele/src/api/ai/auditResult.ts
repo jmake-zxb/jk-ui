@@ -8,7 +8,7 @@ import { requestClient } from '#/api/request';
  * @returns Promise<分页数据>
  */
 export function fetchList(query?: object) {
-  return requestClient.get('/ai/auditRules/page', {
+  return requestClient.get('/ai/auditResult/page', {
     params: query,
   });
 }
@@ -19,7 +19,7 @@ export function fetchList(query?: object) {
  * @returns Promise<boolean> - 操作结果
  */
 export function addObj(obj?: object) {
-  return requestClient.post('/ai/auditRules', obj);
+  return requestClient.post('/ai/auditResult', obj);
 }
 
 /**
@@ -28,7 +28,7 @@ export function addObj(obj?: object) {
  * @returns Promise<数据详情>
  */
 export function getObj(obj?: object) {
-  return requestClient.get('/ai/auditRules/detail', {
+  return requestClient.get('/ai/auditResult/detail', {
     params: obj,
   });
 }
@@ -39,7 +39,7 @@ export function getObj(obj?: object) {
  * @returns Promise<数据详情>
  */
 export function getObjs(obj?: object) {
-  return requestClient.get('/ai/auditRules/details', {
+  return requestClient.get('/ai/auditResult/details', {
     params: obj,
   });
 }
@@ -50,7 +50,7 @@ export function getObjs(obj?: object) {
  * @returns Promise<操作结果>
  */
 export function delObjs(ids?: object) {
-  return requestClient.delete('/ai/auditRules', {
+  return requestClient.delete('/ai/auditResult', {
     data: ids,
   });
 }
@@ -61,20 +61,13 @@ export function delObjs(ids?: object) {
  * @returns Promise<操作结果>
  */
 export function putObj(obj?: object) {
-  return requestClient.put('/ai/auditRules', obj);
+  return requestClient.put('/ai/auditResult', obj);
 }
 
-/**
- * 导出数据
- * @param obj - 查询参数对象（包含ID等）
- * @returns Promise<数据详情>
- */
-export function exportData(obj: object) {
-  return requestClient.get('/ai/auditRules/export', { params: obj });
-}
-
-export function generateByDocument(id: string) {
-  return requestClient.post(`/ai/auditRules/generate/document/${id}`);
+export function getReportInfo(obj?: object) {
+  return requestClient.get('/ai/auditResult/report/info', {
+    params: obj,
+  });
 }
 
 // ========== 工具函数 ==========

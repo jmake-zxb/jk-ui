@@ -1,33 +1,77 @@
 <script setup lang="ts" name="MfProjectInfoModal">
-import type { VbenFormSchema } from '#/adapter/form';
+import type { VxeGridProps } from '@vben/plugins/vxe-table';
 
-import { computed, reactive } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { useVbenModal } from '@vben/common-ui';
+import { useVbenVxeGrid } from '@vben/plugins/vxe-table';
 
-import { ElMessage } from 'element-plus';
+import { ElButton } from 'element-plus';
 
-import { useVbenForm } from '#/adapter/form';
-import { addObj, getObj, putObj } from '#/api/ai/mfProjectInfo';
-import { $t } from '#/locales';
+import { fetchList } from '#/api/ai/analysis';
 
-// 定义子组件向父组件传值/事件
-const emit = defineEmits(['refresh']);
+let projectId: string = '';
 
-// 表单数据对象
-const state = reactive({
-  dataForm: {
-    id: '', // 主键
+const router = useRouter();
+
+const gridOptions: VxeGridProps = {
+  height: '500px',
+  columns: [
+    { title: '#', type: 'seq', width: 40 },
+    {
+      field: 'analysisName',
+      title: '报告名称',
+    },
+    {
+      field: 'totalRules',
+      title: '规则数量',
+    },
+    {
+      field: 'violationCount',
+      title: '违规数量',
+    },
+    {
+      field: 'highRiskCount',
+      title: '严重违规数量',
+    },
+    {
+      field: 'createTime',
+      title: '生成时间',
+      width: 150,
+    },
+    {
+      fixed: 'right',
+      field: 'action',
+      title: '操作',
+      slots: { default: 'action' },
+      width: 100,
+    },
+  ],
+  pagerConfig: {
+    pageSize: 10,
   },
-});
+  proxyConfig: {
+    ajax: {
+      query: async ({ page }, formValues) => {
+        return await fetchList({
+          ...formValues,
+          current: page.currentPage,
+          size: page.pageSize,
+          projectId,
+        });
+      },
+    },
+  },
+  toolbarConfig: {
+    custom: false,
+    refresh: false,
+    zoom: false,
+    export: false,
+  },
+};
 
-// ========== 字典数据 ==========
-
-const formSchema = computed<VbenFormSchema[]>(() => []);
-
-const [Form, FormApi] = useVbenForm({
-  showDefaultActions: false,
-  schema: formSchema.value,
+const [Grid, GridApi] = useVbenVxeGrid({
+  gridOptions,
 });
 
 // Modal定义
@@ -35,58 +79,36 @@ const [Modal, ModalApi] = useVbenModal({
   draggable: true,
   closeOnClickModal: false,
   closeOnPressEscape: false,
-  async onCancel() {
-    state.dataForm.id = '';
-    await FormApi.resetForm();
-    ModalApi.close();
-  },
-  onConfirm() {
-    FormApi.validateAndSubmitForm().then(async (values) => {
-      if (!values) return;
-      try {
-        ModalApi.setState({ loading: true });
-        const form = Object.assign(state.dataForm, values);
-        state.dataForm.id ? await putObj(form) : await addObj(form);
-        ElMessage.success(
-          $t(
-            form.id
-              ? 'page.common.editSuccessText'
-              : 'page.common.addSuccessText',
-          ),
-        );
-        ModalApi.setState({ loading: false });
-        ModalApi.close();
-        emit('refresh');
-      } finally {
-        ModalApi.setState({ loading: false });
-      }
-    });
-  },
   async onOpenChange(isOpen) {
     if (isOpen) {
       const dat = ModalApi.getData<Record<string, any>>();
       ModalApi.setState({
-        title: $t(dat.type),
+        title: `分析报告${dat?.data?.projectName || ''}`,
       });
       if (dat?.data?.id) {
-        await getMfProjectInfoData(dat?.data?.id);
-      } else {
-        state.dataForm.id = '';
+        projectId = dat.data.id;
       }
     }
   },
 });
 
-// 初始化表单数据
-const getMfProjectInfoData = async (id: string) => {
-  // 获取数据
-  const res = await getObj({ id });
-  Object.assign(state.dataForm, res);
-  FormApi.setValues(state.dataForm);
+const openReport = (id: string) => {
+  router.push({
+    path: '/report',
+    query: {
+      id,
+    },
+  });
 };
 </script>
 <template>
-  <Modal>
-    <Form />
+  <Modal class="w-[60%]">
+    <Grid>
+      <template #action="{ row }">
+        <ElButton link type="primary" @click="openReport(row.id)">
+          报告详情
+        </ElButton>
+      </template>
+    </Grid>
   </Modal>
 </template>

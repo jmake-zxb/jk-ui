@@ -1,46 +1,76 @@
 <script lang="ts" setup>
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 
-import { Page, useVbenModal } from '@vben/common-ui';
+import { confirm, Page, useVbenModal } from '@vben/common-ui';
 
+import { Delete, EditPen, More } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDivider,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
   ElEmpty,
+  ElIcon,
+  ElMessage,
+  ElPagination,
   ElScrollbar,
   ElSplitter,
   ElSplitterPanel,
   ElTabPane,
   ElTabs,
+  ElTooltip,
 } from 'element-plus';
 
-import { fetchList } from '#/api/ai/reviewNode';
+import { delObjs, fetchList } from '#/api/ai/reviewNode';
+import { $t } from '#/locales';
 
 import NodeFormModalComponent from './node-form.vue';
 import RulerFileTab from './ruler-file-tab.vue';
 import RulerListTab from './ruler-list-tab.vue';
 
 const fatherNode = ref<any[]>([]);
-const prentNode = ref<any[]>([]);
+
 const nodeActiveId = ref<string>();
 const activeName = ref<string>('rulerList');
+const nodePage = reactive<Record<string, number>>({
+  total: 0,
+  current: 1,
+  size: 10,
+});
+const nodeLoading = ref<boolean>(false);
 
 const getFatherNode = async () => {
-  const res = await fetchList({ pid: 0 });
-  fatherNode.value = res.records;
-  if (fatherNode.value.length > 0) {
-    nodeActiveId.value = fatherNode.value[0].id as string;
-    handleClickNode(nodeActiveId.value);
+  nodeLoading.value = true;
+  try {
+    const res = await fetchList({
+      pid: 0,
+      size: nodePage.size,
+      current: nodePage.current,
+      ruleTotal: 1,
+    });
+    fatherNode.value = res.records;
+    nodePage.total = res.total;
+    nodeLoading.value = false;
+    if (fatherNode.value.length > 0) {
+      nodeActiveId.value = fatherNode.value[0].id as string;
+      handleClickNode(nodeActiveId.value);
+    }
+  } catch (error) {
+    console.error(error);
+    nodeLoading.value = false;
   }
+};
+
+const nodeCurrentChange = (val: number) => {
+  nodePage.current = val;
+  getFatherNode();
 };
 
 getFatherNode();
 
 const handleClickNode = async (id: string) => {
   nodeActiveId.value = id;
-  // 请求接口
-  const res = await fetchList({ pid: id });
-  prentNode.value = res.records;
 };
 
 const [NodeFormModal, NodeFormModalApi] = useVbenModal({
@@ -54,22 +84,40 @@ const onOpenNodeAdd = (row?: any) => {
 };
 
 // 编辑操作
-// const onOpenNodeEdit = (row: any) => {
-//   NodeFormModalApi.setData({ type: 'page.common.editBtn', data: row }).open();
-// };
+const onOpenNodeEdit = (row: any) => {
+  NodeFormModalApi.setData({ type: 'page.common.editBtn', data: row }).open();
+};
+
+// 删除操作
+const handleDelete = (id: string) => {
+  confirm($t('page.common.delConfirmText')).then(async () => {
+    try {
+      await delObjs([id]);
+      getFatherNode();
+      ElMessage.success($t('page.common.delSuccessText'));
+    } catch (error: any) {
+      ElMessage.error(error.msg);
+    }
+  });
+};
 </script>
 
 <template>
   <Page auto-content-height>
     <ElSplitter>
-      <ElSplitterPanel size="220px" min="200px" max="350px">
-        <div class="left-content">
-          <ElScrollbar>
+      <ElSplitterPanel size="240px" min="240px" max="350px">
+        <div class="left-content flex flex-col" v-loading="nodeLoading">
+          <ElButton
+            type="primary"
+            class="w-full"
+            plain
+            @click="onOpenNodeAdd()"
+          >
+            新增
+          </ElButton>
+          <ElDivider border-style="dashed" />
+          <ElScrollbar class="flex-1">
             <div class="flex flex-col gap-2">
-              <ElButton type="primary" plain @click="onOpenNodeAdd()">
-                新增
-              </ElButton>
-              <ElDivider border-style="dashed" />
               <div
                 v-for="item in fatherNode"
                 :key="item.id"
@@ -77,17 +125,55 @@ const onOpenNodeAdd = (row?: any) => {
                 :class="nodeActiveId === item.id ? 'is-active' : ''"
                 @click="handleClickNode(item.id)"
               >
-                {{ item.rwName }}
+                <div class="flex flex-row">
+                  <div
+                    class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+                  >
+                    <ElTooltip :content="item.rwName">
+                      {{ item.rwName }}({{ item.ruleTotal }})
+                    </ElTooltip>
+                  </div>
+                  <div>
+                    <ElDropdown>
+                      <ElIcon class="rotate-90"><More /></ElIcon>
+                      <template #dropdown>
+                        <ElDropdownMenu>
+                          <ElDropdownItem
+                            @click="onOpenNodeEdit(item)"
+                            :icon="EditPen"
+                          >
+                            修改
+                          </ElDropdownItem>
+                          <ElDropdownItem
+                            @click="handleDelete(item.id)"
+                            :icon="Delete"
+                          >
+                            删除
+                          </ElDropdownItem>
+                        </ElDropdownMenu>
+                      </template>
+                    </ElDropdown>
+                  </div>
+                </div>
               </div>
+              <ElEmpty v-if="fatherNode.length === 0" description="暂无数据" />
             </div>
-            <ElEmpty v-if="fatherNode.length === 0" description="暂无数据" />
           </ElScrollbar>
+          <div>
+            <ElPagination
+              size="small"
+              layout="prev, pager,next"
+              :pager-count="5"
+              :total="nodePage.total"
+              @current-change="nodeCurrentChange"
+            />
+          </div>
         </div>
       </ElSplitterPanel>
       <ElSplitterPanel class="ml8 h-full">
         <ElTabs v-model="activeName" class="rw-tabs">
           <ElTabPane label="规则列表" name="rulerList">
-            <RulerListTab />
+            <RulerListTab :node-active-id="nodeActiveId" />
           </ElTabPane>
           <ElTabPane label="规则文件" name="rulerFile">
             <RulerFileTab />

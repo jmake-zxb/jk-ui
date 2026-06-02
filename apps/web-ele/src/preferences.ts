@@ -11,8 +11,12 @@ export const overridesPreferences = defineOverridesPreferences({
     name: import.meta.env.VITE_APP_TITLE,
     accessMode: 'mixed',
     loginExpiredMode: 'modal',
+    layout: 'header-nav',
   },
   logo: {
     source: 'https://hongzhitech.com/images/logo_03.png',
+  },
+  widget: {
+    refresh: false,
   },
 });

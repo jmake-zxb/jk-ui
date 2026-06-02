@@ -42,12 +42,20 @@ async function generateAccess(options: GenerateMenuAndRoutesOptions) {
   });
 }
 
+const activePathS = new Set([
+  '/ai/mf-project-info/analysis/index',
+  '/ai/mf-project-info/index',
+]);
+
 /**
  * 递归遍历路由，将 meta.isIframe === true 的路由 component 设置为 IFrameView
  * @param routes 路由数组
  */
 function setIFrameComponent(routes: any[]): void {
   for (const route of routes) {
+    if (activePathS.has(route.path)) {
+      route.meta.activePath = '/ai/mf-project-info';
+    }
     // 检查 meta.isIframe 是否为 true（注意：原始数据中可能是 null 或 undefined）
     if (route.meta?.isIframe === true) {
       route.component = 'IFrameView';

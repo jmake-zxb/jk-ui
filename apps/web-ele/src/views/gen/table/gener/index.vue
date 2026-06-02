@@ -1,5 +1,7 @@
 <script lang="ts" setup>
+import { defineAsyncComponent, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 
 import { useGeneratorCodeApi } from '/@/api/gen/table';
 import { useMessage } from '/@/hooks/message';
