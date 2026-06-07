@@ -106,7 +106,7 @@ const onOpenAdd = (_type?: string, row?: any) => {
   formModalApi.setData({ type: 'page.common.addBtn', data: row }).open();
 };
 
-const onOpenEdit = (type: string, row: any) => {
+const onOpenEdit = (_type: string, row: any) => {
   formModalApi.setData({ type: 'page.common.editBtn', data: row }).open();
 };
 

@@ -1,18 +1,16 @@
 <script lang="ts" setup>
-import { defineAsyncComponent, ref } from 'vue';
-import { useI18n } from 'vue-i18n';
+import { defineAsyncComponent, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useGeneratorCodeApi } from '/@/api/gen/table';
-import { useMessage } from '/@/hooks/message';
-import { downBlobFile } from '/@/utils/other';
+import { ElMessage } from 'element-plus';
 
-const { t } = useI18n();
-const Generator = defineAsyncComponent(() => import('../table/generator.vue'));
-const EditTable = defineAsyncComponent(() => import('../table/edit.vue'));
-const PreviewDialog = defineAsyncComponent(
-  () => import('../table/preview.vue'),
-);
+import { downBlobFile } from '#/api/core/other';
+import { useGeneratorCodeApi } from '#/api/gen/table';
+import { $t } from '#/locales';
+
+const Generator = defineAsyncComponent(() => import('../generator.vue'));
+const EditTable = defineAsyncComponent(() => import('../edit.vue'));
+const PreviewDialog = defineAsyncComponent(() => import('../preview.vue'));
 const previewDialogRef = ref();
 const generatorRef = ref();
 
@@ -62,7 +60,7 @@ const generatorHandle = async () => {
   // 写入到指定目录
   if (generatorType.value === '1') {
     useGeneratorCodeApi([tableId.value].join(',')).then(() => {
-      useMessage().success(t('common.optSuccessText'));
+      ElMessage.success($t('page.common.optSuccessText'));
     });
   }
 };

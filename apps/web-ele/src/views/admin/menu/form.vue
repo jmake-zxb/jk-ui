@@ -91,9 +91,8 @@ const getAllMenuData = () => {
     const menu = {
       id: '-1',
       name: '根菜单',
-      children: [] as any[],
+      children: data,
     };
-    menu.children = data;
     state.parentData.push(menu);
   });
 };
@@ -169,11 +168,6 @@ const formSchema = computed<VbenFormSchema[]>(() => [
     fieldName: 'permission',
     // 界面显示的label
     label: $t('menu.sysmenu.permission'),
-    rules: 'required',
-    dependencies: {
-      triggerFields: ['menuType'],
-      if: (values) => values.menuType === '1',
-    },
   },
   {
     // 组件需要在 #/adapter.ts内注册，并加上类型

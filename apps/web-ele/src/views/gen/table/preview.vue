@@ -132,7 +132,9 @@ const handleFiles = (fileTreeOriginal: any) => {
 };
 
 defineExpose({
+  codeEditorRef,
   openDialog,
+  treeRef,
 });
 </script>
 <template>

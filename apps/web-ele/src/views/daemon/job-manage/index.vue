@@ -210,10 +210,10 @@ const onOpenEdit = (_type: string, row: any) => {
 };
 
 // 删除操作
-const handleDelete = (ids: string[]) => {
+const handleDelete = (ids: string | string[]) => {
   confirm($t('page.common.delConfirmText')).then(async () => {
     try {
-      await delObj(ids);
+      await delObj(Array.isArray(ids) ? ids.join(',') : ids);
       gridApi.reload();
       ElMessage.success($t('page.common.delSuccessText'));
     } catch (error: any) {
@@ -284,6 +284,9 @@ const handleRunJob = async (row: { jobId: string; jobName: any }) => {
 };
 
 /** 查看作业日志 */
+const handleJobLog = (row: { jobId: string }) => {
+  window.open(`#/daemon/job-log?jobId=${row.jobId}`, '_blank');
+};
 </script>
 
 <template>
@@ -358,7 +361,7 @@ const handleRunJob = async (row: { jobId: string; jobName: any }) => {
 
         <ElButton
           v-access:code="['job_sys_job_del']"
-          @click="handleDelete(row)"
+          @click="handleDelete(row.jobId)"
           link
           type="primary"
         >

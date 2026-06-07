@@ -41,7 +41,6 @@ const searchKeyword = ref<string>('');
 const selectedIds = ref<string[]>([]);
 const saving = ref<boolean>(false);
 const analysisFormVisible = ref(false);
-const projectId = ref();
 
 // --- 模拟数据 (实际应从 API 获取) ---
 const allRulesData = reactive<RuleGroup[]>([]);
@@ -230,10 +229,8 @@ const submitForm = async () => {
           >
             <div class="text-sm font-medium">
               当前已选择
-              <span
-                class="dark:text-primary-dark mx-1 text-lg font-bold text-primary"
-                >{{ selectedIds.length }}</span
-              >条规则
+              <span class="text-primary">{{ selectedIds.length }}</span>
+              条规则
             </div>
             <div
               class="dark:border-border-dark flex items-center gap-2 border-l border-border pl-4"
@@ -279,12 +276,12 @@ const submitForm = async () => {
 
 <style scoped>
 :deep(.rule-checkbox-item.el-checkbox.is-bordered) {
+  display: flex !important;
+  align-items: flex-start !important;
+  min-height: 70px !important;
   padding: 10px !important;
   border-radius: 0.5rem !important;
   transition: all 0.2s ease !important;
-  min-height: 70px !important;
-  display: flex !important;
-  align-items: flex-start !important;
 }
 
 /* 内容包装器 - 增加间距 */
@@ -298,36 +295,36 @@ const submitForm = async () => {
 
 /* 标题样式 */
 :deep(.rule-title) {
-  font-weight: 600 !important;
-  font-size: 0.95rem !important;
-  color: var(--foreground);
-  line-height: 1.4 !important;
-  word-break: break-word !important;
   display: -webkit-box !important;
-  -webkit-line-clamp: 3 !important;
-  -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  -webkit-line-clamp: 3 !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  color: var(--foreground);
+  overflow-wrap: anywhere !important;
+  -webkit-box-orient: vertical !important;
 }
 
 /* 描述样式 */
 :deep(.rule-description) {
-  font-size: 0.825rem !important;
-  opacity: 0.7;
-  line-height: 1.6 !important;
   display: -webkit-box !important;
-  -webkit-line-clamp: 3 !important;
-  -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  -webkit-line-clamp: 3 !important;
+  font-size: 0.825rem !important;
+  line-height: 1.6 !important;
+  opacity: 0.7;
+  -webkit-box-orient: vertical !important;
 }
 
 /* Hover 效果 - 浅色模式 */
 :deep(.rule-checkbox-item.el-checkbox.is-bordered:hover) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-  border-color: var(--el-color-primary, #3b82f6) !important;
-  transform: translateY(-2px) !important;
   background-color: var(--primary-foreground, #f9fafb) !important;
+  border-color: var(--el-color-primary, #3b82f6) !important;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%) !important;
+  transform: translateY(-2px) !important;
 }
 
 /* Checkbox 图标位置调整 */
@@ -337,8 +334,8 @@ const submitForm = async () => {
 }
 
 :deep(.rule-checkbox-item .el-checkbox__label) {
-  padding-left: 2rem !important;
   width: 100% !important;
+  padding-left: 2rem !important;
 }
 
 /* 确保 Element Plus 的 Checkbox 边框在深色模式下可见 */

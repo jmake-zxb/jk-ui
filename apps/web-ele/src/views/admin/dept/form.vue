@@ -84,9 +84,8 @@ const getDeptData = async () => {
   const dept = {
     id: '0',
     name: '根部门',
-    children: [] as any[],
+    children: res,
   };
-  dept.children = res;
   parentData.value.push(dept);
 };
 

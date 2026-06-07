@@ -140,12 +140,12 @@ const [FormModal, formModalApi] = useVbenModal({
 });
 
 // 打开新增菜单弹窗
-const onOpenAddMenu = (type?: string, row?: any) => {
+const onOpenAddMenu = (_type?: string, row?: any) => {
   formModalApi.setData({ type: 'page.common.addBtn', data: row }).open();
 };
 
 // 打开编辑菜单弹窗
-const onOpenEditMenu = (type: string, row: any) => {
+const onOpenEditMenu = (_type: string, row: any) => {
   formModalApi.setData({ type: 'page.common.editBtn', data: row }).open();
 };
 

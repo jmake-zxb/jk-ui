@@ -269,6 +269,9 @@ const submitHandle = () => {
 };
 
 defineExpose({
+  fieldTable,
+  formTable,
+  gridTable,
   openDialog,
   submitHandle,
 });

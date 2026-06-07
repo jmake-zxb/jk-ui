@@ -70,7 +70,7 @@ const gridOptions: VxeGridProps = {
   },
 };
 
-const [Grid, GridApi] = useVbenVxeGrid({
+const [Grid] = useVbenVxeGrid({
   gridOptions,
 });
 

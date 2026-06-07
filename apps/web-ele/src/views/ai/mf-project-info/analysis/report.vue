@@ -129,7 +129,9 @@ const gridOptions: VxeGridProps = {
   },
 };
 
-const [Grid, GridApi] = useVbenVxeGrid({
+type TagType = 'danger' | 'info' | 'primary' | 'success' | 'warning';
+
+const [Grid] = useVbenVxeGrid({
   gridOptions,
 });
 
@@ -316,6 +318,37 @@ const initTrendChart = () => {
     .filter((r) => r.violationCount > 0)
     .slice(0, 10);
 
+  const series = [
+    {
+      name: '违规数量',
+      type: 'line' as const,
+      data: sortedResults.map((r) => r.violationCount),
+      smooth: true,
+      areaStyle: {
+        color: {
+          type: 'linear' as const,
+          x: 0,
+          y: 0,
+          x2: 0,
+          y2: 1,
+          colorStops: [
+            { offset: 0, color: 'rgba(245, 108, 108, 0.5)' },
+            { offset: 1, color: 'rgba(245, 108, 108, 0.1)' },
+          ],
+        },
+      },
+      itemStyle: {
+        color: '#f56c6c',
+      },
+      markPoint: {
+        data: [
+          { type: 'max' as const, name: '最大值' },
+          { type: 'min' as const, name: '最小值' },
+        ],
+      },
+    },
+  ];
+
   trendChart({
     tooltip: {
       trigger: 'axis',
@@ -338,29 +371,7 @@ const initTrendChart = () => {
       type: 'value',
       name: '违规数量',
     },
-    series: [
-      {
-        name: '违规数量',
-        type: 'line',
-        data: sortedResults.map((r) => r.violationCount),
-        smooth: true,
-        areaStyle: {
-          color: [
-            { offset: 0, color: 'rgba(245, 108, 108, 0.5)' },
-            { offset: 1, color: 'rgba(245, 108, 108, 0.1)' },
-          ],
-        },
-        itemStyle: {
-          color: '#f56c6c',
-        },
-        markPoint: {
-          data: [
-            { type: 'max', name: '最大值' },
-            { type: 'min', name: '最小值' },
-          ],
-        },
-      },
-    ],
+    series,
   });
 };
 
@@ -385,14 +396,14 @@ const getTypeTag = (
     | 'qualification_audit'
     | 'time_audit',
 ) => {
-  const map = {
+  const map: Record<string, TagType | undefined> = {
     amount_audit: 'warning',
     process_audit: 'info',
     qualification_audit: 'success',
-    frequency_audit: '',
+    frequency_audit: undefined,
     time_audit: 'primary',
   };
-  return map[type] || '';
+  return map[type];
 };
 
 const getSeverityTag = (severity: 'HIGH' | 'LOW' | 'MEDIUM'): any => {
@@ -694,9 +705,20 @@ const goBack = () => {
 </template>
 
 <style scoped>
+/* 响应式 */
+@media screen and (max-width: 768px) {
+  .stat-card {
+    margin-bottom: 15px;
+  }
+
+  .table-actions {
+    flex-wrap: wrap;
+  }
+}
+
 .report-detail-container {
-  padding: 20px;
   min-height: 100vh;
+  padding: 20px;
 }
 
 .page-header {
@@ -705,8 +727,8 @@ const goBack = () => {
 
 .header-content {
   display: flex;
-  align-items: center;
   gap: 15px;
+  align-items: center;
 }
 
 .header-content h2 {
@@ -716,8 +738,8 @@ const goBack = () => {
 
 .card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   font-weight: bold;
 }
 
@@ -731,18 +753,18 @@ const goBack = () => {
 
 .stat-content {
   display: flex;
-  align-items: center;
   gap: 15px;
+  align-items: center;
 }
 
 .stat-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 60px;
+  height: 60px;
   font-size: 28px;
+  border-radius: 10px;
 }
 
 .stat-info {
@@ -750,10 +772,10 @@ const goBack = () => {
 }
 
 .stat-value {
+  margin-bottom: 5px;
   font-size: 28px;
   font-weight: bold;
   line-height: 1;
-  margin-bottom: 5px;
 }
 
 .stat-label {
@@ -762,8 +784,8 @@ const goBack = () => {
 
 .table-actions {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
 }
 
 .pagination-container {
@@ -773,16 +795,5 @@ const goBack = () => {
 :deep(.el-descriptions__label) {
   width: 120px;
   font-weight: bold;
-}
-
-/* 响应式 */
-@media screen and (max-width: 768px) {
-  .stat-card {
-    margin-bottom: 15px;
-  }
-
-  .table-actions {
-    flex-wrap: wrap;
-  }
 }
 </style>

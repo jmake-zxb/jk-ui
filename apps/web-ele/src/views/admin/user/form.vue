@@ -45,8 +45,8 @@ const getUserData = async (id: string) => {
       post: [],
       deptId: [],
       password: '******',
+      ...data,
     };
-    Object.assign(dataForm, data);
     if (data.roleList) {
       dataForm.role = data.roleList.map((item: { roleId: any }) => item.roleId);
     }

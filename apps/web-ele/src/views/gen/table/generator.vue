@@ -182,8 +182,6 @@ const submitHandle = async () => {
     visible.value = false;
     emit('refreshDataList');
     return dataForm;
-  } catch {
-    throw error;
   } finally {
     // 保存路径至Local 中方便下次使用
     if (dataForm.generatorType === '1') {
