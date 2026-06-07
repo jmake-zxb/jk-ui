@@ -30,10 +30,13 @@
     "@codemirror/lang-java": "catalog:",
     "@codemirror/lang-javascript": "catalog:",
     "@codemirror/lang-json": "catalog:",
+    "@codemirror/lang-python": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/theme-one-dark": "catalog:",
     "@codemirror/view": "catalog:",
     "@element-plus/icons-vue": "catalog:",
+    "@logicflow/core": "catalog:",
+    "@logicflow/extension": "catalog:",
     "@vben/access": "workspace:*",
     "@vben/common-ui": "workspace:*",
     "@vben/constants": "workspace:*",
@@ -54,6 +57,7 @@
     "dayjs": "catalog:",
     "element-ai-vue": "catalog:",
     "element-plus": "catalog:",
+    "lodash-es": "catalog:",
     "pinia": "catalog:",
     "sortablejs": "catalog:",
     "spark-md5": "catalog:",
@@ -61,6 +65,7 @@
     "vue-router": "catalog:"
   },
   "devDependencies": {
+    "@types/lodash-es": "catalog:",
     "unplugin-element-plus": "catalog:"
   }
 }
