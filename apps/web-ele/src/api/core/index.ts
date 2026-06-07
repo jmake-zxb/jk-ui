@@ -1,3 +1,4 @@
 export * from './auth';
-export * from './menu';
-export * from './user';
+export { getAllMenusApi, useMenuApi } from './menu';
+export type { BasicUserInfo, Dept, PostList, RoleList } from './user';
+export { getUserInfoApi } from './user';

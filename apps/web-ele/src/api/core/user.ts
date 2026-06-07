@@ -21,6 +21,7 @@ export interface BasicUserInfo {
   postList: Array<PostList>;
   nickname: string;
   name: string;
+  realName: string;
   email: string;
   permissions: Array<string>;
 }
