@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed } from 'vue';
+import { computed, useAttrs } from 'vue';
 
 import { Settings } from '@vben/icons';
 import { $t, loadLocaleMessages } from '@vben/locales';
@@ -14,6 +14,7 @@ import PreferencesDrawer from './preferences-drawer.vue';
 const [Drawer, drawerApi] = useVbenDrawer({
   connectedComponent: PreferencesDrawer,
 });
+const componentAttrs = useAttrs();
 
 /**
  * preferences 转成 vue props
@@ -53,10 +54,14 @@ const listen = computed(() => {
   }
   return result;
 });
+
+const drawerAttrs = computed(
+  () => ({ ...componentAttrs, ...attrs.value }) as any,
+);
 </script>
 <template>
   <div>
-    <Drawer v-bind="{ ...$attrs, ...attrs }" v-on="listen" />
+    <Drawer v-bind="drawerAttrs" v-on="listen" />
 
     <div @click="() => drawerApi.open()">
       <slot>

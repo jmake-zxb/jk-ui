@@ -1,6 +1,6 @@
 <!--文件上传组件-->
 <script setup lang="ts" name="upload-file">
-import type { UploadUserFile } from 'element-plus';
+import type { UploadFile, UploadFiles, UploadUserFile } from 'element-plus';
 
 import { computed, ref, watch } from 'vue';
 
@@ -132,7 +132,7 @@ const headers = computed<Record<string, string>>(() => {
 
 // 请求参数处理
 const formData = computed(() => {
-  return Object.assign(props.data, { dir: props.dir });
+  return { ...props.data, dir: props.dir };
 });
 
 // 上传前校检格式和大小
@@ -197,7 +197,7 @@ const uploadedSuccessfully = () => {
   }
 };
 
-const handleRemove = (file: { url: string }) => {
+const handleRemove = (file: UploadFile, _files?: UploadFiles) => {
   fileList.value = fileList.value.filter((f) => f.url !== file.url);
   emit('update:modelValue', listToString(fileList.value));
   emit('change', listToString(fileList.value));

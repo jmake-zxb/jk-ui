@@ -6,6 +6,7 @@ import type {
   UploadRawFile,
   UploadUserFile,
 } from 'element-plus';
+import type { SortableEvent } from 'sortablejs';
 
 import type { CSSProperties } from 'vue';
 
@@ -27,12 +28,6 @@ interface ApiResponse {
     fileName: string;
     url: string;
   };
-}
-
-// 简单的 Sortable 事件接口
-interface SortableEvent extends Event {
-  oldIndex?: number;
-  newIndex?: number;
 }
 
 // 定义组件 Props 接口

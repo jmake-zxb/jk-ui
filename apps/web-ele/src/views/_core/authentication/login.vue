@@ -52,6 +52,7 @@ const formSchema = computed((): VbenFormSchema[] => {
       dependencies: {
         if(_values, formApi) {
           pageFormApi.value = formApi;
+          return true;
         },
         show(_values, _formApi) {
           return false;

@@ -15,6 +15,7 @@ import { indentWithTab } from '@codemirror/commands';
 import { java } from '@codemirror/lang-java';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
+import { python } from '@codemirror/lang-python';
 import { Compartment, EditorState } from '@codemirror/state';
 // --- 主题 ---
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -27,7 +28,7 @@ import { basicSetup, EditorView } from 'codemirror';
 // 1. 定义 Props
 export interface CodeEditorProps {
   modelValue?: string;
-  mode?: 'java' | 'javascript' | 'json' | string;
+  mode?: 'java' | 'javascript' | 'json' | 'python' | string;
   height?: number | string;
   width?: number | string;
   theme?: 'darcula' | 'idea' | 'one-dark' | string; // 映射旧主题名
@@ -45,7 +46,9 @@ const props = withDefaults(defineProps<CodeEditorProps>(), {
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
+  (e: 'blur'): void;
   (e: 'change', value: string): void;
+  (e: 'focus'): void;
 }>();
 
 // 2. Refs
@@ -70,6 +73,10 @@ const getLanguageExtension = (mode: string) => {
     }
     case 'json': {
       return json();
+    }
+    case 'py':
+    case 'python': {
+      return python();
     }
     // CM6 没有内置 velocity，这里暂退化为 javascript 或纯文本
     case 'velocity': {
@@ -105,6 +112,15 @@ const init = () => {
       languageConf.of(getLanguageExtension(props.mode)),
       themeConf.of(getThemeExtension(props.theme)),
       readOnlyConf.of(EditorState.readOnly.of(props.readOnly)),
+
+      EditorView.domEventHandlers({
+        blur: () => {
+          emit('blur');
+        },
+        focus: () => {
+          emit('focus');
+        },
+      }),
 
       // 监听更新
       EditorView.updateListener.of((v: ViewUpdate) => {

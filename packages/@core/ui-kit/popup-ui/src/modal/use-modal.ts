@@ -1,3 +1,5 @@
+import type { Component } from 'vue';
+
 import type { ExtendedModalApi, ModalApiOptions, ModalProps } from './modal';
 
 import {
@@ -114,7 +116,7 @@ export function useVbenModal<TParentModalProps extends ModalProps = ModalProps>(
     (props: ModalProps, { attrs, slots }) => {
       return () =>
         h(
-          VbenModal,
+          VbenModal as Component,
           {
             ...props,
             ...attrs,

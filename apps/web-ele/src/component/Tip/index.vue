@@ -1,18 +1,20 @@
 <script setup lang="ts" name="tip">
+import type { Placement } from 'element-plus';
+
 import { VbenIcon } from '@vben/common-ui';
 
 import { ElTooltip } from 'element-plus';
 
-const props = defineProps({
-  content: {
-    type: String,
-    default: '',
+const props = withDefaults(
+  defineProps<{
+    content?: string;
+    placement?: Placement;
+  }>(),
+  {
+    content: '',
+    placement: 'top-start',
   },
-  placement: {
-    type: String,
-    default: 'top-start',
-  },
-});
+);
 </script>
 
 <template>
