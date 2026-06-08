@@ -9,8 +9,16 @@ class KnowledgeBaseNodeView extends AppNode {
   }
 }
 
+class KnowledgeBaseNodeModel extends AppNodeModel {
+  override setAttributes() {
+    super.setAttributes();
+    this.width = 600;
+    this.properties.width = 600;
+  }
+}
+
 export default {
-  model: AppNodeModel,
+  model: KnowledgeBaseNodeModel,
   type: 'knowledge-base-node',
   view: KnowledgeBaseNodeView,
 };

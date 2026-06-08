@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   ElButton,
@@ -12,17 +12,22 @@ import {
   ElSwitch,
 } from 'element-plus';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeRenderVersion = ref(0);
 
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => {
+    syncNodeProperties(props.nodeModel, { node_data: value }, ['node_data']);
+    nodeRenderVersion.value += 1;
+  },
 });
 
 const userFields = computed(() => {
@@ -41,6 +46,8 @@ const outputFields = computed(() =>
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
 }
+
+function trackRenderVersion(..._versions: unknown[]) {}
 
 function idsValue(key: string) {
   const value = formData.value[key];
@@ -125,7 +132,10 @@ function removeOutputField(index: number) {
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <div class="workflow-node-panel">
         <div class="workflow-node-panel__head">知识库应用基础设置</div>
@@ -186,17 +196,23 @@ function removeOutputField(index: number) {
             <ElInput
               :model-value="field.field || field.name"
               placeholder="字段名"
-              @update:model-value="patchUserField(index, { field: $event })"
+              @update:model-value="
+                patchUserField(Number(index), { field: $event })
+              "
             />
             <ElInput
               :model-value="field.label"
               placeholder="显示名"
-              @update:model-value="patchUserField(index, { label: $event })"
+              @update:model-value="
+                patchUserField(Number(index), { label: $event })
+              "
             />
             <ElSelect
               :model-value="field.type || 'string'"
               :teleported="false"
-              @update:model-value="patchUserField(index, { type: $event })"
+              @update:model-value="
+                patchUserField(Number(index), { type: $event })
+              "
             >
               <ElOption label="string" value="string" />
               <ElOption label="number" value="number" />
@@ -208,13 +224,13 @@ function removeOutputField(index: number) {
               size="small"
               active-text="必填"
               @update:model-value="
-                patchUserField(toIndex(index), { required: $event })
+                patchUserField(Number(index), { required: $event })
               "
             />
             <ElButton
               link
               type="danger"
-              @click="removeUserField(toIndex(index))"
+              @click="removeUserField(Number(index))"
             >
               删
             </ElButton>
@@ -237,21 +253,21 @@ function removeOutputField(index: number) {
               :model-value="field.name || field.value"
               placeholder="字段名"
               @update:model-value="
-                patchOutputField(toIndex(index), { name: $event })
+                patchOutputField(Number(index), { name: $event })
               "
             />
             <ElInput
               :model-value="field.label"
               placeholder="显示名"
               @update:model-value="
-                patchOutputField(toIndex(index), { label: $event })
+                patchOutputField(Number(index), { label: $event })
               "
             />
             <ElSelect
               :model-value="field.type || 'string'"
               :teleported="false"
               @update:model-value="
-                patchOutputField(toIndex(index), { type: $event })
+                patchOutputField(Number(index), { type: $event })
               "
             >
               <ElOption label="string" value="string" />
@@ -261,7 +277,7 @@ function removeOutputField(index: number) {
             <ElButton
               link
               type="danger"
-              @click="removeOutputField(toIndex(index))"
+              @click="removeOutputField(Number(index))"
             >
               删
             </ElButton>

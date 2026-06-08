@@ -1,19 +1,25 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { ElForm, ElFormItem, ElInput, ElSwitch } from 'element-plus';
+import { set } from 'lodash-es';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeRenderVersion = ref(0);
 
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => {
+    syncNodeProperties(props.nodeModel, { node_data: value }, ['node_data']);
+    nodeRenderVersion.value += 1;
+  },
 });
 
 const inputFields = computed(() => [
@@ -27,6 +33,34 @@ const inputFields = computed(() => [
 
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
+}
+
+function trackRenderVersion(..._versions: unknown[]) {}
+
+function textValue(value: unknown) {
+  return `${value ?? ''}`.trim();
+}
+
+function hasReferenceValue(value: unknown) {
+  return Array.isArray(value) ? value.length >= 2 : !!textValue(value);
+}
+
+function validationError(errMessage: string) {
+  return Object.assign(new Error(errMessage), {
+    errMessage,
+    node: props.nodeModel,
+  });
+}
+
+function validate() {
+  const data = formData.value;
+  if (!textValue(data.application_id || data.applicationId)) {
+    return Promise.reject(validationError('请输入应用 ID'));
+  }
+  if (!hasReferenceValue(data.question_reference_address || data.messageRef)) {
+    return Promise.reject(validationError('请选择消息变量'));
+  }
+  return Promise.resolve();
 }
 
 function patchInput(index: number, value: any[]) {
@@ -64,10 +98,23 @@ function fieldLabel(field: any) {
     '输入字段'
   );
 }
+
+onMounted(() => {
+  set(props.nodeModel, 'validate', validate);
+});
+
+onBeforeUnmount(() => {
+  if (props.nodeModel.validate === validate) {
+    set(props.nodeModel, 'validate', undefined);
+  }
+});
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <ElFormItem label="应用 ID">
         <ElInput
