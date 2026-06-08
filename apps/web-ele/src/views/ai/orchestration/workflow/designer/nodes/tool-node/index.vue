@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import type { ResourceRecord } from '../../common/tool-resource-utils';
+
+import { computed, onMounted, ref } from 'vue';
 
 import {
   ElButton,
@@ -7,32 +9,76 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElMessage,
   ElOption,
   ElSelect,
   ElSwitch,
 } from 'element-plus';
 
+import { getTool, listTools } from '#/api/ai/tools';
+
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
+import {
+  descriptionOf,
+  filterTools,
+  idOf,
+  mergeToolInputFields,
+  nameOf,
+  recordOf,
+  recordsOf,
+  toolInputFields,
+  typeOf,
+} from '../../common/tool-resource-utils';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const toolTypes = [
+  'CUSTOM',
+  'DATA_SOURCE',
+  'HTTP',
+  'INTERNAL',
+  'MOCK',
+  'SKILL',
+  'WORKFLOW',
+];
+const tools = ref<ResourceRecord[]>([]);
+const toolLoading = ref(false);
+const nodeRenderVersion = ref(0);
 
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
   set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+    syncNodeProperties(props.nodeModel, { node_data: value }, ['node_data']),
 });
 
+const toolOptions = computed(() => filterTools(tools.value, toolTypes));
 const fields = computed(() =>
   Array.isArray(formData.value.input_field_list)
     ? formData.value.input_field_list
     : [],
 );
+const selectedToolId = computed(
+  () => formData.value.toolId || formData.value.tool_id || '',
+);
+
+function refreshNode() {
+  nodeRenderVersion.value += 1;
+}
+
+function trackRenderVersion(..._versions: unknown[]) {}
 
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
+  refreshNode();
+}
+
+function patchNodeData(patch: Record<string, any>) {
+  formData.value = { ...formData.value, ...patch };
+  refreshNode();
 }
 
 function syncFields(nextFields: any[]) {
@@ -66,17 +112,84 @@ function removeField(index: number) {
     fields.value.filter((_: any, fieldIndex: number) => fieldIndex !== index),
   );
 }
+
+async function loadToolOptions() {
+  toolLoading.value = true;
+  try {
+    tools.value = recordsOf(await listTools());
+  } catch {
+    ElMessage.warning('工具列表加载失败');
+  } finally {
+    toolLoading.value = false;
+  }
+}
+
+async function loadToolDetail(id: number | string) {
+  const fallback = toolOptions.value.find(
+    (record) => `${idOf(record)}` === `${id}`,
+  );
+  try {
+    return recordOf(await getTool(id)) || fallback;
+  } catch {
+    ElMessage.warning('工具详情加载失败，已保留当前参数');
+    return fallback && toolInputFields(fallback).length > 0
+      ? fallback
+      : undefined;
+  }
+}
+
+async function selectTool(id: number | string) {
+  if (!id) {
+    patchNodeData({ toolId: '', tool_id: '' });
+    return;
+  }
+  const detail = await loadToolDetail(id);
+  const nextFields = detail
+    ? mergeToolInputFields(toolInputFields(detail), fields.value, 'reference')
+    : fields.value;
+  patchNodeData({
+    input_field_list: nextFields,
+    toolId: id,
+    tool_id: id,
+    tool_type: detail ? typeOf(detail) : formData.value.tool_type,
+  });
+}
+
+onMounted(() => {
+  void loadToolOptions();
+});
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <ElFormItem label="工具 ID">
-        <ElInput
-          :model-value="formData.toolId || formData.tool_id"
-          placeholder="选择或填写工具标识"
-          @update:model-value="patchData('toolId', $event)"
-        />
+        <ElSelect
+          :model-value="selectedToolId"
+          clearable
+          filterable
+          :loading="toolLoading"
+          placeholder="请选择工具"
+          :teleported="false"
+          @update:model-value="selectTool"
+        >
+          <ElOption
+            v-for="record in toolOptions"
+            :key="`${idOf(record)}`"
+            :label="nameOf(record)"
+            :value="idOf(record)"
+          >
+            <div class="workflow-node-tool-option">
+              <span>{{ nameOf(record) }}</span>
+              <small>{{
+                descriptionOf(record) || typeOf(record) || idOf(record)
+              }}</small>
+            </div>
+          </ElOption>
+        </ElSelect>
       </ElFormItem>
       <div class="workflow-node-panel">
         <div class="workflow-node-panel__head">
@@ -220,5 +333,23 @@ function removeField(index: number) {
   display: grid;
   grid-template-columns: 86px 1fr;
   gap: 6px;
+}
+
+.workflow-node-tool-option {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.workflow-node-tool-option span,
+.workflow-node-tool-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-node-tool-option small {
+  color: var(--el-text-color-placeholder);
 }
 </style>
