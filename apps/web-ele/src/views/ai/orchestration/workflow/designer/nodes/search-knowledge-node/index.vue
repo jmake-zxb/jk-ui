@@ -42,7 +42,7 @@ type SearchKnowledgeNodeData = Record<string, unknown> & {
   show_knowledge: boolean;
 };
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
 
 const defaultNodeData: SearchKnowledgeNodeData = {
   knowledge_id_list: [],
@@ -67,6 +67,7 @@ const paramDialogRef = ref<InstanceType<typeof ParamSettingDialog>>();
 const formData = ref<SearchKnowledgeNodeData>(
   normalizeNodeData(props.nodeModel.properties?.node_data),
 );
+const nodeRenderVersion = ref(0);
 
 const searchModeLabel: Record<SearchMode, string> = {
   blend: '混合检索',
@@ -223,6 +224,7 @@ function nodeProperties() {
 function syncNodeData(nextData: SearchKnowledgeNodeData) {
   formData.value = cloneDeep(nextData);
   set(nodeProperties(), 'node_data', cloneDeep(nextData));
+  nodeRenderVersion.value += 1;
   emitInlineUpdate();
 }
 
@@ -331,7 +333,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm
       ref="formRef"
       :model="formData"

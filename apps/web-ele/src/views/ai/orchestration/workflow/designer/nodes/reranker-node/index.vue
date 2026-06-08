@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   ElButton,
@@ -12,17 +12,22 @@ import {
   ElSwitch,
 } from 'element-plus';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeRenderVersion = ref(0);
 
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => {
+    syncNodeProperties(props.nodeModel, { node_data: value }, ['node_data']);
+    nodeRenderVersion.value += 1;
+  },
 });
 
 const references = computed(() => {
@@ -41,6 +46,8 @@ const setting = computed(() => ({
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
 }
+
+function trackRenderVersion(..._versions: unknown[]) {}
 
 function patchReference(index: number, value: any[]) {
   patchData(
@@ -71,7 +78,10 @@ function patchSetting(key: string, value: any) {
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <ElFormItem label="重排模型">
         <div class="workflow-node-row">
@@ -123,13 +133,13 @@ function patchSetting(key: string, value: any) {
             :node-model="nodeModel"
             :model-value="reference || []"
             placeholder="选择召回结果变量"
-            @update:model-value="patchReference(index, $event)"
+            @update:model-value="patchReference(Number(index), $event)"
           />
           <ElButton
             link
             type="danger"
             :disabled="references.length <= 1"
-            @click="removeReference(index)"
+            @click="removeReference(Number(index))"
           >
             删
           </ElButton>
