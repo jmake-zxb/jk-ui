@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   ElButton,
@@ -8,19 +8,21 @@ import {
   ElInput,
   ElOption,
   ElSelect,
-  ElSwitch,
 } from 'element-plus';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeModelForValidation = props.nodeModel;
+const nodeRenderVersion = ref(0);
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => syncNodeData(value),
 });
 const fields = computed(() => normalizeFields());
 
@@ -35,19 +37,41 @@ function normalizeFields() {
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
 }
+function syncNodeData(
+  nodeData: Record<string, unknown>,
+  patch: Record<string, unknown> = {},
+  fields = ['node_data'],
+) {
+  syncNodeProperties(
+    props.nodeModel,
+    { node_data: nodeData, ...patch },
+    fields,
+  );
+  nodeRenderVersion.value += 1;
+}
+function trackRenderVersion(..._versions: unknown[]) {}
 function syncFields(next: any[]) {
-  formData.value = { ...formData.value, fields: next, variable_list: next };
-  props.nodeModel.updateWorkflowProperties?.(
+  const normalized = next.map((item) => ({
+    desc: item.desc || '',
+    field: item.field,
+    label: item.label,
+    parameter_type: item.parameter_type || item.type || 'string',
+  }));
+  const nodeData = { ...formData.value, variable_list: normalized };
+  syncNodeData(
+    nodeData,
     {
       config: {
         ...props.nodeModel.properties.config,
-        fields: next.map((item) => ({
-          label: item.label || item.field,
-          type: item.type || 'string',
-          value: item.field,
-        })),
+        fields: [
+          { label: '结果', type: 'object', value: 'result' },
+          ...normalized.map((item) => ({
+            label: item.label || item.field,
+            type: item.parameter_type || 'string',
+            value: item.field,
+          })),
+        ],
       },
-      node_data: formData.value,
     },
     ['node_data', 'config'],
   );
@@ -59,8 +83,7 @@ function addField() {
       desc: '',
       field: `param_${fields.value.length + 1}`,
       label: `参数 ${fields.value.length + 1}`,
-      required: false,
-      type: 'string',
+      parameter_type: 'string',
     },
   ]);
 }
@@ -76,10 +99,32 @@ function removeField(index: number) {
     fields.value.filter((_: any, itemIndex: number) => itemIndex !== index),
   );
 }
+
+function validateFields() {
+  const names = fields.value.map((item: any) => `${item.field || ''}`.trim());
+  if (names.some((name: string) => !name)) throw new Error('字段不能为空');
+  if (names.some((name: string) => !/^\w+$/.test(name))) {
+    throw new Error('字段只能包含字母、数字和下划线');
+  }
+  if (new Set(names).size !== names.length) throw new Error('字段不能重复');
+  if (fields.value.some((item: any) => !`${item.label || ''}`.trim())) {
+    throw new Error('名称不能为空');
+  }
+}
+
+async function validate() {
+  validateFields();
+  return true;
+}
+
+nodeModelForValidation.validate = validate;
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <ElFormItem label="模型">
         <div class="workflow-node-row is-model">
@@ -138,9 +183,11 @@ function removeField(index: number) {
             @update:model-value="patchField(Number(index), { label: $event })"
           />
           <ElSelect
-            :model-value="field.type || 'string'"
+            :model-value="field.parameter_type || field.type || 'string'"
             :teleported="false"
-            @update:model-value="patchField(Number(index), { type: $event })"
+            @update:model-value="
+              patchField(Number(index), { parameter_type: $event })
+            "
           >
             <ElOption label="string" value="string" />
             <ElOption label="number" value="number" />
@@ -148,13 +195,10 @@ function removeField(index: number) {
             <ElOption label="array" value="array" />
             <ElOption label="object" value="object" />
           </ElSelect>
-          <ElSwitch
-            :model-value="!!field.required"
-            size="small"
-            active-text="必填"
-            @update:model-value="
-              patchField(Number(index), { required: $event })
-            "
+          <ElInput
+            :model-value="field.desc"
+            placeholder="描述"
+            @update:model-value="patchField(Number(index), { desc: $event })"
           />
           <ElButton link type="danger" @click="removeField(Number(index))">
             删
@@ -185,7 +229,7 @@ function removeField(index: number) {
 
 .workflow-node-row {
   display: grid;
-  grid-template-columns: 76px 1fr 82px auto auto;
+  grid-template-columns: 76px 1fr 82px 1fr auto;
   gap: 6px;
   align-items: center;
 }

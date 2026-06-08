@@ -1,9 +1,294 @@
 <script setup lang="ts">
-import NodeDataForm from '../../common/NodeDataForm.vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-defineProps<{ nodeModel: any }>();
+import { Operation } from '@element-plus/icons-vue';
+import {
+  ElButton,
+  ElForm,
+  ElFormItem,
+  ElIcon,
+  ElInput,
+  ElOption,
+  ElSelect,
+  ElSwitch,
+} from 'element-plus';
+import { cloneDeep, set } from 'lodash-es';
+
+import { syncNodeProperties } from '../../common/node-inline-update';
+import NodeCascader from '../../common/NodeCascader.vue';
+import NodeContainer from '../../common/NodeContainer.vue';
+import JsonParamSettingDialog from '../base-node/component/JsonParamSettingDialog.vue';
+import LocalModelSelect from '../base-node/component/LocalModelSelect.vue';
+
+type ModelSource = 'custom' | 'reference';
+type NodeData = Record<string, unknown> & {
+  content_list: unknown[];
+  is_result: boolean;
+  model_params_setting: Record<string, unknown>;
+  tts_model_id: number | string;
+  tts_model_id_reference: unknown[];
+  tts_model_id_type: ModelSource;
+};
+type WorkflowNodeModel = {
+  graphModel?: {
+    eventCenter?: {
+      emit?: (name: string, payload: Record<string, unknown>) => void;
+    };
+  };
+  id: string;
+  properties: Record<string, unknown>;
+  updateWorkflowProperties?: (
+    patch: Record<string, unknown>,
+    fields?: string[],
+  ) => void;
+  validate?: () => Promise<void>;
+};
+
+const props = defineProps<{ nodeModel: WorkflowNodeModel }>();
+const nodeModel = props.nodeModel;
+const modelCascaderRef = ref<InstanceType<typeof NodeCascader>>();
+const contentCascaderRef = ref<InstanceType<typeof NodeCascader>>();
+const paramDialogRef = ref<InstanceType<typeof JsonParamSettingDialog>>();
+const formData = ref<NodeData>(
+  normalizeNodeData(nodeModel.properties?.node_data),
+);
+
+const modelParamsSummary = computed(() => {
+  const keys = Object.keys(formData.value.model_params_setting || {});
+  return keys.length > 0 ? `${keys.length} 项` : '默认参数';
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function textValue(value: unknown) {
+  return `${value ?? ''}`.trim();
+}
+function hasReferenceValue(value: unknown) {
+  return Array.isArray(value) && value.length >= 2;
+}
+function normalizeNodeData(value: unknown): NodeData {
+  const source = isRecord(value) ? cloneDeep(value) : {};
+  let contentList: unknown[] = [];
+  if (Array.isArray(source.content_list)) {
+    contentList = cloneDeep(source.content_list);
+  } else if (Array.isArray(source.text_reference)) {
+    contentList = cloneDeep(source.text_reference);
+  }
+
+  return {
+    ...source,
+    content_list: contentList,
+    is_result: typeof source.is_result === 'boolean' ? source.is_result : true,
+    model_params_setting: isRecord(source.model_params_setting)
+      ? cloneDeep(source.model_params_setting)
+      : {},
+    tts_model_id:
+      typeof source.tts_model_id === 'number' ||
+      typeof source.tts_model_id === 'string'
+        ? source.tts_model_id
+        : '',
+    tts_model_id_reference: Array.isArray(source.tts_model_id_reference)
+      ? cloneDeep(source.tts_model_id_reference)
+      : [],
+    tts_model_id_type:
+      source.tts_model_id_type === 'reference' ? 'reference' : 'custom',
+  };
+}
+function validationError(errMessage: string) {
+  return Object.assign(new Error(errMessage), { errMessage, node: nodeModel });
+}
+function syncNodeData() {
+  const nodeData = cloneDeep(formData.value);
+  syncNodeProperties(nodeModel, { node_data: nodeData }, ['node_data']);
+}
+function patchData(key: keyof NodeData, value: unknown) {
+  set(formData.value, key, cloneDeep(value));
+  syncNodeData();
+}
+function patchModelType(value: ModelSource) {
+  set(formData.value, 'tts_model_id_type', value);
+  set(formData.value, 'tts_model_id_reference', []);
+  syncNodeData();
+}
+function patchModelId(value: number | string | undefined) {
+  set(formData.value, 'tts_model_id', value ?? '');
+  if (!value) set(formData.value, 'model_params_setting', {});
+  syncNodeData();
+}
+function openParamDialog() {
+  paramDialogRef.value?.open(
+    formData.value.model_params_setting,
+    '文本转语音模型参数',
+  );
+}
+function refreshParams(value: Record<string, unknown>) {
+  patchData('model_params_setting', value);
+}
+async function validate() {
+  try {
+    if (formData.value.tts_model_id_type === 'reference') {
+      if (!hasReferenceValue(formData.value.tts_model_id_reference))
+        throw validationError('请选择语音模型变量');
+      await modelCascaderRef.value?.validate?.();
+    } else if (!textValue(formData.value.tts_model_id)) {
+      throw validationError('请选择文本转语音模型');
+    }
+    if (!hasReferenceValue(formData.value.content_list))
+      throw validationError('请选择文本内容变量');
+    await contentCascaderRef.value?.validate?.();
+  } catch (error) {
+    if (error instanceof Error && 'node' in error) throw error;
+    throw validationError(
+      error instanceof Error ? error.message : `${error || ''}`,
+    );
+  }
+}
+onMounted(() => {
+  syncNodeData();
+  set(nodeModel, 'validate', validate);
+});
+onBeforeUnmount(() => {
+  if (nodeModel.validate === validate) set(nodeModel, 'validate', undefined);
+});
 </script>
 
 <template>
-  <NodeDataForm :node-model="nodeModel" variant="text-to-speech-node" />
+  <NodeContainer :node-model="nodeModel">
+    <ElForm
+      :model="formData"
+      class="workflow-tts-node"
+      label-position="top"
+      @submit.prevent
+    >
+      <section class="workflow-tts-node__panel">
+        <ElFormItem label="文本转语音模型" required>
+          <template #label>
+            <div class="workflow-tts-node__form-label">
+              <span>文本转语音模型</span>
+              <ElSelect
+                :model-value="formData.tts_model_id_type"
+                :teleported="false"
+                size="small"
+                @update:model-value="patchModelType"
+              >
+                <ElOption label="自定义" value="custom" />
+                <ElOption label="变量引用" value="reference" />
+              </ElSelect>
+            </div>
+          </template>
+          <div class="workflow-tts-node__model-row">
+            <LocalModelSelect
+              v-if="formData.tts_model_id_type === 'custom'"
+              :model-value="formData.tts_model_id"
+              model-type="TTS"
+              placeholder="请选择文本转语音模型"
+              @update:model-value="patchModelId"
+            />
+            <NodeCascader
+              v-else
+              ref="modelCascaderRef"
+              :model-value="formData.tts_model_id_reference"
+              :node-model="nodeModel"
+              class="w-full"
+              placeholder="选择模型变量"
+              @update:model-value="patchData('tts_model_id_reference', $event)"
+            />
+            <ElButton
+              :disabled="
+                formData.tts_model_id_type !== 'custom' ||
+                !formData.tts_model_id
+              "
+              size="small"
+              @click="openParamDialog"
+            >
+              <ElIcon><Operation /></ElIcon>
+            </ElButton>
+          </div>
+        </ElFormItem>
+        <ElFormItem label="模型参数">
+          <ElInput :model-value="modelParamsSummary" disabled />
+        </ElFormItem>
+        <ElFormItem label="文本内容" required>
+          <NodeCascader
+            ref="contentCascaderRef"
+            :model-value="formData.content_list"
+            :node-model="nodeModel"
+            class="w-full"
+            placeholder="选择文本内容变量"
+            @update:model-value="patchData('content_list', $event)"
+          />
+        </ElFormItem>
+      </section>
+      <section class="workflow-tts-node__panel">
+        <div class="workflow-tts-node__switch-row">
+          <div>
+            <strong>返回内容</strong><small>将生成音频作为工作流输出内容</small>
+          </div>
+          <ElSwitch
+            :model-value="formData.is_result"
+            size="small"
+            @update:model-value="patchData('is_result', $event)"
+          />
+        </div>
+      </section>
+    </ElForm>
+    <JsonParamSettingDialog ref="paramDialogRef" @refresh="refreshParams" />
+  </NodeContainer>
 </template>
+
+<style scoped lang="scss">
+.workflow-tts-node,
+.workflow-tts-node__panel {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-tts-node__panel {
+  padding: 6px 8px;
+  overflow: visible;
+  background: var(--el-fill-color-extra-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+
+.workflow-tts-node :deep(.el-form-item) {
+  margin-bottom: 6px;
+}
+
+.workflow-tts-node :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.workflow-tts-node__form-label,
+.workflow-tts-node__switch-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--el-text-color-secondary);
+}
+
+.workflow-tts-node__model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  width: 100%;
+}
+
+.workflow-tts-node__switch-row strong,
+.workflow-tts-node__switch-row small {
+  display: block;
+}
+
+.workflow-tts-node__switch-row small {
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  color: var(--el-text-color-placeholder);
+}
+</style>

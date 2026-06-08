@@ -7,5 +7,9 @@ class FormNodeView extends AppNode {
   constructor(props: any) {
     super(props, FormNode as Component);
   }
+
+  getConfig(props: { model: { properties?: Record<string, unknown> } }) {
+    return props.model.properties?.config;
+  }
 }
 export default { model: AppNodeModel, type: 'form-node', view: FormNodeView };

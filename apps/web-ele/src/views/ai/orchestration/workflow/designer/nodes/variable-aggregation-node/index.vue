@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   ElButton,
@@ -10,16 +10,18 @@ import {
   ElSelect,
 } from 'element-plus';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeRenderVersion = ref(0);
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => syncNodeData(value),
 });
 const groups = computed(() =>
   Array.isArray(formData.value.group_list)
@@ -36,15 +38,28 @@ const groups = computed(() =>
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
 }
+function syncNodeData(
+  nodeData: Record<string, unknown>,
+  patch: Record<string, unknown> = {},
+  fields = ['node_data'],
+) {
+  syncNodeProperties(
+    props.nodeModel,
+    { node_data: nodeData, ...patch },
+    fields,
+  );
+  nodeRenderVersion.value += 1;
+}
+function trackRenderVersion(..._versions: unknown[]) {}
 function syncGroups(next: any[]) {
-  patchData('group_list', next);
-  props.nodeModel.updateWorkflowProperties?.(
+  const nodeData = { ...formData.value, group_list: next };
+  syncNodeData(
+    nodeData,
     {
       config: {
         ...props.nodeModel.properties.config,
         fields: next.map((item) => ({ label: item.label, value: item.field })),
       },
-      node_data: formData.value,
     },
     ['node_data', 'config'],
   );
@@ -105,7 +120,10 @@ function removeVariable(groupIndex: number, variableIndex: number) {
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <ElFormItem label="聚合策略">
         <ElSelect

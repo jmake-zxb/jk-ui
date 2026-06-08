@@ -8,8 +8,17 @@ class VariableAggregationNodeView extends AppNode {
     super(props, VariableAggregationNode as Component);
   }
 }
+
+class VariableAggregationNodeModel extends AppNodeModel {
+  override setAttributes() {
+    super.setAttributes();
+    this.width = 450;
+    this.properties.width = 450;
+  }
+}
+
 export default {
-  model: AppNodeModel,
+  model: VariableAggregationNodeModel,
   type: 'variable-aggregation-node',
   view: VariableAggregationNodeView,
 };

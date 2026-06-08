@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   ElButton,
@@ -11,16 +11,21 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeRenderVersion = ref(0);
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => {
+    syncNodeProperties(props.nodeModel, { node_data: value }, ['node_data']);
+    nodeRenderVersion.value += 1;
+  },
 });
 const variables = computed(() => normalizeVariables());
 
@@ -35,6 +40,7 @@ function normalizeVariables() {
 function syncVariables(next: any[]) {
   formData.value = { ...formData.value, variable_list: next, variables: next };
 }
+function trackRenderVersion(..._versions: unknown[]) {}
 function addVariable() {
   syncVariables([
     ...variables.value,
@@ -112,7 +118,10 @@ function removeVariable(index: number) {
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <div class="workflow-node-panel">
         <div class="workflow-node-panel__head">
