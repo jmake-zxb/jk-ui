@@ -57,6 +57,10 @@ import {
 } from '#/api/ai/tools';
 import { adaptationUrl } from '#/utils/other';
 
+import {
+  APPLICATION_CHAT_PATH,
+  isWorkflowApplication,
+} from '../applications/application-entry';
 import { prettyJson, recordsOf, safeParseJson } from '../utils';
 import { normalizeGraphData } from './designer/graph-data';
 import { DEFAULT_GRAPH_DATA, DEFAULT_TOOL_GRAPH_DATA } from './designer/nodes';
@@ -319,10 +323,18 @@ function syncToolBaseNodeInfo(graphData: any) {
 async function loadApplicationDetail() {
   if (!applicationId.value) {
     applicationDetail.value = undefined;
-    return;
+    return true;
   }
   const detail = await getApplication(applicationId.value);
   applicationDetail.value = detail;
+  if (detail?.id && !isWorkflowApplication(detail.type)) {
+    ElMessage.info('智能体应用使用对话调试');
+    await router.replace({
+      path: APPLICATION_CHAT_PATH,
+      query: { applicationId: detail.id, mode: 'debug' },
+    });
+    return false;
+  }
   const index = applications.value.findIndex(
     (item) => `${item.id}` === `${detail?.id || applicationId.value}`,
   );
@@ -331,6 +343,7 @@ async function loadApplicationDetail() {
   } else if (detail?.id) {
     applications.value.unshift(detail);
   }
+  return true;
 }
 
 async function loadToolDetail() {
@@ -389,7 +402,9 @@ async function loadApplications() {
   try {
     applications.value = recordsOf(await listApplications());
     if (!applicationId.value && applications.value.length > 0) {
-      applicationId.value = applications.value[0].id;
+      applicationId.value =
+        applications.value.find((item) => isWorkflowApplication(item.type))
+          ?.id || applications.value[0].id;
     }
     await loadDraft();
   } catch (error) {
@@ -413,7 +428,7 @@ async function loadDraft() {
       await loadToolDetail();
       graphValue = await loadToolWorkflowValue();
     } else {
-      await loadApplicationDetail();
+      if (!(await loadApplicationDetail())) return;
       const draft = await getWorkflowDraft(applicationId.value);
       graphValue = draft?.graphData || draft;
       nextApplicationConfig = prettyJson(draft?.applicationConfig, '{}');

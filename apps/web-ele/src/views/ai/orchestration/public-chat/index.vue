@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import type { ApplicationPayload } from '#/api/ai/types';
+
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { useAppConfig } from '@vben/hooks';
+import { useAccessStore } from '@vben/stores';
 
 import {
   ElButton,
@@ -13,10 +18,12 @@ import {
   ElTableColumn,
   ElTabPane,
   ElTabs,
+  ElTag,
 } from 'element-plus';
 
 import {
   listApplications,
+  openApplicationChat,
   pageApplicationChatRecords,
 } from '#/api/ai/applications';
 import {
@@ -27,17 +34,32 @@ import {
   publicChat,
   votePublicRecord,
 } from '#/api/ai/public';
+import { adaptationUrl } from '#/utils/other';
 
-import { prettyJson, recordsOf } from '../utils';
+import { prettyJson, recordsOf, safeParseJson } from '../utils';
 
-const applications = ref<any[]>([]);
-const applicationId = ref<number | string>();
+interface ChatMessage {
+  content: string;
+  id: number;
+  pending?: boolean;
+  role: 'assistant' | 'user';
+}
+
+type ApplicationRecord = ApplicationPayload & { id: number | string };
+
+const route = useRoute();
+const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+const accessStore = useAccessStore();
+
+const applications = ref<ApplicationRecord[]>([]);
+const applicationId = ref<number | string | undefined>(routeApplicationId());
 const activeTab = ref('chat');
 const token = ref('');
 const apiKey = ref('');
 const chatId = ref<number | string>();
 const recordId = ref<number | string>();
 const message = ref('你好');
+const inputJson = ref('{}');
 const chatResult = ref<any>();
 const records = ref<any[]>([]);
 const shareToken = ref('');
@@ -47,20 +69,60 @@ const openAiBody = reactive({
   messages: '[{"role":"user","content":"你好"}]',
 });
 const openAiResult = ref<any>();
+const chatMessages = ref<ChatMessage[]>([]);
+const streaming = ref(false);
+const chatBodyRef = ref<HTMLElement>();
+let messageId = 0;
+
+const debugMode = computed(() => route.query.mode === 'debug');
+const selectedApplication = computed(() =>
+  applications.value.find((item) => `${item.id}` === `${applicationId.value}`),
+);
+
+function routeApplicationId(): number | string | undefined {
+  const value = route.query.applicationId;
+  const firstValue = Array.isArray(value) ? value[0] : value;
+  return firstValue === null ? undefined : firstValue;
+}
 
 async function loadApplications() {
-  applications.value = recordsOf(await listApplications());
-  if (!applicationId.value && applications.value.length > 0)
-    applicationId.value = applications.value[0].id;
+  applications.value = recordsOf<ApplicationRecord>(
+    await listApplications(),
+  ).filter((item) => item.id !== undefined && item.id !== null);
+  const routeId = routeApplicationId();
+  if (routeId) applicationId.value = routeId;
+  const firstApplication = applications.value[0];
+  if (!applicationId.value && firstApplication) {
+    applicationId.value = firstApplication.id;
+  }
 }
 
 async function openChat() {
+  if (debugMode.value) {
+    await openDebugChat();
+    return;
+  }
   const chat = await openPublicChat(applicationId.value!, {
     token: token.value,
     title: '前端公开会话',
   });
   chatId.value = chat.id;
   ElMessage.success('会话已打开');
+}
+
+async function openDebugChat() {
+  if (!applicationId.value) {
+    ElMessage.warning('请选择应用');
+    return;
+  }
+  const chat = await openApplicationChat(applicationId.value, {
+    source: 'APPLICATION_DEBUG',
+    title: '调试会话',
+  });
+  chatId.value = chat.id;
+  chatMessages.value = [];
+  records.value = [];
+  ElMessage.success('调试会话已打开');
 }
 
 async function sendChat() {
@@ -77,6 +139,155 @@ async function sendChat() {
         size: 20,
       }),
     );
+}
+
+async function sendDebugChat() {
+  if (streaming.value) return;
+  const content = message.value.trim();
+  if (!applicationId.value) {
+    ElMessage.warning('请选择应用');
+    return;
+  }
+  if (!content) {
+    ElMessage.warning('请输入消息');
+    return;
+  }
+  if (!chatId.value) await openDebugChat();
+  if (!chatId.value) return;
+  const userMessage = addChatMessage('user', content);
+  const assistantMessage = addChatMessage('assistant', '', true);
+  message.value = '';
+  streaming.value = true;
+  await scrollChatBottom();
+  try {
+    const response = await fetch(
+      `${apiURL}${adaptationUrl(`/ai/api/applications/${applicationId.value}/chat/message/stream`)}`,
+      {
+        body: JSON.stringify({
+          chatId: chatId.value,
+          inputJson: JSON.stringify(safeParseJson(inputJson.value, {})),
+          message: userMessage.content,
+        }),
+        headers: {
+          Authorization: accessStore.accessToken
+            ? `Bearer ${accessStore.accessToken}`
+            : '',
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+    if (!response.ok) {
+      throw new Error(
+        (await response.text()) || `请求失败：${response.status}`,
+      );
+    }
+    if (!response.body) throw new Error('聊天接口未返回流数据');
+    await readChatStream(response.body, assistantMessage);
+    await loadChatRecords();
+  } catch (error) {
+    assistantMessage.content = getErrorMessage(error);
+    ElMessage.error(assistantMessage.content);
+  } finally {
+    assistantMessage.pending = false;
+    streaming.value = false;
+    await scrollChatBottom();
+  }
+}
+
+function addChatMessage(
+  role: ChatMessage['role'],
+  content: string,
+  pending = false,
+) {
+  const item: ChatMessage = {
+    content,
+    id: ++messageId,
+    pending,
+    role,
+  };
+  chatMessages.value.push(item);
+  return item;
+}
+
+async function readChatStream(
+  stream: ReadableStream<Uint8Array>,
+  target: ChatMessage,
+) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+    for (const line of lines) handleChatStreamLine(line, target);
+    await scrollChatBottom();
+  }
+  if (buffer.trim()) handleChatStreamLine(buffer, target);
+}
+
+function handleChatStreamLine(line: string, target: ChatMessage) {
+  const raw = line.trim();
+  if (!raw) return;
+  const payloadText = raw.startsWith('data:') ? raw.slice(5).trim() : raw;
+  if (!payloadText || payloadText === '[DONE]') return;
+  const data = safeParseJson(payloadText, undefined);
+  if (!data) {
+    target.content += payloadText;
+    return;
+  }
+  if (data.event === 'error' || data.event === 'canceled') {
+    target.content = data.message || '调试失败';
+    target.pending = false;
+    return;
+  }
+  if (data.content) {
+    target.content += data.content;
+    return;
+  }
+  if (data.event === 'done' && data.payload) {
+    const answer = extractAnswer(data.payload);
+    if (answer) target.content = answer;
+  }
+}
+
+function extractAnswer(payload: unknown) {
+  const value =
+    typeof payload === 'string' ? safeParseJson(payload, payload) : payload;
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Record<string, unknown>;
+  const answer =
+    record.content || record.answer || record.result || record.output;
+  return typeof answer === 'string' ? answer : prettyJson(answer, '');
+}
+
+async function loadChatRecords() {
+  if (!applicationId.value || !chatId.value) return;
+  records.value = recordsOf(
+    await pageApplicationChatRecords(applicationId.value, chatId.value, {
+      current: 1,
+      page: 1,
+      size: 20,
+    }),
+  );
+}
+
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return '调试失败';
+}
+
+async function scrollChatBottom() {
+  await nextTick();
+  const el = chatBodyRef.value;
+  if (el) el.scrollTop = el.scrollHeight;
 }
 
 async function vote(type: string) {
@@ -119,13 +330,31 @@ async function sendOpenAi() {
   );
 }
 
+watch(
+  () => route.query.applicationId,
+  () => {
+    const routeId = routeApplicationId();
+    if (!routeId || `${routeId}` === `${applicationId.value}`) return;
+    applicationId.value = routeId;
+    chatId.value = undefined;
+    chatMessages.value = [];
+    records.value = [];
+  },
+);
+
+watch(applicationId, () => {
+  chatId.value = undefined;
+  chatMessages.value = [];
+  records.value = [];
+});
+
 onMounted(loadApplications);
 </script>
 
 <template>
   <Page auto-content-height>
     <div class="public-page">
-      <div class="toolbar">
+      <div class="toolbar" :class="{ 'debug-toolbar': debugMode }">
         <ElSelect v-model="applicationId" filterable placeholder="应用">
           <ElOption
             v-for="item in applications"
@@ -134,10 +363,86 @@ onMounted(loadApplications);
             :value="item.id"
           />
         </ElSelect>
-        <ElInput v-model="token" placeholder="访问令牌 aat_..." />
-        <ElInput v-model="apiKey" placeholder="API Key ak_..." />
+        <template v-if="debugMode">
+          <ElTag size="large" type="success">
+            {{ selectedApplication?.name || applicationId || '调试对话' }}
+          </ElTag>
+          <ElButton @click="openDebugChat">新会话</ElButton>
+        </template>
+        <template v-else>
+          <ElInput v-model="token" placeholder="访问令牌 aat_..." />
+          <ElInput v-model="apiKey" placeholder="API Key ak_..." />
+        </template>
       </div>
-      <ElTabs v-model="activeTab" class="fill-tabs">
+      <section v-if="debugMode" class="agent-chat">
+        <aside class="panel debug-side">
+          <div class="panel-title">调试目标</div>
+          <div class="debug-meta">
+            <span>应用</span>
+            <strong>{{
+              selectedApplication?.name || applicationId || '-'
+            }}</strong>
+          </div>
+          <div class="debug-meta">
+            <span>类型</span>
+            <strong>{{ selectedApplication?.type || '-' }}</strong>
+          </div>
+          <div class="debug-meta">
+            <span>会话</span>
+            <strong>{{ chatId || '-' }}</strong>
+          </div>
+          <div class="panel-title mt16">输入变量</div>
+          <ElInput
+            v-model="inputJson"
+            type="textarea"
+            :rows="10"
+            placeholder="{}"
+          />
+          <div class="panel-title mt16">最近记录</div>
+          <ElTable :data="records" class="record-table" size="small">
+            <ElTableColumn prop="id" label="ID" width="80" />
+            <ElTableColumn prop="question" label="问题" />
+          </ElTable>
+        </aside>
+        <main class="chat-main">
+          <div ref="chatBodyRef" class="chat-body">
+            <div v-if="chatMessages.length === 0" class="empty-chat">
+              暂无消息
+            </div>
+            <div
+              v-for="item in chatMessages"
+              :key="item.id"
+              class="message-row"
+              :class="`is-${item.role}`"
+            >
+              <div class="message-author">
+                {{ item.role === 'user' ? '用户' : 'AI' }}
+              </div>
+              <div class="message-bubble">
+                <span v-if="item.content">{{ item.content }}</span>
+                <span v-else class="muted">生成中...</span>
+              </div>
+            </div>
+          </div>
+          <div class="chat-composer">
+            <ElInput
+              v-model="message"
+              type="textarea"
+              :rows="3"
+              resize="none"
+              placeholder="输入消息"
+            />
+            <ElButton
+              type="primary"
+              :loading="streaming"
+              @click="sendDebugChat"
+            >
+              发送
+            </ElButton>
+          </div>
+        </main>
+      </section>
+      <ElTabs v-else v-model="activeTab" class="fill-tabs">
         <ElTabPane label="公开聊天" name="chat">
           <div class="two-col">
             <section class="panel">
@@ -232,6 +537,11 @@ onMounted(loadApplications);
   display: grid;
   grid-template-columns: 260px 1fr 1fr;
   gap: 8px;
+  align-items: center;
+}
+
+.debug-toolbar {
+  grid-template-columns: 260px 1fr auto;
 }
 
 .fill-tabs,
@@ -253,6 +563,123 @@ onMounted(loadApplications);
   background: hsl(var(--card));
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
+}
+
+.agent-chat {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.debug-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debug-meta {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.debug-meta span {
+  color: var(--el-text-color-secondary);
+}
+
+.debug-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.record-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: hsl(var(--card));
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+
+.chat-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  background: var(--el-fill-color-lighter);
+}
+
+.empty-chat {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  color: var(--el-text-color-secondary);
+}
+
+.message-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 78%;
+}
+
+.message-row.is-user {
+  align-items: flex-end;
+  align-self: flex-end;
+}
+
+.message-row.is-assistant {
+  align-self: flex-start;
+}
+
+.message-author {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.message-bubble {
+  padding: 10px 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: hsl(var(--card));
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+
+.message-row.is-user .message-bubble {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-7);
+}
+
+.muted {
+  color: var(--el-text-color-secondary);
+}
+
+.chat-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .panel-title {
@@ -281,5 +708,22 @@ onMounted(loadApplications);
 .tall {
   height: calc(100% - 16px);
   max-height: none;
+}
+
+@media (max-width: 900px) {
+  .toolbar,
+  .debug-toolbar,
+  .agent-chat,
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .message-row {
+    max-width: 100%;
+  }
+
+  .chat-composer {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

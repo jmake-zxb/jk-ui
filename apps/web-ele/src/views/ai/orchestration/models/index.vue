@@ -83,6 +83,30 @@ type DynamicFieldValue =
   | undefined;
 type DynamicValues = Record<string, DynamicFieldValue>;
 
+const providerCodeAliasMap: Record<string, string> = {
+  aliyun_bai_lian_model_provider: 'aliyun-bai-lian',
+  model_aws_bedrock_provider: 'aws-bedrock',
+  model_azure_provider: 'azure',
+  model_deepseek_provider: 'deepseek',
+  model_docker_ai_provider: 'docker-ai',
+  model_gemini_provider: 'gemini',
+  model_kimi_provider: 'kimi',
+  model_local_provider: 'local',
+  model_minimax_provider: 'minimax',
+  model_ollama_provider: 'ollama',
+  model_openai_provider: 'openai',
+  model_regolo_provider: 'regolo',
+  model_siliconcloud_provider: 'siliconflow',
+  model_tencent_cloud_provider: 'tencent-cloud',
+  model_tencent_provider: 'tencent',
+  model_vllm_provider: 'vllm',
+  model_volcanic_engine_provider: 'volcanic-engine',
+  model_wenxin_provider: 'wenxin',
+  model_xf_provider: 'xunfei',
+  model_xinference_provider: 'xinference',
+  model_zhipu_provider: 'zhipu',
+};
+
 interface ProviderRecord extends Record<string, unknown> {
   apiBase?: string;
   apiKey?: string;
@@ -109,7 +133,7 @@ interface ProviderOption extends ProviderRecord {
 interface ModelRecord extends Record<string, unknown> {
   configJson?: string;
   createTime?: string;
-  credential?: Record<string, unknown> | string;
+  credential?: unknown;
   defaultFlag?: boolean;
   displayName?: string;
   enabled?: boolean;
@@ -117,7 +141,7 @@ interface ModelRecord extends Record<string, unknown> {
   isActive?: boolean;
   isDefault?: boolean;
   modelName?: string;
-  modelParamsForm?: ModelFormField[] | string;
+  modelParamsForm?: unknown;
   modelType?: string;
   name?: string;
   providerCode?: string;
@@ -210,13 +234,13 @@ const metaRawText = ref('{}');
 const providerItems = computed<ProviderOption[]>(() => {
   const configuredByCode = new Map<string, ProviderRecord>();
   providers.value.forEach((item) => {
-    const code = providerCodeOf(item);
+    const code = providerKeyOf(item);
     if (code) configuredByCode.set(code, item);
   });
 
   const itemsByCode = new Map<string, ProviderOption>();
   providerMetadata.value.forEach((item) => {
-    const code = providerCodeOf(item);
+    const code = providerKeyOf(item);
     if (!code) return;
     const configured = configuredByCode.get(code);
     itemsByCode.set(code, {
@@ -257,12 +281,12 @@ const providerItems = computed<ProviderOption[]>(() => {
 
 const activeProvider = computed(() =>
   providerItems.value.find(
-    (item) => providerCodeOf(item) === selectedProviderCode.value,
+    (item) => providerKeyOf(item) === selectedProviderCode.value,
   ),
 );
 const selectedProviderConfig = computed(() =>
   providers.value.find(
-    (item) => providerCodeOf(item) === selectedProviderCode.value,
+    (item) => providerKeyOf(item) === selectedProviderCode.value,
   ),
 );
 const activeProviderName = computed(() =>
@@ -270,20 +294,11 @@ const activeProviderName = computed(() =>
 );
 const visibleModels = computed<ModelRecord[]>(() => {
   const keyword = searchKeyword.value.trim().toLowerCase();
-  return models.value.filter((item) => {
-    const providerMatched =
-      !selectedProviderCode.value ||
-      modelProviderCode(item) === selectedProviderCode.value;
-    const typeMatched =
-      !modelTypeFilter.value || modelTypeOf(item) === modelTypeFilter.value;
-    const keywordMatched =
-      !keyword ||
-      [modelDisplayName(item), modelNameOf(item), providerNameOf(item)]
-        .join(' ')
-        .toLowerCase()
-        .includes(keyword);
-    return providerMatched && typeMatched && keywordMatched;
-  });
+  const result: ModelRecord[] = [];
+  for (const item of models.value) {
+    if (modelMatchesFilters(item, keyword)) result.push(item);
+  }
+  return result;
 });
 const allModelTypeOptions = computed<ModelTypeOption[]>(() => {
   const options = new Map<string, string>();
@@ -392,6 +407,27 @@ function providerCodeOf(
   return stringValue(row?.providerCode ?? row?.code ?? row?.provider);
 }
 
+function canonicalProviderCode(value: unknown) {
+  const code = stringValue(value).trim();
+  if (!code) return '';
+  const normalized = code.toLowerCase();
+  const alias = providerCodeAliasMap[normalized];
+  if (alias) return alias;
+  if (normalized.startsWith('model_') && normalized.endsWith('_provider')) {
+    return normalized
+      .slice('model_'.length, -'_provider'.length)
+      .replaceAll('_', '-');
+  }
+  return normalized;
+}
+
+function providerKeyOf(
+  row?: ModelRecord | ProviderOption | ProviderRecord | Record<string, unknown>,
+) {
+  if (!row) return '';
+  return canonicalProviderCode(row.code ?? row.providerCode ?? row.provider);
+}
+
 function providerDisplayName(
   row?: ProviderOption | ProviderRecord | Record<string, unknown>,
 ) {
@@ -417,6 +453,21 @@ function providerApiUrlOf(row?: ProviderRecord | Record<string, unknown>) {
 
 function modelProviderCode(row?: ModelRecord) {
   return stringValue(row?.providerCode ?? row?.provider ?? row?.provider_code);
+}
+
+function modelMatchesFilters(item: ModelRecord, keyword: string) {
+  const providerMatched =
+    !selectedProviderCode.value ||
+    providerKeyOf(item) === selectedProviderCode.value;
+  const typeMatched =
+    !modelTypeFilter.value || modelTypeOf(item) === modelTypeFilter.value;
+  const keywordMatched =
+    !keyword ||
+    [modelDisplayName(item), modelNameOf(item), providerNameOf(item)]
+      .join(' ')
+      .toLowerCase()
+      .includes(keyword);
+  return providerMatched && typeMatched && keywordMatched;
 }
 
 function providerNameOf(row?: ModelRecord) {
@@ -460,24 +511,30 @@ function modelTypeLabel(type?: string) {
 }
 
 function countModelsByProvider(providerCode: string) {
-  return models.value.filter((item) => modelProviderCode(item) === providerCode)
-    .length;
+  let count = 0;
+  for (const item of models.value) {
+    if (providerKeyOf(item) === providerCode) count += 1;
+  }
+  return count;
 }
 
 function normalizeProviderMetadata(value: unknown): ProviderOption[] {
-  return arrayOfUnknown(value)
-    .filter((item): item is Record<string, unknown> => isRecord(item))
-    .map((item) => ({
+  const providers: ProviderOption[] = [];
+  for (const item of arrayOfUnknown(value)) {
+    if (!isRecord(item)) continue;
+    const provider: ProviderOption = {
       ...item,
-      providerCode: stringValue(
-        item.providerCode ?? item.code ?? item.provider,
+      providerCode: canonicalProviderCode(
+        item.code ?? item.providerCode ?? item.provider,
       ),
       providerName: stringValue(
         item.providerName ?? item.name ?? item.displayName,
       ),
       providerType: stringValue(item.providerType ?? item.type),
-    }))
-    .filter((item) => providerCodeOf(item));
+    };
+    if (providerCodeOf(provider)) providers.push(provider);
+  }
+  return providers;
 }
 
 function normalizeModelTypeOption(value: unknown): ModelTypeOption | undefined {
@@ -715,10 +772,10 @@ function statusTagTypeValue(row?: ModelRecord) {
 
 function applyProviderToModelForm(providerCode: string) {
   const provider = providerItems.value.find(
-    (item) => providerCodeOf(item) === providerCode,
+    (item) => providerKeyOf(item) === providerCode,
   );
   const config = providers.value.find(
-    (item) => providerCodeOf(item) === providerCode,
+    (item) => providerKeyOf(item) === providerCode,
   );
   modelForm.providerCode = providerCode;
   modelForm.providerId = idValue(config?.id);
@@ -889,9 +946,11 @@ async function loadParamsFormForDialog(
   modelType: string,
 ) {
   if (!providerCode || !modelType || editingModelId.value) return;
-  modelForm.modelParamsForm = normalizeFormFields(
-    await listProviderModelParamsForm(providerCode, modelType),
+  const paramsFormSource: unknown = await listProviderModelParamsForm(
+    providerCode,
+    modelType,
   );
+  modelForm.modelParamsForm = normalizeFormFields(paramsFormSource);
   modelParamsRawText.value = prettyJson(modelForm.modelParamsForm, '[]');
 }
 
@@ -967,6 +1026,7 @@ function syncModelParamsFromRaw() {
 
 function validateModelForm() {
   if (!modelForm.providerCode) return '请选择供应商';
+  if (!modelForm.providerId) return '请先保存供应商配置';
   if (!modelForm.modelType) return '请选择模型类型';
   if (!modelForm.modelName) return '请选择或输入基础模型';
   if (!modelForm.displayName) return '请输入显示名称';
@@ -1604,18 +1664,19 @@ onMounted(refreshAll);
   --model-space-3: 12px;
   --model-space-4: 16px;
   --model-space-5: 20px;
-  --model-panel-radius: var(--el-border-radius-base);
+  --model-panel-radius: 6px;
+  --model-sidebar-width: 280px;
 
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: var(--model-sidebar-width) minmax(0, 1fr);
   gap: var(--model-space-3);
   height: 100%;
   overflow: hidden;
 }
 
 .provider-sidebar,
-.model-hero,
-.filter-bar,
+.model-content,
 .model-card,
 .empty-panel {
   background: hsl(var(--card));
@@ -1646,13 +1707,17 @@ onMounted(refreshAll);
 .sidebar-head,
 .model-hero {
   justify-content: space-between;
-  padding: var(--model-space-4);
+  padding: var(--model-space-3) var(--model-space-4);
+}
+
+.sidebar-head {
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .provider-scrollbar {
   flex: 1;
   min-height: 0;
-  padding: 0 var(--model-space-2) var(--model-space-2);
+  padding: var(--model-space-2);
 }
 
 .provider-item {
@@ -1660,35 +1725,37 @@ onMounted(refreshAll);
   gap: var(--model-space-2);
   align-items: center;
   width: 100%;
-  padding: var(--model-space-3);
+  padding: var(--model-space-2) var(--model-space-3);
   color: var(--el-text-color-primary);
   text-align: left;
   cursor: pointer;
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--model-panel-radius);
 }
 
-.provider-item:hover,
-.provider-item.active {
+.provider-item:hover {
   background: var(--el-color-primary-light-9);
 }
 
 .provider-item.active {
   color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-7);
 }
 
 .provider-mark,
 .model-icon {
   display: inline-flex;
-  flex: 0 0 34px;
+  flex: 0 0 32px;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   font-weight: 600;
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-8);
   border-radius: var(--model-panel-radius);
 }
 
@@ -1724,7 +1791,6 @@ onMounted(refreshAll);
 .model-content {
   display: flex;
   flex-direction: column;
-  gap: var(--model-space-3);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1732,18 +1798,15 @@ onMounted(refreshAll);
 
 .model-hero {
   flex-shrink: 0;
-  background:
-    radial-gradient(
-      circle at 10% 10%,
-      var(--el-color-primary-light-9),
-      transparent 34%
-    ),
-    hsl(var(--card));
+  background: hsl(var(--card));
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .model-hero h2,
 .sidebar-head h3 {
   margin: var(--model-space-1) 0;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
@@ -1753,11 +1816,15 @@ onMounted(refreshAll);
 
 .filter-bar {
   flex-shrink: 0;
-  padding: var(--model-space-3);
+  flex-wrap: wrap;
+  padding: var(--model-space-3) var(--model-space-4);
+  background: var(--el-fill-color-extra-light);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .filter-bar .el-input {
-  max-width: 360px;
+  width: 320px;
+  max-width: 100%;
 }
 
 .filter-bar .el-select {
@@ -1766,25 +1833,34 @@ onMounted(refreshAll);
 
 .model-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--model-space-3);
   min-height: 0;
-  padding-right: var(--model-space-1);
+  padding: var(--model-space-3) var(--model-space-4) var(--model-space-4);
   overflow: auto;
 }
 
 .model-card {
   display: flex;
   flex-direction: column;
-  gap: var(--model-space-3);
-  min-height: 210px;
-  padding: var(--model-space-4);
+  gap: var(--model-space-2);
+  min-height: 170px;
+  padding: var(--model-space-3);
+  box-shadow: none;
+  transition:
+    border-color var(--el-transition-duration),
+    box-shadow var(--el-transition-duration);
+}
+
+.model-card:hover {
+  border-color: var(--el-border-color);
+  box-shadow: var(--el-box-shadow-lighter);
 }
 
 .card-lines {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: var(--model-space-2) var(--model-space-3);
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: var(--model-space-1) var(--model-space-3);
   font-size: 13px;
 }
 
@@ -1798,13 +1874,15 @@ onMounted(refreshAll);
 
 .card-actions {
   justify-content: flex-end;
-  padding-top: var(--model-space-2);
+  padding-top: var(--model-space-1);
   margin-top: auto;
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .empty-panel {
   flex: 1;
+  margin: var(--model-space-3) var(--model-space-4) var(--model-space-4);
+  background: var(--el-fill-color-extra-light);
 }
 
 .form-grid {
@@ -1838,10 +1916,15 @@ onMounted(refreshAll);
 @media (max-width: 960px) {
   .model-page {
     grid-template-columns: 1fr;
+    overflow: auto;
   }
 
   .provider-sidebar {
     min-height: 220px;
+  }
+
+  .model-content {
+    min-height: 520px;
   }
 
   .form-grid,
