@@ -27,6 +27,7 @@ import { cloneDeep, set } from 'lodash-es';
 import { listApplications } from '#/api/ai/applications';
 import { listTools } from '#/api/ai/tools';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 import JsonParamSettingDialog from '../base-node/component/JsonParamSettingDialog.vue';
@@ -95,13 +96,11 @@ const applications = ref<ResourceRecord[]>([]);
 
 function refreshNode() {
   nodeRenderVersion.value += 1;
-  nodeModel.refreshVueComponent?.();
-  nodeModel.graphModel?.eventCenter?.emit?.('node:inline-update', {
-    fields: ['node_data'],
-    id: nodeModel.id,
-    properties: nodeModel.properties,
-    source: 'vue-node',
-  });
+  syncNodeProperties(
+    nodeModel,
+    { node_data: nodeModel.properties.node_data || {} },
+    ['node_data'],
+  );
 }
 
 function hasField(data: Record<string, unknown>, key: string) {

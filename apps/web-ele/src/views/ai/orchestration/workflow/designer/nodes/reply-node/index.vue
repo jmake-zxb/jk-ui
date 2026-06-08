@@ -12,6 +12,7 @@ import {
 } from 'element-plus';
 import { cloneDeep, set } from 'lodash-es';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
 
@@ -45,19 +46,13 @@ function hasField(data: Record<string, unknown>, key: string) {
   return Object.prototype.hasOwnProperty.call(data, key);
 }
 
-function emitInlineUpdate() {
-  props.nodeModel.graphModel?.eventCenter?.emit?.('node:inline-update', {
-    fields: ['node_data'],
-    id: props.nodeModel.id,
-    properties: props.nodeModel.properties,
-    source: 'vue-node',
-  });
-}
-
 function refreshNode() {
   nodeRenderVersion.value += 1;
-  props.nodeModel.refreshVueComponent?.();
-  emitInlineUpdate();
+  syncNodeProperties(
+    props.nodeModel,
+    { node_data: props.nodeModel.properties.node_data || {} },
+    ['node_data'],
+  );
 }
 
 function ensureNodeData() {

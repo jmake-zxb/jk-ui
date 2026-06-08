@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import {
   ElButton,
@@ -13,18 +13,25 @@ import {
   ElSelect,
   ElSwitch,
 } from 'element-plus';
+import { set } from 'lodash-es';
 
+import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
+import LocalModelSelect from '../base-node/component/LocalModelSelect.vue';
 
-const props = defineProps<{ nodeModel: any }>();
+const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const nodeRenderVersion = ref(0);
 
 const formData = computed({
-  get: () => props.nodeModel.properties.node_data || {},
-  set: (value) =>
-    props.nodeModel.updateWorkflowProperties?.({ node_data: value }, [
-      'node_data',
-    ]),
+  get: () => {
+    trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+    return props.nodeModel.properties.node_data || {};
+  },
+  set: (value) => {
+    syncNodeProperties(props.nodeModel, { node_data: value }, ['node_data']);
+    nodeRenderVersion.value += 1;
+  },
 });
 
 const paramsDialogVisible = ref(false);
@@ -54,6 +61,40 @@ function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
 }
 
+function trackRenderVersion(..._versions: unknown[]) {}
+
+function textValue(value: unknown) {
+  return `${value ?? ''}`.trim();
+}
+
+function hasReferenceValue(value: unknown) {
+  return Array.isArray(value) ? value.length >= 2 : !!textValue(value);
+}
+
+function validationError(errMessage: string) {
+  return Object.assign(new Error(errMessage), {
+    errMessage,
+    node: props.nodeModel,
+  });
+}
+
+function validate() {
+  const data = formData.value;
+  if ((data.model_id_type || 'custom') === 'reference') {
+    if (!hasReferenceValue(data.model_id_reference)) {
+      return Promise.reject(validationError('请选择模型变量'));
+    }
+  } else if (!textValue(data.model_id || data.modelId)) {
+    return Promise.reject(validationError('请选择模型'));
+  }
+
+  if (!textValue(data.prompt || data.question || data.content)) {
+    return Promise.reject(validationError('请输入用户提示词'));
+  }
+
+  return Promise.resolve();
+}
+
 function openParamsDialog() {
   paramsDraft.value = JSON.stringify(
     formData.value.model_params_setting || {},
@@ -74,10 +115,23 @@ function saveParamsDialog() {
     ElMessage.warning('模型参数必须是有效 JSON');
   }
 }
+
+onMounted(() => {
+  set(props.nodeModel, 'validate', validate);
+});
+
+onBeforeUnmount(() => {
+  if (props.nodeModel.validate === validate) {
+    set(props.nodeModel, 'validate', undefined);
+  }
+});
 </script>
 
 <template>
-  <NodeContainer :node-model="nodeModel">
+  <NodeContainer
+    :node-model="nodeModel"
+    :render-version="nodeRenderVersion + (renderVersion || 0)"
+  >
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <ElFormItem label="模型">
         <div class="workflow-node-row is-model">
@@ -89,10 +143,11 @@ function saveParamsDialog() {
             <ElOption label="自定义" value="custom" />
             <ElOption label="引用" value="reference" />
           </ElSelect>
-          <ElInput
+          <LocalModelSelect
             v-if="(formData.model_id_type || 'custom') === 'custom'"
             :model-value="formData.model_id || formData.modelId"
-            placeholder="LLM 模型 ID"
+            model-type="LLM"
+            placeholder="请选择模型"
             @update:model-value="patchData('model_id', $event)"
           />
           <NodeCascader

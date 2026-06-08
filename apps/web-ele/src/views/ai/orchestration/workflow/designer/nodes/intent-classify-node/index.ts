@@ -68,6 +68,6 @@ class IntentClassifyNodeModel extends AppNodeModel {
 
 export default {
   model: IntentClassifyNodeModel,
-  type: 'intent-classify-node',
+  type: 'intent-node',
   view: IntentClassifyNodeView,
 };
