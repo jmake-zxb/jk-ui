@@ -30,6 +30,16 @@ const routes: RouteRecordRaw[] = [
         path: '/ai/orchestration/applications/index',
       },
       {
+        component: () =>
+          import('#/views/ai/orchestration/applications/detail/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '应用详情',
+        },
+        name: 'AiOrchestrationApplicationDetail',
+        path: '/ai/orchestration/applications/detail',
+      },
+      {
         component: () => import('#/views/ai/orchestration/knowledge/index.vue'),
         meta: {
           icon: 'lucide:database',

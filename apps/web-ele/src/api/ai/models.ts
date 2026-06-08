@@ -21,17 +21,17 @@ export interface ProviderConfigPayload {
 }
 
 export interface ModelFormField extends Record<string, unknown> {
-  defaultValue?: JsonValue;
-  default_value?: JsonValue;
+  defaultValue?: unknown;
+  default_value?: unknown;
   desc?: string;
   field?: string;
   inputType?: string;
   input_type?: string;
-  label?: string | { label?: string };
+  label?: string | { label?: string; name?: string };
   name?: string;
-  optionList?: Array<Record<string, unknown>> | string;
-  option_list?: Array<Record<string, unknown>> | string;
-  options?: Array<Record<string, unknown>> | string;
+  optionList?: unknown;
+  option_list?: unknown;
+  options?: unknown;
   required?: boolean;
   type?: string;
 }
