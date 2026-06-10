@@ -19,7 +19,7 @@ describe('application primary entry', () => {
     ).toMatchObject({
       kind: 'workflow',
       label: '工作流',
-      path: '/ai/orchestration/workflow/index',
+      path: '/ai/orchestration/workflow/agent/index',
       query: { applicationId: 101 },
     });
   });
@@ -30,7 +30,7 @@ describe('application primary entry', () => {
       expect(applicationPrimaryEntry({ id: 'app-1', type })).toMatchObject({
         kind: 'detail',
         label: '概览',
-        path: '/ai/orchestration/applications/detail',
+        path: '/ai/orchestration/applications/detail/index',
         query: { applicationId: 'app-1', tab: 'overview' },
       });
     }
@@ -40,7 +40,7 @@ describe('application primary entry', () => {
     expect(applicationDetailEntry({ id: 102 }, 'setting')).toMatchObject({
       kind: 'detail',
       label: '设置',
-      path: '/ai/orchestration/applications/detail',
+      path: '/ai/orchestration/applications/detail/index',
       query: { applicationId: 102, tab: 'setting' },
     });
 

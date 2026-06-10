@@ -1,6 +1,7 @@
-export const WORKFLOW_EDITOR_PATH = '/ai/orchestration/workflow/index';
+export const WORKFLOW_EDITOR_PATH = '/ai/orchestration/workflow/agent/index';
 export const APPLICATION_CHAT_PATH = '/ai/orchestration/public-chat/index';
-export const APPLICATION_DETAIL_PATH = '/ai/orchestration/applications/detail';
+export const APPLICATION_DETAIL_PATH =
+  '/ai/orchestration/applications/detail/index';
 
 export type ApplicationDetailTab = 'chat-log' | 'overview' | 'setting';
 export type ApplicationEntryKind = 'chat' | 'detail' | 'workflow';
