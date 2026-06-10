@@ -5,6 +5,7 @@ import {
   CaretRight,
   Close,
   EditPen,
+  MagicStick,
   Operation,
   Plus,
 } from '@element-plus/icons-vue';
@@ -27,10 +28,11 @@ import { cloneDeep, set } from 'lodash-es';
 import { listApplications } from '#/api/ai/applications';
 import { listTools } from '#/api/ai/tools';
 
+import GeneratePromptDialog from '../../../../applications/GeneratePromptDialog.vue';
+import ModelParamSettingDialog from '../../../../applications/ModelParamSettingDialog.vue';
 import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
-import JsonParamSettingDialog from '../base-node/component/JsonParamSettingDialog.vue';
 import LocalModelSelect from '../base-node/component/LocalModelSelect.vue';
 import McpServersDialog from './component/McpServersDialog.vue';
 import ReasoningParamSettingDialog from './component/ReasoningParamSettingDialog.vue';
@@ -82,7 +84,8 @@ const collapseData = reactive({
   tool: true,
 });
 
-const modelParamDialogRef = ref<InstanceType<typeof JsonParamSettingDialog>>();
+const modelParamOpen = ref(false);
+const generatePromptOpen = ref(false);
 const textMagnifyDialogRef = ref<InstanceType<typeof TextMagnifyDialog>>();
 const mcpServersDialogRef = ref<InstanceType<typeof McpServersDialog>>();
 const resourceSelectDialogRef =
@@ -452,15 +455,32 @@ function validationError(errMessage: string) {
   });
 }
 
+const resolvedModelId = computed(() => {
+  const value = formData.value.model_id || formData.value.modelId;
+  return typeof value === 'number' || typeof value === 'string' ? value : '';
+});
+
+const modelParamSetting = computed(() => {
+  const setting = formData.value.model_params_setting;
+  return setting && typeof setting === 'object' && !Array.isArray(setting)
+    ? (setting as Record<string, unknown>)
+    : {};
+});
+
 function openModelParamDialog() {
-  modelParamDialogRef.value?.open(
-    formData.value.model_params_setting,
-    '模型参数设置',
-  );
+  modelParamOpen.value = true;
 }
 
 function refreshModelParams(value: Record<string, unknown>) {
   patchData('model_params_setting', value);
+}
+
+function openGeneratePrompt() {
+  generatePromptOpen.value = true;
+}
+
+function applyGeneratedPrompt(prompt: string) {
+  patchData('system', prompt);
 }
 
 function openTextMagnifyDialog(key: 'prompt' | 'system', title: string) {
@@ -617,14 +637,26 @@ onBeforeUnmount(() => {
           <template #label>
             <div class="workflow-ai-chat-node__form-label">
               <span>系统提示词</span>
-              <ElButton
-                size="small"
-                text
-                type="primary"
-                @click="openTextMagnifyDialog('system', '系统提示词')"
-              >
-                <ElIcon><EditPen /></ElIcon>
-              </ElButton>
+              <div class="workflow-ai-chat-node__label-actions">
+                <ElButton
+                  :disabled="!resolvedModelId"
+                  size="small"
+                  text
+                  type="primary"
+                  @click="openGeneratePrompt"
+                >
+                  <ElIcon><MagicStick /></ElIcon>
+                  AI 生成
+                </ElButton>
+                <ElButton
+                  size="small"
+                  text
+                  type="primary"
+                  @click="openTextMagnifyDialog('system', '系统提示词')"
+                >
+                  <ElIcon><EditPen /></ElIcon>
+                </ElButton>
+              </div>
             </div>
           </template>
           <ElInput
@@ -1065,9 +1097,16 @@ onBeforeUnmount(() => {
       </section>
     </ElForm>
 
-    <JsonParamSettingDialog
-      ref="modelParamDialogRef"
+    <ModelParamSettingDialog
+      v-model="modelParamOpen"
+      :model-id="resolvedModelId"
+      :setting="modelParamSetting"
       @refresh="refreshModelParams"
+    />
+    <GeneratePromptDialog
+      v-model="generatePromptOpen"
+      :model-id="resolvedModelId"
+      @replace="applyGeneratedPrompt"
     />
     <TextMagnifyDialog
       ref="textMagnifyDialogRef"
@@ -1167,6 +1206,12 @@ onBeforeUnmount(() => {
 
 .workflow-ai-chat-node__form-label .el-select {
   width: 92px;
+}
+
+.workflow-ai-chat-node__label-actions {
+  display: inline-flex;
+  gap: var(--ai-node-space-xs);
+  align-items: center;
 }
 
 .workflow-ai-chat-node__label-with-tip {
