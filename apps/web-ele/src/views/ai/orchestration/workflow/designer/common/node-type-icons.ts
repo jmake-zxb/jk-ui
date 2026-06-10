@@ -7,6 +7,8 @@
  */
 import type { Component } from 'vue';
 
+import type { NodeStatus } from '../nodes';
+
 import {
   Aim,
   ChatDotRound,
@@ -42,7 +44,7 @@ import {
   VideoPlay,
 } from '@element-plus/icons-vue';
 
-import { type NodeStatus, nodeMeta } from '../nodes';
+import { nodeMeta } from '../nodes';
 
 /** status 分类兜底图标。 */
 const STATUS_ICONS: Record<NodeStatus, Component> = {
