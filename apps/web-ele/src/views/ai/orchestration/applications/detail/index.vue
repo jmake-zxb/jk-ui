@@ -16,6 +16,7 @@ import {
   ChatDotRound,
   Connection,
   CopyDocument,
+  Delete,
   Document,
   Key,
   Lock,
@@ -38,6 +39,7 @@ import {
   ElInput,
   ElInputNumber,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElPagination,
   ElScrollbar,
@@ -50,8 +52,10 @@ import {
 } from 'element-plus';
 
 import {
+  clearApplicationChats,
   createAccessToken,
   createApplicationKey,
+  deleteApplicationChat,
   deleteApplicationKey,
   getApplication,
   getWorkflowDraft,
@@ -61,6 +65,7 @@ import {
   pageApplicationChats,
   pageApplicationKeys,
   publishWorkflow,
+  renameApplicationChat,
   saveWorkflowDraft,
   toggleAccessToken,
   toggleApplicationKey,
@@ -80,13 +85,17 @@ import {
   APPLICATION_DETAIL_PATH,
   applicationChatEntry,
   isWorkflowApplication,
+  WORKFLOW_EDITOR_PATH,
 } from '../application-entry';
+import DisplaySettingDialog from '../DisplaySettingDialog.vue';
 import {
   createDefaultSimpleApplicationSettings,
   parseSimpleApplicationSettings,
   serializeSimpleApplicationGraph,
 } from '../simple-application-settings';
 import SimpleApplicationSettingsPanel from '../SimpleApplicationSettings.vue';
+import EmbedDialog from '../EmbedDialog.vue';
+import AnnotationDialog from './AnnotationDialog.vue';
 
 type Id = number | string;
 type JsonRecord = Record<string, unknown>;
@@ -126,12 +135,18 @@ const stats = ref<JsonRecord>({});
 const accessTokens = ref<JsonRecord[]>([]);
 const appKeys = ref<JsonRecord[]>([]);
 const apiKeyDialogOpen = ref(false);
-const embedDialogOpen = ref(false);
+const embedDialogRef = ref<InstanceType<typeof EmbedDialog>>();
 const accessLimitDialogOpen = ref(false);
 const displaySettingDialogOpen = ref(false);
+const xpackDisplayDialogVisible = ref(false);
 const chatSessions = ref<JsonRecord[]>([]);
 const chatRecords = ref<JsonRecord[]>([]);
 const selectedChatId = ref<Id>();
+const annotationOpen = ref(false);
+const annotationChatId = ref<Id>();
+const annotationRecordId = ref<Id>();
+const annotationAnswer = ref('');
+const annotationQuestion = ref('');
 const debugChatId = ref<Id>();
 const debugMessages = ref<ChatMessage[]>([]);
 const debugMessage = ref('');
@@ -185,11 +200,22 @@ const applicationDescription = computed(() =>
     '暂无描述',
   ),
 );
-const applicationTypeLabel = computed(() =>
-  isWorkflowApplication(`${application.value?.type || ''}`)
-    ? '高级智能体'
-    : '简易智能体',
+const isWorkflowApp = computed(() =>
+  isWorkflowApplication(`${application.value?.type || ''}`),
 );
+const applicationTypeLabel = computed(() =>
+  isWorkflowApp.value ? '高级智能体' : '简易智能体',
+);
+
+function redirectWorkflowSettings() {
+  const id = applicationId.value;
+  if (id === undefined || id === null) return false;
+  router.replace({
+    path: WORKFLOW_EDITOR_PATH,
+    query: { applicationId: id },
+  });
+  return true;
+}
 const publishLabel = computed(() => (isPublished.value ? '已发布' : '未发布'));
 const publishTagType = computed(() => (isPublished.value ? 'success' : 'info'));
 const updatedAt = computed(() =>
@@ -285,11 +311,7 @@ const openAiUrl = computed(() => {
     ? `${window.location.origin}/ai/v1/applications/${id}/chat/completions`
     : '';
 });
-const embedCode = computed(() =>
-  publicShareUrl.value
-    ? `<iframe src="${publicShareUrl.value}" style="width: 100%; height: 640px; border: 0;" allow="microphone"></iframe>`
-    : '',
-);
+
 const navItems: Array<{
   icon: typeof View;
   label: string;
@@ -407,6 +429,10 @@ async function loadCurrentTab() {
     return;
   }
   if (activeTab.value === 'setting') {
+    if (isWorkflowApp.value) {
+      redirectWorkflowSettings();
+      return;
+    }
     await loadSettings();
     return;
   }
@@ -763,7 +789,7 @@ function applicationDetailPayload(
 }
 
 function openEmbedDialog() {
-  embedDialogOpen.value = true;
+  embedDialogRef.value?.open(primaryTokenText.value);
 }
 
 function openAccessLimitDialog() {
@@ -811,6 +837,14 @@ function openDisplaySettingDialog() {
     false,
   );
   displaySettingDialogOpen.value = true;
+}
+
+function openXpackDisplayDialog() {
+  if (!applicationId.value) {
+    ElMessage.warning('缺少应用 ID');
+    return;
+  }
+  xpackDisplayDialogVisible.value = true;
 }
 
 async function saveDisplaySettings() {
@@ -906,6 +940,27 @@ function selectChat(row: JsonRecord) {
   void loadChatRecords();
 }
 
+function openAnnotation(row: JsonRecord) {
+  const recordId = idValue(firstValue(row, ['id']));
+  const chatId =
+    idValue(firstValue(row, ['chatId', 'chat_id'])) ?? selectedChatId.value;
+  if (recordId === undefined || chatId === undefined) {
+    ElMessage.warning('缺少聊天记录信息');
+    return;
+  }
+  annotationChatId.value = chatId;
+  annotationRecordId.value = recordId;
+  annotationQuestion.value = stringValue(
+    firstValue(row, ['question', 'problemText', 'problem_text']),
+    '',
+  );
+  annotationAnswer.value = stringValue(
+    firstValue(row, ['answer', 'answerText', 'answer_text']),
+    '',
+  );
+  annotationOpen.value = true;
+}
+
 function changeChatPage(page: number) {
   chatQuery.page = page;
   chatQuery.current = page;
@@ -917,6 +972,93 @@ function changeChatSize(size: number) {
   chatQuery.page = 1;
   chatQuery.current = 1;
   void loadChatSessions();
+}
+
+function changeRecordPage(page: number) {
+  recordQuery.page = page;
+  recordQuery.current = page;
+  void loadChatRecords();
+}
+
+async function renameChatSession(row: JsonRecord) {
+  const id = applicationId.value;
+  const chatId = idValue(firstValue(row, ['id']));
+  if (!id || chatId === undefined) return;
+  const current = rowTitle(row);
+  let title: string;
+  try {
+    const result = await ElMessageBox.prompt('请输入会话标题', '重命名会话', {
+      cancelButtonText: '取消',
+      confirmButtonText: '确定',
+      inputValue: current === '-' ? '' : current,
+      inputValidator: (value: string) =>
+        value.trim().length > 0 || '标题不能为空',
+    });
+    title = result.value.trim();
+  } catch {
+    return;
+  }
+  try {
+    await renameApplicationChat(id, chatId, title);
+    ElMessage.success('重命名成功');
+    await loadChatSessions();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '重命名失败';
+    ElMessage.error(message);
+  }
+}
+
+async function deleteChatSession(row: JsonRecord) {
+  const id = applicationId.value;
+  const chatId = idValue(firstValue(row, ['id']));
+  if (!id || chatId === undefined) return;
+  try {
+    await ElMessageBox.confirm('确认删除该会话及其全部对话记录？', '提示', {
+      cancelButtonText: '取消',
+      confirmButtonText: '删除',
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  try {
+    await deleteApplicationChat(id, chatId);
+    ElMessage.success('已删除');
+    if (`${selectedChatId.value}` === `${chatId}`) {
+      selectedChatId.value = undefined;
+      chatRecords.value = [];
+      recordTotal.value = 0;
+    }
+    await loadChatSessions();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '删除失败';
+    ElMessage.error(message);
+  }
+}
+
+async function clearAllChats() {
+  const id = applicationId.value;
+  if (!id) return;
+  try {
+    await ElMessageBox.confirm('确认清空全部会话及其对话记录？', '提示', {
+      cancelButtonText: '取消',
+      confirmButtonText: '清空',
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  try {
+    await clearApplicationChats(id);
+    ElMessage.success('已清空');
+    selectedChatId.value = undefined;
+    chatRecords.value = [];
+    recordTotal.value = 0;
+    await loadChatSessions();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '清空失败';
+    ElMessage.error(message);
+  }
 }
 
 watch(
@@ -1081,6 +1223,9 @@ onMounted(loadPage);
                     <ElButton :icon="Setting" @click="openDisplaySettingDialog">
                       显示设置
                     </ElButton>
+                    <ElButton :icon="View" @click="openXpackDisplayDialog">
+                      展示设置
+                    </ElButton>
                   </div>
                 </div>
 
@@ -1200,14 +1345,17 @@ onMounted(loadPage);
           </section>
 
           <section
-            v-else-if="activeTab === 'setting'"
+            v-else-if="activeTab === 'setting' && !isWorkflowApp"
             class="setting-layout"
             v-loading="settingsLoading"
           >
             <div class="setting-card">
               <div class="setting-form-panel">
                 <ElScrollbar class="setting-form-scroll">
-                  <SimpleApplicationSettingsPanel v-model="simpleSettings" />
+                  <SimpleApplicationSettingsPanel
+                    v-model="simpleSettings"
+                    :application-id="applicationId"
+                  />
                 </ElScrollbar>
               </div>
               <div class="setting-preview-panel">
@@ -1276,6 +1424,13 @@ onMounted(loadPage);
                   <ElOption label="最近 7 天" value="7" />
                   <ElOption label="最近 30 天" value="30" />
                 </ElSelect>
+                <ElButton
+                  :disabled="chatSessions.length === 0"
+                  :icon="Delete"
+                  @click="clearAllChats"
+                >
+                  清空
+                </ElButton>
               </div>
               <ElTable
                 :data="chatSessions"
@@ -1337,6 +1492,24 @@ onMounted(loadPage);
                 <ElTableColumn label="最近对话时间" width="180">
                   <template #default="{ row }">{{ rowTime(row) }}</template>
                 </ElTableColumn>
+                <ElTableColumn label="操作" width="130" fixed="right">
+                  <template #default="{ row }">
+                    <ElButton
+                      link
+                      type="primary"
+                      @click.stop="renameChatSession(row)"
+                    >
+                      重命名
+                    </ElButton>
+                    <ElButton
+                      link
+                      type="danger"
+                      @click.stop="deleteChatSession(row)"
+                    >
+                      删除
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
               </ElTable>
               <ElPagination
                 v-if="chatTotal > chatQuery.size"
@@ -1347,6 +1520,68 @@ onMounted(loadPage);
                 layout="prev, pager, next, sizes"
                 @current-change="changeChatPage"
                 @size-change="changeChatSize"
+              />
+            </div>
+            <div class="chat-log-card chat-record-panel">
+              <div class="chat-log-toolbar">
+                <span class="chat-record-panel__title">对话记录</span>
+              </div>
+              <ElScrollbar class="chat-record-panel__body">
+                <ElEmpty
+                  v-if="chatRecords.length === 0"
+                  description="请选择左侧会话查看对话记录"
+                  :image-size="48"
+                />
+                <div
+                  v-for="record in chatRecords"
+                  v-else
+                  :key="`${idValue(firstValue(record, ['id']))}`"
+                  class="chat-record-item"
+                >
+                  <div class="chat-record-item__question">
+                    {{
+                      stringValue(
+                        firstValue(record, [
+                          'question',
+                          'problemText',
+                          'problem_text',
+                        ]),
+                        '-',
+                      )
+                    }}
+                  </div>
+                  <div class="chat-record-item__answer">
+                    {{
+                      stringValue(
+                        firstValue(record, [
+                          'answer',
+                          'answerText',
+                          'answer_text',
+                        ]),
+                        '-',
+                      )
+                    }}
+                  </div>
+                  <div class="chat-record-item__actions">
+                    <ElButton
+                      link
+                      type="primary"
+                      :icon="Document"
+                      @click="openAnnotation(record)"
+                    >
+                      标注
+                    </ElButton>
+                  </div>
+                </div>
+              </ElScrollbar>
+              <ElPagination
+                v-if="recordTotal > recordQuery.size"
+                v-model:current-page="recordQuery.page"
+                v-model:page-size="recordQuery.size"
+                :total="recordTotal"
+                background
+                layout="prev, pager, next"
+                @current-change="changeRecordPage"
               />
             </div>
           </section>
@@ -1449,19 +1684,7 @@ onMounted(loadPage);
       </ElTable>
     </ElDialog>
 
-    <ElDialog
-      v-model="embedDialogOpen"
-      title="嵌入第三方"
-      width="720px"
-      :close-on-click-modal="false"
-      :close-on-press-escape="false"
-    >
-      <ElInput :model-value="embedCode" :rows="8" readonly type="textarea" />
-      <template #footer>
-        <ElButton @click="embedDialogOpen = false">取消</ElButton>
-        <ElButton type="primary" @click="copyText(embedCode)">复制</ElButton>
-      </template>
-    </ElDialog>
+    <EmbedDialog ref="embedDialogRef" :application-id="applicationId" />
 
     <ElDialog
       v-model="accessLimitDialogOpen"
@@ -1536,6 +1759,21 @@ onMounted(loadPage);
         <ElButton type="primary" @click="saveDisplaySettings">保存</ElButton>
       </template>
     </ElDialog>
+
+    <DisplaySettingDialog
+      v-model="xpackDisplayDialogVisible"
+      :application-id="applicationId"
+      :application-name="applicationName"
+    />
+
+    <AnnotationDialog
+      v-model="annotationOpen"
+      :answer="annotationAnswer"
+      :application-id="applicationId"
+      :chat-id="annotationChatId"
+      :chat-record-id="annotationRecordId"
+      :question="annotationQuestion"
+    />
   </Page>
 </template>
 
