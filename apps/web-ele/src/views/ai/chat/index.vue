@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
+import type { SimpleApplicationSettings } from '#/views/ai/orchestration/applications/simple-application-settings';
+
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useAppConfig } from '@vben/hooks';
@@ -13,8 +15,10 @@ import {
   Delete,
   Document,
   MagicStick,
+  Microphone,
   Refresh,
   VideoPause,
+  VideoPlay,
 } from '@element-plus/icons-vue';
 import {
   ElABubble,
@@ -25,8 +29,15 @@ import {
 } from 'element-ai-vue';
 import { ElButton, ElIcon, ElMessage, ElTag, ElTooltip } from 'element-plus';
 
+import {
+  getApplication,
+  getWorkflowDraft,
+  speechToText,
+  textToSpeech,
+} from '#/api/ai/applications';
 import { fetchList } from '#/api/ai/chat';
 import { adaptationUrl } from '#/utils/other';
+import { parseSimpleApplicationSettings } from '#/views/ai/orchestration/applications/simple-application-settings';
 
 // --- 类型定义 ---
 interface SourceItem {
@@ -68,6 +79,47 @@ let animationFrameId: null | number = null;
 const { isDark } = usePreferences();
 const accessStore = useAccessStore();
 const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+
+// --- 音频能力（TTS / STT）---
+// TODO: 当前会话固定指向 `/ai/api/chat/stream` 这个无应用上下文的端点，
+// 没有 applicationId 来源。如果要让此页面对接具体应用的 TTS/STT 配置，
+// 需要从路由 query / props / 全局 store 注入 applicationId 并调用
+// `getApplication` + `getWorkflowDraft` -> `parseSimpleApplicationSettings`
+// 来获取真实的 8 个 TTS/STT 字段。在未提供 applicationId 时，音频 UI 默认禁用。
+const chatApplicationId = ref<number | string | undefined>(undefined);
+const audioConfig = ref<null | Pick<
+  SimpleApplicationSettings,
+  | 'stt_autosend'
+  | 'stt_model_enable'
+  | 'stt_model_id'
+  | 'tts_autoplay'
+  | 'tts_model_enable'
+  | 'tts_model_id'
+  | 'tts_type'
+>>(null);
+
+const ttsEnabled = computed(() => Boolean(audioConfig.value?.tts_model_enable));
+const sttEnabled = computed(() => Boolean(audioConfig.value?.stt_model_enable));
+const ttsAutoplay = computed(() => Boolean(audioConfig.value?.tts_autoplay));
+const sttAutosend = computed(() => Boolean(audioConfig.value?.stt_autosend));
+const ttsType = computed<'BROWSER' | 'TTS'>(() =>
+  audioConfig.value?.tts_type === 'TTS' ? 'TTS' : 'BROWSER',
+);
+
+// 音频播放状态
+const playingMessageId = ref<null | string>(null);
+let currentAudio: HTMLAudioElement | null = null;
+let currentAudioUrl: null | string = null;
+let currentUtterance: null | SpeechSynthesisUtterance = null;
+
+// 录音状态
+const recording = ref(false);
+const transcribing = ref(false);
+let mediaRecorder: MediaRecorder | null = null;
+let mediaStream: MediaStream | null = null;
+let recordedChunks: Blob[] = [];
+let recordingTimer: null | ReturnType<typeof setTimeout> = null;
+const RECORD_MAX_MS = 60_000;
 
 const suggestions = [
   '维修资金的使用流程是什么？',
@@ -248,8 +300,18 @@ async function processStream(body: ReadableStream<Uint8Array>, index: number) {
 
       // 队列空了且网络断了 -> 结束
       animationFrameId = null;
-      if (messageList.value[index]) {
-        messageList.value[index].typing = false; // 隐藏光标
+      const finishedMsg = messageList.value[index];
+      if (finishedMsg) {
+        finishedMsg.typing = false; // 隐藏光标
+        // TTS 自动播放
+        if (
+          ttsEnabled.value &&
+          ttsAutoplay.value &&
+          !finishedMsg.error &&
+          finishedMsg.content.trim().length > 0
+        ) {
+          void playMessageAudio(finishedMsg);
+        }
       }
     }
   };
@@ -318,6 +380,253 @@ async function processStream(body: ReadableStream<Uint8Array>, index: number) {
   reader.releaseLock();
 }
 
+// --- 音频：TTS 播放 ---
+function stopAudio() {
+  if (currentAudio) {
+    try {
+      currentAudio.pause();
+    } catch {
+      // ignore
+    }
+    currentAudio.src = '';
+    currentAudio = null;
+  }
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  currentUtterance = null;
+  playingMessageId.value = null;
+}
+
+async function playMessageAudio(item: ChatItem) {
+  if (!ttsEnabled.value) return;
+  // 如果正在播放同一条消息 -> 停止
+  if (playingMessageId.value === item.id) {
+    stopAudio();
+    return;
+  }
+  // 切换到新消息：先停止上一段
+  stopAudio();
+  const text = stripMarkdown(item.content);
+  if (!text) return;
+  playingMessageId.value = item.id;
+
+  if (ttsType.value === 'BROWSER') {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      ElMessage.error('当前浏览器不支持语音合成');
+      playingMessageId.value = null;
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    currentUtterance = utterance;
+    const handleUtteranceDone = () => {
+      if (currentUtterance === utterance) {
+        currentUtterance = null;
+        playingMessageId.value = null;
+      }
+    };
+    utterance.addEventListener('end', handleUtteranceDone);
+    utterance.addEventListener('error', handleUtteranceDone);
+    window.speechSynthesis.speak(utterance);
+    return;
+  }
+
+  // TTS 模型：调用后端
+  if (!chatApplicationId.value) {
+    ElMessage.error('未配置应用 ID，无法调用 TTS 模型');
+    playingMessageId.value = null;
+    return;
+  }
+  try {
+    const blob = await textToSpeech(chatApplicationId.value, { text });
+    if (playingMessageId.value !== item.id) {
+      // 用户已切换 / 停止
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    currentAudioUrl = url;
+    const audio = new Audio(url);
+    currentAudio = audio;
+    const cleanup = () => {
+      if (currentAudio === audio) {
+        currentAudio = null;
+        if (currentAudioUrl === url) {
+          URL.revokeObjectURL(url);
+          currentAudioUrl = null;
+        }
+        playingMessageId.value = null;
+      }
+    };
+    audio.addEventListener('ended', cleanup);
+    audio.addEventListener('error', cleanup);
+    await audio.play();
+  } catch (error) {
+    console.error('TTS 播放失败', error);
+    ElMessage.error('语音合成失败');
+    playingMessageId.value = null;
+    if (currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      currentAudioUrl = null;
+    }
+    currentAudio = null;
+  }
+}
+
+function stripMarkdown(input: string) {
+  return input
+    .replaceAll(/```[\s\S]*?```/g, '')
+    .replaceAll(/`[^`]*`/g, '')
+    .replaceAll(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replaceAll(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replaceAll(/[#*_>~]/g, '')
+    .trim();
+}
+
+// --- 音频：STT 录音 ---
+async function toggleRecord() {
+  if (!sttEnabled.value) return;
+  if (recording.value) {
+    stopRecord();
+    return;
+  }
+  await startRecord();
+}
+
+async function startRecord() {
+  if (
+    typeof navigator === 'undefined' ||
+    !navigator.mediaDevices?.getUserMedia ||
+    typeof MediaRecorder === 'undefined'
+  ) {
+    ElMessage.error('当前浏览器不支持语音录制');
+    return;
+  }
+  if (!chatApplicationId.value) {
+    ElMessage.error('未配置应用 ID，无法调用 STT 模型');
+    return;
+  }
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    console.error('麦克风权限被拒绝', error);
+    ElMessage.error('麦克风权限被拒绝或不可用');
+    return;
+  }
+  recordedChunks = [];
+  try {
+    mediaRecorder = new MediaRecorder(mediaStream);
+  } catch (error) {
+    console.error('MediaRecorder 初始化失败', error);
+    ElMessage.error('无法启动录音');
+    releaseStream();
+    return;
+  }
+  mediaRecorder.addEventListener('dataavailable', (event) => {
+    if (event.data && event.data.size > 0) {
+      recordedChunks.push(event.data);
+    }
+  });
+  mediaRecorder.addEventListener('stop', () => {
+    void handleRecordStop();
+  });
+  mediaRecorder.start();
+  recording.value = true;
+  recordingTimer = setTimeout(() => {
+    if (recording.value) stopRecord();
+  }, RECORD_MAX_MS);
+}
+
+function stopRecord() {
+  if (recordingTimer) {
+    clearTimeout(recordingTimer);
+    recordingTimer = null;
+  }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      mediaRecorder.stop();
+    } catch {
+      // ignore
+    }
+  }
+  recording.value = false;
+}
+
+function releaseStream() {
+  if (mediaStream) {
+    for (const track of mediaStream.getTracks()) track.stop();
+    mediaStream = null;
+  }
+  mediaRecorder = null;
+  recordedChunks = [];
+}
+
+async function handleRecordStop() {
+  const chunks = recordedChunks;
+  const mimeType = mediaRecorder?.mimeType || 'audio/webm';
+  releaseStream();
+  if (chunks.length === 0) return;
+  const appId = chatApplicationId.value;
+  if (!appId) return;
+  const blob = new Blob(chunks, { type: mimeType });
+  transcribing.value = true;
+  try {
+    const text = await speechToText(appId, blob);
+    const transcript = (text || '').trim();
+    if (!transcript) {
+      ElMessage.warning('未识别到有效语音');
+      return;
+    }
+    if (sttAutosend.value) {
+      await handleSend(transcript);
+    } else {
+      inputContent.value = inputContent.value
+        ? `${inputContent.value} ${transcript}`
+        : transcript;
+    }
+  } catch (error) {
+    console.error('语音识别失败', error);
+    ElMessage.error('语音识别失败');
+  } finally {
+    transcribing.value = false;
+  }
+}
+
+// --- 应用配置加载 ---
+async function loadAudioConfig() {
+  const id = chatApplicationId.value;
+  if (!id) return;
+  try {
+    const [application, draft] = await Promise.all([
+      getApplication(id),
+      getWorkflowDraft(id),
+    ]);
+    const graphData =
+      draft && typeof draft === 'object'
+        ? ((draft as Record<string, unknown>).graphData ??
+          (draft as Record<string, unknown>).graph_data)
+        : draft;
+    const settings = parseSimpleApplicationSettings(
+      graphData,
+      (application || {}) as Record<string, unknown>,
+    );
+    audioConfig.value = {
+      stt_autosend: settings.stt_autosend,
+      stt_model_enable: settings.stt_model_enable,
+      stt_model_id: settings.stt_model_id,
+      tts_autoplay: settings.tts_autoplay,
+      tts_model_enable: settings.tts_model_enable,
+      tts_model_id: settings.tts_model_id,
+      tts_type: settings.tts_type,
+    };
+  } catch (error) {
+    console.warn('加载音频配置失败', error);
+  }
+}
+
 // --- 辅助功能 ---
 const clearChat = () => {
   if (loading.value) stopGenerate();
@@ -380,10 +689,16 @@ onMounted(() => {
   isReady.value = true;
   getMessageList();
   senderRef.value?.focus();
+  if (chatApplicationId.value) {
+    void loadAudioConfig();
+  }
 });
 
 onUnmounted(() => {
   stopGenerate(); // 销毁组件时确保停止所有任务
+  stopAudio();
+  if (recording.value) stopRecord();
+  releaseStream();
 });
 </script>
 
@@ -507,6 +822,24 @@ onUnmounted(() => {
                     </ElTooltip>
                   </span>
                   <span
+                    v-if="ttsEnabled && item.content"
+                    class="action-btn"
+                    :class="{ 'is-active': playingMessageId === item.id }"
+                    @click="playMessageAudio(item)"
+                  >
+                    <ElTooltip
+                      :content="
+                        playingMessageId === item.id ? '停止播放' : '播放'
+                      "
+                      placement="top"
+                    >
+                      <ElIcon>
+                        <VideoPause v-if="playingMessageId === item.id" />
+                        <VideoPlay v-else />
+                      </ElIcon>
+                    </ElTooltip>
+                  </span>
+                  <span
                     class="action-btn"
                     @click="regenerate(index)"
                     v-if="!loading"
@@ -529,22 +862,55 @@ onUnmounted(() => {
           </ElButton>
         </div>
 
-        <ElASender
-          ref="senderRef"
-          v-model="inputContent"
-          :loading="loading"
-          placeholder="请输入您的问题，Shift + Enter 换行..."
-          variant="default"
-          :enter-break="false"
-          @send="handleSend"
-          class="sender"
-        />
+        <div class="sender-row">
+          <ElASender
+            ref="senderRef"
+            v-model="inputContent"
+            :loading="loading"
+            placeholder="请输入您的问题，Shift + Enter 换行..."
+            variant="default"
+            :enter-break="false"
+            @send="handleSend"
+            class="sender"
+          />
+          <ElTooltip
+            v-if="sttEnabled"
+            :content="recording ? '停止录音' : '语音输入'"
+            placement="top"
+          >
+            <ElButton
+              circle
+              :type="recording ? 'danger' : 'primary'"
+              :icon="Microphone"
+              :loading="transcribing"
+              :disabled="loading || transcribing"
+              class="mic-btn"
+              :class="{ 'is-recording': recording }"
+              @click="toggleRecord"
+            />
+          </ElTooltip>
+        </div>
+        <div v-if="recording" class="recording-tip">
+          <span class="recording-dot"></span>
+          正在录音...（最长 60 秒，再次点击结束）
+        </div>
       </div>
     </div>
   </Page>
 </template>
 
 <style scoped lang="scss">
+@keyframes mic-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
 .chat-wrapper {
   display: flex;
   flex-direction: column;
@@ -664,12 +1030,74 @@ onUnmounted(() => {
   transform: translateX(-50%);
 }
 
+.sender-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
 .sender {
+  flex: 1;
+  min-width: 0;
+
   :deep(.el-ai-sender__content) {
     max-height: 150px;
     overflow-y: auto;
     // 统一 Element Plus 输入框风格
     border-radius: 8px;
+  }
+}
+
+.mic-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  transition: all 0.18s ease;
+
+  &:hover:not(:disabled) {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+
+  &.is-recording {
+    color: #fff;
+    background: var(--el-color-danger);
+    border-color: var(--el-color-danger);
+    animation: mic-pulse 1.2s ease-in-out infinite;
+  }
+
+  &.is-transcribing {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+}
+
+.recording-indicator {
+  position: absolute;
+  top: -40px;
+  right: 24px;
+  z-index: 10;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--el-color-danger);
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-color-danger-light-5);
+  border-radius: 999px;
+
+  .recording-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--el-color-danger);
+    border-radius: 50%;
+    animation: mic-pulse 1.2s ease-in-out infinite;
   }
 }
 

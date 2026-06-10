@@ -28,10 +28,12 @@ import {
 } from '#/api/ai/applications';
 import {
   createPublicShare,
+  getApplicationProfile,
   getPublicShare,
   openAiChatCompletion,
   openPublicChat,
   publicChat,
+  publicChatStream,
   votePublicRecord,
 } from '#/api/ai/public';
 import { adaptationUrl } from '#/utils/other';
@@ -43,6 +45,31 @@ interface ChatMessage {
   id: number;
   pending?: boolean;
   role: 'assistant' | 'user';
+}
+
+interface ApplicationProfile {
+  applicationId?: number | string;
+  avatar?: string;
+  chatBackground?: string;
+  customTheme?: string;
+  description?: string;
+  disclaimer?: boolean;
+  disclaimerValue?: string;
+  draggable?: boolean;
+  floatIcon?: string;
+  floatLocation?: string;
+  icon?: string;
+  name?: string;
+  showAvatar?: boolean;
+  showGuide?: boolean;
+  showHistory?: boolean;
+  showUserAvatar?: boolean;
+  userAvatar?: string;
+}
+
+interface CustomThemeConfig {
+  header_font_color?: string;
+  theme_color?: string;
 }
 
 type ApplicationRecord = ApplicationPayload & { id: number | string };
@@ -72,12 +99,51 @@ const openAiResult = ref<any>();
 const chatMessages = ref<ChatMessage[]>([]);
 const streaming = ref(false);
 const chatBodyRef = ref<HTMLElement>();
+const profile = ref<ApplicationProfile>({});
 let messageId = 0;
 
 const debugMode = computed(() => route.query.mode === 'debug');
+const embedMode = computed(() => route.query.mode === 'embed');
+const embedToken = computed(() => {
+  const t = route.query.token;
+  return (Array.isArray(t) ? t[0] : t) || '';
+});
 const selectedApplication = computed(() =>
   applications.value.find((item) => `${item.id}` === `${applicationId.value}`),
 );
+
+const customTheme = computed<CustomThemeConfig>(() => {
+  const raw = profile.value.customTheme;
+  if (!raw) return {};
+  const parsed = safeParseJson(raw, null) as CustomThemeConfig | null;
+  return parsed || {};
+});
+
+const headerStyle = computed(() => {
+  const theme = customTheme.value;
+  const style: Record<string, string> = {};
+  if (theme.theme_color) style.background = theme.theme_color;
+  if (theme.header_font_color) style.color = theme.header_font_color;
+  return style;
+});
+
+const chatBackgroundStyle = computed(() => {
+  const url = profile.value.chatBackground;
+  if (!url) return {};
+  return {
+    backgroundImage: `url(${url})`,
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: 'cover',
+  };
+});
+
+const showAiAvatar = computed(() => profile.value.showAvatar !== false);
+const showUserAvatar = computed(() => profile.value.showUserAvatar === true);
+const aiAvatarUrl = computed(() => profile.value.avatar || '');
+const userAvatarUrl = computed(() => profile.value.userAvatar || '');
+const disclaimerVisible = computed(() => profile.value.disclaimer === true);
+const disclaimerText = computed(() => profile.value.disclaimerValue || '');
 
 function routeApplicationId(): number | string | undefined {
   const value = route.query.applicationId;
@@ -94,6 +160,22 @@ async function loadApplications() {
   const firstApplication = applications.value[0];
   if (!applicationId.value && firstApplication) {
     applicationId.value = firstApplication.id;
+  }
+  await loadApplicationProfile();
+}
+
+async function loadApplicationProfile() {
+  if (!applicationId.value) {
+    profile.value = {};
+    return;
+  }
+  try {
+    const data = (await getApplicationProfile(
+      applicationId.value,
+    )) as ApplicationProfile;
+    profile.value = data || {};
+  } catch {
+    profile.value = {};
   }
 }
 
@@ -193,6 +275,54 @@ async function sendDebugChat() {
     streaming.value = false;
     await scrollChatBottom();
   }
+}
+
+async function openEmbedChat() {
+  if (!applicationId.value || !embedToken.value) return;
+  const chat = await openPublicChat(applicationId.value, {
+    token: embedToken.value,
+    title: '嵌入会话',
+  });
+  chatId.value = chat.id;
+}
+
+async function sendEmbedChat() {
+  if (streaming.value) return;
+  const content = message.value.trim();
+  if (!applicationId.value || !embedToken.value) return;
+  if (!content) return;
+  if (!chatId.value) await openEmbedChat();
+  if (!chatId.value) return;
+  const userMessage = addChatMessage('user', content);
+  const assistantMessage = addChatMessage('assistant', '', true);
+  message.value = '';
+  streaming.value = true;
+  await scrollChatBottom();
+  try {
+    const response = await publicChatStream(
+      applicationId.value,
+      { chatId: chatId.value, message: userMessage.content },
+      embedToken.value,
+    );
+    if (!response.ok) {
+      throw new Error(
+        (await response.text()) || `请求失败：${response.status}`,
+      );
+    }
+    if (!response.body) throw new Error('聊天接口未返回流数据');
+    await readChatStream(response.body, assistantMessage);
+  } catch (error) {
+    assistantMessage.content = getErrorMessage(error);
+  } finally {
+    assistantMessage.pending = false;
+    streaming.value = false;
+    await scrollChatBottom();
+  }
+}
+
+function startNewEmbedChat() {
+  chatId.value = undefined;
+  chatMessages.value = [];
 }
 
 function addChatMessage(
@@ -346,13 +476,89 @@ watch(applicationId, () => {
   chatId.value = undefined;
   chatMessages.value = [];
   records.value = [];
+  void loadApplicationProfile();
 });
 
-onMounted(loadApplications);
+onMounted(async () => {
+  if (embedMode.value) {
+    await loadApplicationProfile();
+  } else {
+    await loadApplications();
+    await loadApplicationProfile();
+  }
+});
 </script>
 
 <template>
-  <Page auto-content-height>
+  <!-- Embed mode: compact fullscreen layout -->
+  <div v-if="embedMode" class="embed-page">
+    <div class="embed-header" :style="headerStyle">
+      <div class="embed-header__left">
+        <div v-if="aiAvatarUrl" class="embed-header__icon">
+          <img :src="aiAvatarUrl" alt="app" />
+        </div>
+        <span class="embed-header__name">{{ profile.name || '对话' }}</span>
+      </div>
+      <ElButton text size="small" class="embed-header__action" @click="startNewEmbedChat">
+        新对话
+      </ElButton>
+    </div>
+    <div ref="chatBodyRef" class="embed-body" :style="chatBackgroundStyle">
+      <div v-if="chatMessages.length === 0" class="empty-chat">
+        {{ profile.description || '有什么可以帮您？' }}
+      </div>
+      <div
+        v-for="item in chatMessages"
+        :key="item.id"
+        class="message-row"
+        :class="`is-${item.role}`"
+      >
+        <div
+          v-if="item.role === 'assistant' && showAiAvatar"
+          class="message-avatar"
+        >
+          <img v-if="aiAvatarUrl" :src="aiAvatarUrl" alt="ai" />
+          <span v-else class="message-avatar-fallback">AI</span>
+        </div>
+        <div class="message-content">
+          <div class="message-bubble">
+            <span v-if="item.content">{{ item.content }}</span>
+            <span v-else class="muted">生成中...</span>
+          </div>
+        </div>
+        <div
+          v-if="item.role === 'user' && showUserAvatar"
+          class="message-avatar"
+        >
+          <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="user" />
+          <span v-else class="message-avatar-fallback">U</span>
+        </div>
+      </div>
+    </div>
+    <div v-if="disclaimerVisible" class="embed-disclaimer">
+      {{ disclaimerText }}
+    </div>
+    <div class="embed-composer">
+      <ElInput
+        v-model="message"
+        type="textarea"
+        :rows="2"
+        resize="none"
+        placeholder="输入消息..."
+        @keydown.enter.exact.prevent="sendEmbedChat"
+      />
+      <ElButton
+        type="primary"
+        :loading="streaming"
+        @click="sendEmbedChat"
+      >
+        发送
+      </ElButton>
+    </div>
+  </div>
+
+  <!-- Normal and Debug modes -->
+  <Page v-else auto-content-height>
     <div class="public-page">
       <div class="toolbar" :class="{ 'debug-toolbar': debugMode }">
         <ElSelect v-model="applicationId" filterable placeholder="应用">
@@ -405,7 +611,12 @@ onMounted(loadApplications);
           </ElTable>
         </aside>
         <main class="chat-main">
-          <div ref="chatBodyRef" class="chat-body">
+          <div class="chat-profile-header" :style="headerStyle">
+            <span>{{
+              profile.name || selectedApplication?.name || '聊天'
+            }}</span>
+          </div>
+          <div ref="chatBodyRef" class="chat-body" :style="chatBackgroundStyle">
             <div v-if="chatMessages.length === 0" class="empty-chat">
               暂无消息
             </div>
@@ -415,13 +626,32 @@ onMounted(loadApplications);
               class="message-row"
               :class="`is-${item.role}`"
             >
-              <div class="message-author">
-                {{ item.role === 'user' ? '用户' : 'AI' }}
+              <div
+                v-if="item.role === 'assistant' && showAiAvatar"
+                class="message-avatar"
+              >
+                <img v-if="aiAvatarUrl" :src="aiAvatarUrl" alt="ai" />
+                <span v-else class="message-avatar-fallback">AI</span>
               </div>
-              <div class="message-bubble">
-                <span v-if="item.content">{{ item.content }}</span>
-                <span v-else class="muted">生成中...</span>
+              <div class="message-content">
+                <div class="message-author">
+                  {{ item.role === 'user' ? '用户' : 'AI' }}
+                </div>
+                <div class="message-bubble">
+                  <span v-if="item.content">{{ item.content }}</span>
+                  <span v-else class="muted">生成中...</span>
+                </div>
               </div>
+              <div
+                v-if="item.role === 'user' && showUserAvatar"
+                class="message-avatar"
+              >
+                <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="user" />
+                <span v-else class="message-avatar-fallback">U</span>
+              </div>
+            </div>
+            <div v-if="disclaimerVisible" class="chat-disclaimer">
+              {{ disclaimerText }}
             </div>
           </div>
           <div class="chat-composer">
@@ -614,6 +844,70 @@ onMounted(loadApplications);
   border-radius: 6px;
 }
 
+.chat-header {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  align-items: center;
+  height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.chat-header__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+}
+
+.chat-header__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-header__name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chat-avatar {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  background: var(--el-fill-color-light);
+  border-radius: 50%;
+}
+
+.chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-avatar--placeholder {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.chat-disclaimer {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
 .chat-body {
   display: flex;
   flex: 1;
@@ -634,18 +928,47 @@ onMounted(loadApplications);
 
 .message-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  gap: 8px;
+  align-items: flex-start;
   max-width: 78%;
 }
 
 .message-row.is-user {
-  align-items: flex-end;
+  flex-direction: row-reverse;
   align-self: flex-end;
 }
 
 .message-row.is-assistant {
   align-self: flex-start;
+}
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message-row.is-user .message-content {
+  align-items: flex-end;
+}
+
+.message-avatar {
+  display: inline-flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  background: var(--el-fill-color-light);
+  border-radius: 50%;
+}
+
+.message-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .message-author {
@@ -708,6 +1031,95 @@ onMounted(loadApplications);
 .tall {
   height: calc(100% - 16px);
   max-height: none;
+}
+
+/* Embed mode styles */
+.embed-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: hsl(var(--card));
+}
+
+.embed-header {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 16px;
+  background: var(--el-color-primary);
+  color: #fff;
+}
+
+.embed-header__left {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.embed-header__icon {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.embed-header__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.embed-header__name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.embed-header__action {
+  color: inherit !important;
+  flex: 0 0 auto;
+}
+
+.embed-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  background: var(--el-fill-color-lighter);
+}
+
+.embed-disclaimer {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.embed-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 8px;
+  align-items: end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 @media (max-width: 900px) {
