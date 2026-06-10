@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { UploadFile, UploadFiles } from 'element-plus';
+
 import type { SimpleApplicationSettings } from './simple-application-settings';
 
 import type { ApplicationPayload } from '#/api/ai/types';
@@ -9,6 +11,7 @@ import { useRouter } from 'vue-router';
 import { confirm, Page } from '@vben/common-ui';
 
 import {
+  AlarmClock,
   ArrowDown,
   ChatDotRound,
   CircleCheckFilled,
@@ -16,15 +19,20 @@ import {
   Connection,
   CopyDocument,
   Delete,
+  Download,
   EditPen,
   Key,
+  Lock,
   MoreFilled,
   Plus,
   Promotion,
+  Rank,
   Refresh,
   Search,
   Setting,
+  Share,
   Tickets,
+  Upload,
 } from '@element-plus/icons-vue';
 import {
   ElButton,
@@ -41,6 +49,7 @@ import {
   ElInput,
   ElMessage,
   ElOption,
+  ElPagination,
   ElSelect,
   ElSwitch,
   ElTable,
@@ -48,6 +57,7 @@ import {
   ElTabPane,
   ElTabs,
   ElTag,
+  ElUpload,
 } from 'element-plus';
 
 import {
@@ -59,7 +69,10 @@ import {
   deleteAccessToken,
   deleteApplication,
   deleteApplicationKey,
+  exportApplication,
   getWorkflowDraft,
+  importApplication,
+  moveApplication,
   pageAccessTokens,
   pageApplicationKeys,
   pageApplications,
@@ -72,6 +85,13 @@ import {
   updateApplication,
 } from '#/api/ai/applications';
 
+import {
+  listResourceAuth,
+  listResourceFolders,
+  listResourceMappings,
+  saveResourceAuth,
+} from '#/api/ai/resources';
+
 import { enabledText, prettyJson, recordsOf, totalOf } from '../utils';
 import {
   applicationChatEntry,
@@ -79,6 +99,7 @@ import {
   applicationPrimaryEntry,
   isWorkflowApplication,
   normalizeApplicationType,
+  WORKFLOW_EDITOR_PATH,
 } from './application-entry';
 import {
   createDefaultSimpleApplicationSettings,
@@ -88,7 +109,6 @@ import {
 import SimpleApplicationSettingsPanel from './SimpleApplicationSettings.vue';
 
 type Id = number | string;
-type SearchType = 'create_user' | 'name' | 'publish_status';
 type DetailTab = 'access' | 'settings' | 'workflow';
 
 interface ApplicationRecord extends Record<string, unknown> {
@@ -155,14 +175,13 @@ const applications = ref<ApplicationRecord[]>([]);
 const total = ref(0);
 const selectedIds = ref<Id[]>([]);
 const batchMode = ref(false);
-const searchType = ref<SearchType>('name');
 const query = reactive({
-  createUser: '',
   current: 1,
   name: '',
   page: 1,
   publishStatus: '',
-  size: 48,
+  size: 12,
+  type: '',
 });
 
 const dialogOpen = ref(false);
@@ -178,6 +197,10 @@ const form = reactive<ApplicationPayload>({
   type: 'WORK_FLOW',
   workspaceId: 'default',
 });
+
+const importDialogOpen = ref(false);
+const importing = ref(false);
+const importFiles = ref<UploadFile[]>([]);
 
 const drawerOpen = ref(false);
 const activeApp = ref<ApplicationRecord>();
@@ -207,20 +230,10 @@ const selectedApps = computed(() =>
     (item) => item.id !== undefined && selectedIds.value.includes(item.id),
   ),
 );
-const filteredApplications = computed(() => {
-  if (searchType.value === 'create_user' && query.createUser.trim()) {
-    const keyword = query.createUser.trim().toLowerCase();
-    return applications.value.filter((item) =>
-      creatorLabel(item).toLowerCase().includes(keyword),
-    );
-  }
-  if (searchType.value === 'publish_status' && query.publishStatus) {
-    return applications.value.filter(
-      (item) => publishState(item) === query.publishStatus,
-    );
-  }
-  return applications.value;
-});
+const hasActiveFilter = computed(
+  () =>
+    query.name.trim() !== '' || query.publishStatus !== '' || query.type !== '',
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -364,9 +377,11 @@ async function loadApplications() {
   try {
     const data = await pageApplications({
       current: query.current,
-      name: searchType.value === 'name' ? query.name : '',
+      name: query.name.trim() || undefined,
       page: query.page,
+      publishStatus: query.publishStatus || undefined,
       size: query.size,
+      type: query.type || undefined,
     });
     applications.value = recordsOf<ApplicationRecord>(data);
     total.value = totalOf(data);
@@ -378,18 +393,22 @@ async function loadApplications() {
   }
 }
 
-function changeSearchType() {
-  query.createUser = '';
-  query.name = '';
-  query.publishStatus = '';
+function searchApplications() {
   query.page = 1;
   query.current = 1;
   void loadApplications();
 }
 
-function searchApplications() {
-  query.page = 1;
-  query.current = 1;
+function resetFilters() {
+  query.name = '';
+  query.publishStatus = '';
+  query.type = '';
+  searchApplications();
+}
+
+function handlePageChange(page: number) {
+  query.current = page;
+  query.page = page;
   void loadApplications();
 }
 
@@ -555,6 +574,50 @@ async function duplicateApplication(row: ApplicationRecord) {
   await loadApplications();
 }
 
+async function exportApplicationFile(row: ApplicationRecord) {
+  if (row.id === undefined) return;
+  await exportApplication(row.id);
+}
+
+function openImportDialog() {
+  importFiles.value = [];
+  importing.value = false;
+  importDialogOpen.value = true;
+}
+
+function handleImportDialogClose() {
+  importFiles.value = [];
+  importing.value = false;
+}
+
+function handleImportFileChange(_file: UploadFile, files: UploadFiles) {
+  // Keep only the latest one
+  importFiles.value = files.length > 0 ? [files[files.length - 1]!] : [];
+}
+
+function handleImportFileRemove() {
+  importFiles.value = [];
+}
+
+async function confirmImport() {
+  const target = importFiles.value[0];
+  const rawFile = target?.raw;
+  if (!rawFile) {
+    ElMessage.warning('请选择要导入的 JSON 文件');
+    return;
+  }
+  importing.value = true;
+  try {
+    await importApplication(rawFile);
+    ElMessage.success('导入成功');
+    importDialogOpen.value = false;
+    importFiles.value = [];
+    await loadApplications();
+  } finally {
+    importing.value = false;
+  }
+}
+
 function isSelected(row: ApplicationRecord) {
   return row.id !== undefined && selectedIds.value.includes(row.id);
 }
@@ -587,12 +650,19 @@ async function openManagementDrawer(
 }
 
 function openApplicationSetting(row: ApplicationRecord) {
-  if (!isWorkflowApplication(row.type)) {
-    const entry = applicationDetailEntry(row, 'setting');
-    router.push({ path: entry.path, query: entry.query });
+  // Matches MaxKB settingApplication(): SIMPLE apps open the detail page's
+  // setting tab (in-place form); WORKFLOW (高级智能体) apps go DIRECTLY to the
+  // full-page workflow editor, bypassing the detail page entirely. Routing
+  // workflow "设置" through the detail page would briefly render it and then
+  // redirect to the editor (a visible flash) — so we navigate straight there.
+  // 概览/对话日志 for workflow apps are reached via the card body click
+  // (openApplicationDetail -> overview), not this entry.
+  if (isWorkflowApplication(row.type)) {
+    openWorkflow(row);
     return;
   }
-  void openManagementDrawer(row, 'settings');
+  const entry = applicationDetailEntry(row, 'setting');
+  router.push({ path: entry.path, query: entry.query });
 }
 
 function openApplicationAccess(row: ApplicationRecord) {
@@ -795,7 +865,7 @@ function openWorkflow(row = activeApp.value) {
     return;
   }
   router.push({
-    path: '/ai/orchestration/workflow/index',
+    path: WORKFLOW_EDITOR_PATH,
     query: { applicationId: row.id },
   });
 }
@@ -809,10 +879,164 @@ function openApplicationPrimary(row = activeApp.value) {
   });
 }
 
+// Card body click: enter the detail page overview for BOTH app types,
+// matching MaxKB's goApp/get_route (which returns /overview). This is the
+// ONLY way workflow (高级智能体) apps reach 概览/对话日志, since their "设置"
+// dropdown shortcuts directly to the workflow editor.
+function openApplicationDetail(row: ApplicationRecord) {
+  if (!row?.id) return;
+  const entry = applicationDetailEntry(row, 'overview');
+  router.push({ path: entry.path, query: entry.query });
+}
+
 function openPublic(row = activeApp.value) {
   if (!row?.id) return;
   const entry = applicationChatEntry(row);
   router.push({ path: entry.path, query: entry.query });
+}
+
+// --- Move To (转移到) ---
+const moveDialogOpen = ref(false);
+const moveTargetApp = ref<ApplicationRecord>();
+const moveFolders = ref<Array<{ id?: Id; name?: string }>>([]);
+const selectedFolderId = ref<Id>();
+const moveLoading = ref(false);
+
+function openMoveDialog(row: ApplicationRecord) {
+  moveTargetApp.value = row;
+  selectedFolderId.value = undefined;
+  moveDialogOpen.value = true;
+  void loadMoveFolders();
+}
+
+async function loadMoveFolders() {
+  moveLoading.value = true;
+  try {
+    const data = await listResourceFolders({ resourceType: 'APPLICATION' });
+    moveFolders.value = recordsOf<{ id?: Id; name?: string }>(data);
+  } finally {
+    moveLoading.value = false;
+  }
+}
+
+async function confirmMove() {
+  const app = moveTargetApp.value;
+  if (!app?.id || selectedFolderId.value === undefined) return;
+  await moveApplication(app.id, { targetFolderId: selectedFolderId.value });
+  ElMessage.success('移动成功');
+  moveDialogOpen.value = false;
+  await loadApplications();
+}
+
+// --- Triggers (触发器) ---
+function navigateToTriggers(row: ApplicationRecord) {
+  router.push({
+    path: '/ai/orchestration/triggers/index',
+    query: { applicationId: String(row.id) },
+  });
+}
+
+// --- View Related Resources (查看关联资源) ---
+interface ResourceMappingRecord extends Record<string, unknown> {
+  description?: string;
+  name?: string;
+  type?: string;
+}
+
+const mappingsDrawerOpen = ref(false);
+const mappingsTargetApp = ref<ApplicationRecord>();
+const mappings = ref<ResourceMappingRecord[]>([]);
+const mappingsLoading = ref(false);
+
+async function openMappingsDrawer(row: ApplicationRecord) {
+  mappingsTargetApp.value = row;
+  mappingsDrawerOpen.value = true;
+  mappingsLoading.value = true;
+  try {
+    const data = await listResourceMappings({
+      resourceId: row.id,
+      resourceType: 'APPLICATION',
+    });
+    mappings.value = recordsOf<ResourceMappingRecord>(data);
+  } finally {
+    mappingsLoading.value = false;
+  }
+}
+
+// --- Resource Authorization (资源授权) ---
+// Backend `listAuth` returns ai_resource_auth rows: { id, principalId,
+// principalType, permissionJson (JSON string) }. We parse permissionJson
+// into a flat `permission` for the select control.
+interface ResourceAuthRecord extends Record<string, unknown> {
+  id?: Id;
+  permission?: string;
+  principalId?: Id;
+  principalType?: string;
+}
+
+const authDrawerOpen = ref(false);
+const authTargetApp = ref<ApplicationRecord>();
+const authRecords = ref<ResourceAuthRecord[]>([]);
+const authLoading = ref(false);
+
+function parseAuthPermission(permissionJson: unknown): string {
+  if (typeof permissionJson !== 'string' || !permissionJson.trim()) {
+    return 'NOT_AUTH';
+  }
+  try {
+    const parsed = JSON.parse(permissionJson) as { permission?: string };
+    return typeof parsed?.permission === 'string'
+      ? parsed.permission
+      : 'NOT_AUTH';
+  } catch {
+    // Malformed permissionJson: fall back to the unauthorized default.
+    return 'NOT_AUTH';
+  }
+}
+
+async function openAuthDrawer(row: ApplicationRecord) {
+  authTargetApp.value = row;
+  authDrawerOpen.value = true;
+  authLoading.value = true;
+  try {
+    const data = await listResourceAuth({
+      resourceId: row.id,
+      resourceType: 'APPLICATION',
+    });
+    authRecords.value = recordsOf<Record<string, unknown>>(data).map(
+      (item) => ({
+        id: item.id as Id,
+        permission: parseAuthPermission(item.permissionJson),
+        principalId: item.principalId as Id,
+        principalType: (item.principalType as string) ?? 'USER',
+      }),
+    );
+  } finally {
+    authLoading.value = false;
+  }
+}
+
+async function updateAuthPermission(row: ResourceAuthRecord) {
+  const app = authTargetApp.value;
+  if (
+    !app?.id ||
+    row.principalId === undefined ||
+    row.principalId === null
+  ) {
+    return;
+  }
+  // Backend (ResourceController#saveAuth) maps OrchestrationRequest ->
+  // ResourceAuth as: id -> resourceId (the application being authorized),
+  // applicationId -> principalId (the granted user), name -> principalType,
+  // configJson -> permissionJson, type -> resourceType.
+  await saveResourceAuth({
+    id: app.id,
+    applicationId: row.principalId,
+    name: row.principalType ?? 'USER',
+    configJson: JSON.stringify({ permission: row.permission }),
+    type: 'APPLICATION',
+  });
+  ElMessage.success('授权已更新');
 }
 
 onMounted(loadApplications);
@@ -827,19 +1051,10 @@ onMounted(loadApplications);
           <span>共 {{ total }} 个应用</span>
         </div>
         <div class="toolbar-actions">
-          <div class="complex-search">
-            <ElSelect
-              v-model="searchType"
-              class="search-type"
-              @change="changeSearchType"
-            >
-              <ElOption label="创建者" value="create_user" />
-              <ElOption label="名称" value="name" />
-              <ElOption label="发布状态" value="publish_status" />
-            </ElSelect>
+          <div class="filter-bar">
             <ElInput
-              v-if="searchType === 'name'"
               v-model="query.name"
+              class="filter-name"
               clearable
               placeholder="搜索应用名称"
               @keyup.enter="searchApplications"
@@ -849,30 +1064,32 @@ onMounted(loadApplications);
                 <ElIcon><Search /></ElIcon>
               </template>
             </ElInput>
-            <ElInput
-              v-else-if="searchType === 'create_user'"
-              v-model="query.createUser"
-              clearable
-              placeholder="搜索创建者"
-              @keyup.enter="searchApplications"
-              @clear="searchApplications"
-            >
-              <template #prefix>
-                <ElIcon><Search /></ElIcon>
-              </template>
-            </ElInput>
             <ElSelect
-              v-else
-              v-model="query.publishStatus"
+              v-model="query.type"
+              class="filter-select"
               clearable
-              placeholder="发布状态"
+              placeholder="全部类型"
+              @change="searchApplications"
+            >
+              <ElOption label="简易智能体" value="SIMPLE" />
+              <ElOption label="高级智能体" value="WORK_FLOW" />
+            </ElSelect>
+            <ElSelect
+              v-model="query.publishStatus"
+              class="filter-select"
+              clearable
+              placeholder="全部状态"
               @change="searchApplications"
             >
               <ElOption label="已发布" value="published" />
               <ElOption label="未发布" value="unpublished" />
             </ElSelect>
+            <ElButton v-if="hasActiveFilter" link @click="resetFilters">
+              重置
+            </ElButton>
           </div>
           <ElButton :icon="Refresh" @click="loadApplications">刷新</ElButton>
+          <ElButton :icon="Upload" @click="openImportDialog">导入应用</ElButton>
           <ElButton @click="toggleBatchMode">
             {{ batchMode ? '取消选择' : '批量选择' }}
           </ElButton>
@@ -918,8 +1135,7 @@ onMounted(loadApplications);
 
       <section v-if="batchMode" class="batch-strip">
         <span>
-          已选择 {{ selectedIds.length }} /
-          {{ filteredApplications.length }}
+          已选择 {{ selectedIds.length }} / {{ applications.length }}
         </span>
         <span class="muted">
           {{ selectedApps.map(applicationName).join('、') }}
@@ -928,14 +1144,14 @@ onMounted(loadApplications);
 
       <section
         class="application-content"
-        :class="{ 'is-empty': filteredApplications.length === 0 }"
+        :class="{ 'is-empty': applications.length === 0 }"
       >
-        <div v-if="filteredApplications.length > 0" class="application-grid">
+        <div v-if="applications.length > 0" class="application-grid">
           <article
-            v-for="item in filteredApplications"
+            v-for="item in applications"
             :key="item.id"
             class="application-card"
-            @click="openApplicationPrimary(item)"
+            @click="openApplicationDetail(item)"
           >
             <div class="card-head">
               <ElCheckbox
@@ -1016,6 +1232,22 @@ onMounted(loadApplications);
                         <ElIcon><Key /></ElIcon>
                         访问管理
                       </ElDropdownItem>
+                      <ElDropdownItem @click="openAuthDrawer(item)">
+                        <ElIcon><Lock /></ElIcon>
+                        资源授权
+                      </ElDropdownItem>
+                      <ElDropdownItem @click="openMappingsDrawer(item)">
+                        <ElIcon><Share /></ElIcon>
+                        查看关联资源
+                      </ElDropdownItem>
+                      <ElDropdownItem @click="navigateToTriggers(item)">
+                        <ElIcon><AlarmClock /></ElIcon>
+                        触发器
+                      </ElDropdownItem>
+                      <ElDropdownItem @click="openMoveDialog(item)">
+                        <ElIcon><Rank /></ElIcon>
+                        转移到
+                      </ElDropdownItem>
                       <ElDropdownItem
                         v-if="isWorkflowApplication(item.type)"
                         @click="openManagementDrawer(item, 'workflow')"
@@ -1034,6 +1266,10 @@ onMounted(loadApplications);
                         <ElIcon><CopyDocument /></ElIcon>
                         复制
                       </ElDropdownItem>
+                      <ElDropdownItem @click="exportApplicationFile(item)">
+                        <ElIcon><Download /></ElIcon>
+                        导出
+                      </ElDropdownItem>
                       <ElDropdownItem divided @click="removeApplication(item)">
                         <ElIcon><Delete /></ElIcon>
                         删除
@@ -1047,6 +1283,19 @@ onMounted(loadApplications);
         </div>
         <ElEmpty v-else class="empty-panel" description="暂无应用" />
       </section>
+
+      <div v-if="total > 0" class="pager">
+        <span>共 {{ total }} 个应用</span>
+        <ElPagination
+          :current-page="query.current"
+          :page-size="query.size"
+          :total="total"
+          background
+          layout="prev, pager, next"
+          small
+          @current-change="handlePageChange"
+        />
+      </div>
 
       <ElDialog
         v-model="dialogOpen"
@@ -1078,6 +1327,39 @@ onMounted(loadApplications);
         <template #footer>
           <ElButton @click="dialogOpen = false">取消</ElButton>
           <ElButton type="primary" @click="saveApplication">保存</ElButton>
+        </template>
+      </ElDialog>
+
+      <ElDialog
+        v-model="importDialogOpen"
+        title="导入应用"
+        width="480px"
+        @close="handleImportDialogClose"
+      >
+        <ElUpload
+          :auto-upload="false"
+          :file-list="importFiles"
+          :on-change="handleImportFileChange"
+          :on-remove="handleImportFileRemove"
+          :limit="1"
+          accept=".json"
+          drag
+        >
+          <ElIcon class="el-icon--upload"><Upload /></ElIcon>
+          <div class="el-upload__text">
+            将 JSON 文件拖入此处，或<em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="muted">仅支持单个 .json 应用导出文件</div>
+          </template>
+        </ElUpload>
+        <template #footer>
+          <ElButton :disabled="importing" @click="importDialogOpen = false">
+            取消
+          </ElButton>
+          <ElButton :loading="importing" type="primary" @click="confirmImport">
+            导入
+          </ElButton>
         </template>
       </ElDialog>
 
@@ -1262,6 +1544,77 @@ onMounted(loadApplications);
           </ElTabPane>
         </ElTabs>
       </ElDrawer>
+
+      <!-- Move To Dialog -->
+      <ElDialog v-model="moveDialogOpen" title="转移到" width="480px">
+        <ElForm label-width="80px">
+          <ElFormItem label="目标文件夹">
+            <ElSelect
+              v-model="selectedFolderId"
+              clearable
+              filterable
+              placeholder="选择文件夹"
+              style="width: 100%"
+            >
+              <ElOption
+                v-for="folder in moveFolders"
+                :key="folder.id ?? ''"
+                :label="folder.name ?? ''"
+                :value="folder.id ?? ''"
+              />
+            </ElSelect>
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="moveDialogOpen = false">取消</ElButton>
+          <ElButton
+            :disabled="!selectedFolderId"
+            type="primary"
+            @click="confirmMove"
+          >
+            确定
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <!-- Resource Auth Drawer -->
+      <ElDrawer
+        v-model="authDrawerOpen"
+        size="850px"
+        title="资源授权"
+      >
+        <ElTable v-loading="authLoading" :data="authRecords">
+          <ElTableColumn label="主体类型" min-width="120" prop="principalType" />
+          <ElTableColumn label="主体ID" min-width="160" prop="principalId" />
+          <ElTableColumn label="权限" min-width="180">
+            <template #default="{ row }">
+              <ElSelect
+                :model-value="row.permission || 'NOT_AUTH'"
+                @change="(val: string) => { row.permission = val; updateAuthPermission(row) }"
+              >
+                <ElOption label="未授权" value="NOT_AUTH" />
+                <ElOption label="查看" value="VIEW" />
+                <ElOption label="管理" value="MANAGE" />
+              </ElSelect>
+            </template>
+          </ElTableColumn>
+        </ElTable>
+        <ElEmpty v-if="!authLoading && authRecords.length === 0" description="暂无授权数据" />
+      </ElDrawer>
+
+      <!-- Resource Mappings Drawer -->
+      <ElDrawer
+        v-model="mappingsDrawerOpen"
+        size="60%"
+        title="查看关联资源"
+      >
+        <ElTable v-loading="mappingsLoading" :data="mappings">
+          <ElTableColumn label="名称" min-width="160" prop="name" />
+          <ElTableColumn label="类型" min-width="120" prop="type" />
+          <ElTableColumn label="描述" min-width="200" prop="description" />
+        </ElTable>
+        <ElEmpty v-if="!mappingsLoading && mappings.length === 0" description="暂无关联资源" />
+      </ElDrawer>
     </div>
   </Page>
 </template>
@@ -1283,8 +1636,8 @@ onMounted(loadApplications);
   --app-panel-bg: hsl(var(--card));
   --app-page-bg: var(--el-fill-color-light);
   --app-radius: 6px;
-  --app-search-control-width: 250px;
-  --app-search-type-width: 116px;
+  --app-search-control-width: 220px;
+  --app-filter-select-width: 130px;
   --app-shadow-dropdown: var(--el-box-shadow-light);
   --app-shadow-hover: var(--el-box-shadow-light);
   --app-tab-header-height: 48px;
@@ -1343,7 +1696,7 @@ onMounted(loadApplications);
 }
 
 .toolbar-actions,
-.complex-search,
+.filter-bar,
 .batch-strip,
 .card-head,
 .app-identity,
@@ -1368,29 +1721,16 @@ onMounted(loadApplications);
   padding-left: var(--app-space-3);
 }
 
-.complex-search {
-  gap: 0;
+.filter-bar {
+  gap: var(--app-space-2);
 }
 
-.complex-search .search-type {
-  width: var(--app-search-type-width);
-}
-
-.complex-search .el-input,
-.complex-search .el-select:not(.search-type) {
+.filter-bar .filter-name {
   width: var(--app-search-control-width);
 }
 
-.complex-search :deep(.search-type .el-select__wrapper) {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-  box-shadow: 0 0 0 1px var(--el-border-color) inset;
-}
-
-.complex-search :deep(.el-input__wrapper),
-.complex-search :deep(.el-select:not(.search-type) .el-select__wrapper) {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
+.filter-bar .filter-select {
+  width: var(--app-filter-select-width);
 }
 
 .button-arrow {
@@ -1414,6 +1754,23 @@ onMounted(loadApplications);
   align-items: center;
   justify-content: center;
   min-height: var(--app-empty-min-height);
+}
+
+.pager {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--app-space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--app-space-2) var(--app-space-4);
+  background: var(--app-panel-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: var(--app-radius);
+}
+
+.pager > span {
+  font-size: var(--el-font-size-extra-small);
+  color: var(--el-text-color-secondary);
 }
 
 .empty-panel {
@@ -1686,9 +2043,9 @@ onMounted(loadApplications);
     flex-direction: column;
   }
 
-  .complex-search,
-  .complex-search .el-input,
-  .complex-search .el-select:not(.search-type) {
+  .filter-bar,
+  .filter-bar .filter-name,
+  .filter-bar .filter-select {
     width: 100%;
   }
 }
