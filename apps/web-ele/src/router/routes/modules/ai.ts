@@ -1,5 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router';
 
+function queryString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 const routes: RouteRecordRaw[] = [
   {
     meta: {
@@ -13,6 +17,7 @@ const routes: RouteRecordRaw[] = [
       {
         component: () => import('#/views/ai/orchestration/dashboard/index.vue'),
         meta: {
+          hideInMenu: true,
           icon: 'lucide:gauge',
           title: '仪表盘',
         },
@@ -24,7 +29,7 @@ const routes: RouteRecordRaw[] = [
           import('#/views/ai/orchestration/applications/index.vue'),
         meta: {
           icon: 'lucide:blocks',
-          title: '应用',
+          title: '智能体',
         },
         name: 'AiOrchestrationApplications',
         path: '/ai/orchestration/applications/index',
@@ -78,6 +83,7 @@ const routes: RouteRecordRaw[] = [
       {
         component: () => import('#/views/ai/orchestration/resources/index.vue'),
         meta: {
+          hideInMenu: true,
           icon: 'lucide:folder-tree',
           title: '资源',
         },
@@ -94,13 +100,51 @@ const routes: RouteRecordRaw[] = [
         path: '/ai/orchestration/triggers/index',
       },
       {
-        component: () => import('#/views/ai/orchestration/workflow/index.vue'),
+        component: () =>
+          import('#/views/ai/orchestration/workflow/host/ApplicationWorkflowHost.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '智能体工作流',
+        },
+        name: 'AiOrchestrationAgentWorkflow',
+        path: '/ai/orchestration/workflow/agent',
+        props: (route) => ({
+          applicationId: queryString(route.query.applicationId),
+        }),
+      },
+      {
+        component: () =>
+          import('#/views/ai/orchestration/workflow/host/ToolWorkflowHost.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '工具工作流',
+        },
+        name: 'AiOrchestrationToolWorkflow',
+        path: '/ai/orchestration/workflow/tool',
+        props: (route) => ({
+          toolId: queryString(route.query.toolId),
+        }),
+      },
+      {
+        // Backward-compat: legacy single workflow route. Redirects bookmarked
+        // /ai/orchestration/workflow/index links to the split routes so the
+        // migration is order-independent and external links keep working.
         meta: {
           hideInMenu: true,
           title: '工作流设计',
         },
         name: 'AiOrchestrationWorkflow',
         path: '/ai/orchestration/workflow/index',
+        redirect: (to) =>
+          to.query.toolId
+            ? {
+                name: 'AiOrchestrationToolWorkflow',
+                query: { toolId: to.query.toolId },
+              }
+            : {
+                name: 'AiOrchestrationAgentWorkflow',
+                query: { applicationId: to.query.applicationId },
+              },
       },
       {
         component: () =>
