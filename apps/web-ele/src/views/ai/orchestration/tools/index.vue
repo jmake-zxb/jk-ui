@@ -2128,7 +2128,10 @@ async function openWorkflowEditor(row: ToolRecord) {
     ElMessage.warning('工具 ID 无效，无法打开工作流编辑器');
     return;
   }
-  await router.push({ name: 'AiOrchestrationWorkflow', query: { toolId } });
+  await router.push({
+    name: 'AiOrchestrationToolWorkflow',
+    query: { toolId },
+  });
 }
 
 async function openToolDrawer(type: AiToolType = 'CUSTOM', row?: ToolRecord) {
@@ -2224,7 +2227,7 @@ async function saveTool() {
       if (createdId !== undefined) {
         ElMessage.success('工作流工具已创建，正在打开工作流编辑器');
         await router.push({
-          name: 'AiOrchestrationWorkflow',
+          name: 'AiOrchestrationToolWorkflow',
           query: { toolId: createdId },
         });
         return;

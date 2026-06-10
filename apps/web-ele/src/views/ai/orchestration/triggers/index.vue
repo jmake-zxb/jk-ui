@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { confirm, Page } from '@vben/common-ui';
 
@@ -33,6 +34,7 @@ import {
 
 import { enabledText, prettyJson, recordsOf, statusType } from '../utils';
 
+const route = useRoute();
 const applications = ref<any[]>([]);
 const applicationId = ref<number | string>();
 const triggers = ref<any[]>([]);
@@ -133,7 +135,14 @@ async function openRecords(row: any) {
   );
 }
 
-onMounted(loadApplications);
+onMounted(() => {
+  const queryAppId = route.query.applicationId;
+  if (queryAppId) {
+    const raw = Array.isArray(queryAppId) ? queryAppId[0] : queryAppId;
+    if (raw) applicationId.value = raw;
+  }
+  loadApplications();
+});
 </script>
 
 <template>
