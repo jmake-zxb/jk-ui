@@ -3,7 +3,14 @@ import type { SimpleApplicationSettings } from './simple-application-settings';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { CaretRight, Close, Plus, Setting } from '@element-plus/icons-vue';
+import {
+  CaretRight,
+  Close,
+  MagicStick,
+  Plus,
+  Setting,
+  VideoPlay,
+} from '@element-plus/icons-vue';
 import {
   ElButton,
   ElCheckbox,
@@ -13,6 +20,7 @@ import {
   ElIcon,
   ElInput,
   ElInputNumber,
+  ElMessage,
   ElOption,
   ElRadio,
   ElRadioGroup,
@@ -22,12 +30,14 @@ import {
 } from 'element-plus';
 import { cloneDeep, set } from 'lodash-es';
 
-import { listApplications } from '#/api/ai/applications';
+import { listApplications, playDemoText } from '#/api/ai/applications';
 import { listKnowledge } from '#/api/ai/knowledge';
 import { listTools } from '#/api/ai/tools';
 
 import { recordsOf } from '../utils';
 import LocalModelSelect from '../workflow/designer/nodes/base-node/component/LocalModelSelect.vue';
+import GeneratePromptDialog from './GeneratePromptDialog.vue';
+import ModelParamSettingDialog from './ModelParamSettingDialog.vue';
 import { normalizeSettings } from './simple-application-settings';
 
 type Id = number | string;
@@ -35,6 +45,7 @@ type ResourceRecord = Record<string, unknown>;
 type ResourceGroupKey = 'agent' | 'mcp' | 'skill' | 'tool';
 
 const props = defineProps<{
+  applicationId?: number | string;
   modelValue: SimpleApplicationSettings;
 }>();
 
@@ -65,6 +76,33 @@ const knowledgeSettingOpen = ref(false);
 const resourcePickerOpen = ref(false);
 const selectedResourceGroup = ref<ResourceGroupKey>('tool');
 const resourceDraft = ref<Id[]>([]);
+const generatePromptOpen = ref(false);
+
+function openGeneratePrompt() {
+  if (!formData.value.model_id) {
+    ElMessage.warning('请先选择 AI 模型');
+    return;
+  }
+  generatePromptOpen.value = true;
+}
+
+function applyGeneratedPrompt(prompt: string) {
+  patch('model_setting.system', prompt);
+}
+
+const modelParamOpen = ref(false);
+
+function openModelParamSetting() {
+  if (!formData.value.model_id) {
+    ElMessage.warning('请先选择 AI 模型');
+    return;
+  }
+  modelParamOpen.value = true;
+}
+
+function applyModelParams(value: Record<string, unknown>) {
+  patch('model_params_setting', value);
+}
 
 const mcpToolOptions = computed(() =>
   toolRecords.value.filter((record) => resourceType(record) === 'MCP'),
@@ -275,6 +313,59 @@ async function loadResources() {
   }
 }
 
+// --- TTS 试听 ---
+const demoPlaying = ref(false);
+let demoAudio: HTMLAudioElement | null = null;
+let demoAudioUrl: null | string = null;
+
+function stopDemoAudio() {
+  if (demoAudio) {
+    demoAudio.pause();
+    demoAudio.src = '';
+    demoAudio = null;
+  }
+  if (demoAudioUrl) {
+    URL.revokeObjectURL(demoAudioUrl);
+    demoAudioUrl = null;
+  }
+  demoPlaying.value = false;
+}
+
+async function playTtsDemo() {
+  if (demoPlaying.value) {
+    stopDemoAudio();
+    return;
+  }
+  if (!formData.value.tts_model_enable || !formData.value.tts_model_id) {
+    ElMessage.warning('请先启用并选择 TTS 模型');
+    return;
+  }
+  const id = props.applicationId;
+  if (id === undefined || id === null || id === '') {
+    ElMessage.info('请先保存应用后再试听');
+    return;
+  }
+  try {
+    demoPlaying.value = true;
+    const blob = await playDemoText(id);
+    if (!(blob instanceof Blob) || blob.size === 0) {
+      throw new Error('试听内容为空');
+    }
+    demoAudioUrl = URL.createObjectURL(blob);
+    demoAudio = new Audio(demoAudioUrl);
+    demoAudio.addEventListener('ended', stopDemoAudio);
+    demoAudio.addEventListener('error', () => {
+      ElMessage.error('试听播放失败');
+      stopDemoAudio();
+    });
+    await demoAudio.play();
+  } catch (error) {
+    console.error('试听失败', error);
+    ElMessage.error('试听失败');
+    stopDemoAudio();
+  }
+}
+
 onMounted(loadResources);
 </script>
 
@@ -312,20 +403,43 @@ onMounted(loadResources);
     <section class="simple-agent-settings__section">
       <div class="simple-agent-settings__section-title">模型设置</div>
       <ElFormItem label="AI 模型" required>
-        <LocalModelSelect
-          :model-value="formData.model_id"
-          model-type="LLM"
-          placeholder="请选择 AI 模型"
-          @update:model-value="patch('model_id', $event || '')"
-        />
+        <div class="simple-agent-settings__model-row">
+          <LocalModelSelect
+            class="simple-agent-settings__model-select"
+            :model-value="formData.model_id"
+            model-type="LLM"
+            placeholder="请选择 AI 模型"
+            @update:model-value="patch('model_id', $event || '')"
+          />
+          <ElButton
+            :disabled="!formData.model_id"
+            :icon="Setting"
+            @click="openModelParamSetting"
+          >
+            参数设置
+          </ElButton>
+        </div>
       </ElFormItem>
       <ElFormItem label="角色设定">
-        <ElInput
-          :model-value="formData.model_setting.system"
-          type="textarea"
-          :rows="4"
-          @update:model-value="patch('model_setting.system', $event)"
-        />
+        <div class="simple-agent-settings__prompt-field">
+          <div class="simple-agent-settings__prompt-toolbar">
+            <ElButton
+              link
+              type="primary"
+              :icon="MagicStick"
+              :disabled="!formData.model_id"
+              @click="openGeneratePrompt"
+            >
+              AI 生成
+            </ElButton>
+          </div>
+          <ElInput
+            :model-value="formData.model_setting.system"
+            type="textarea"
+            :rows="4"
+            @update:model-value="patch('model_setting.system', $event)"
+          />
+        </div>
       </ElFormItem>
       <ElFormItem label="用户提示词（无引用知识库）">
         <ElInput
@@ -611,6 +725,18 @@ onMounted(loadResources);
             placeholder="请选择语音播放模型"
             @update:model-value="patch('tts_model_id', $event || '')"
           />
+          <div v-if="formData.tts_type === 'TTS'" class="voice-play-actions">
+            <ElButton
+              :icon="VideoPlay"
+              :disabled="!formData.tts_model_id"
+              :loading="demoPlaying"
+              size="small"
+              type="primary"
+              @click="playTtsDemo"
+            >
+              试听
+            </ElButton>
+          </div>
         </div>
       </ElFormItem>
     </section>
@@ -747,6 +873,20 @@ onMounted(loadResources);
       <ElButton type="primary" @click="confirmResourcePicker">确定</ElButton>
     </template>
   </ElDialog>
+
+  <GeneratePromptDialog
+    v-model="generatePromptOpen"
+    :application-id="props.applicationId"
+    :model-id="formData.model_id"
+    @replace="applyGeneratedPrompt"
+  />
+
+  <ModelParamSettingDialog
+    v-model="modelParamOpen"
+    :model-id="formData.model_id"
+    :setting="formData.model_params_setting"
+    @refresh="applyModelParams"
+  />
 </template>
 
 <style scoped lang="scss">
@@ -773,6 +913,31 @@ onMounted(loadResources);
   gap: 8px;
   align-items: center;
   justify-content: space-between;
+}
+
+.simple-agent-settings__model-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.simple-agent-settings__model-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.simple-agent-settings__prompt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.simple-agent-settings__prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .simple-agent-settings__section-title {
