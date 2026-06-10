@@ -499,7 +499,12 @@ onMounted(async () => {
         </div>
         <span class="embed-header__name">{{ profile.name || '对话' }}</span>
       </div>
-      <ElButton text size="small" class="embed-header__action" @click="startNewEmbedChat">
+      <ElButton
+        text
+        size="small"
+        class="embed-header__action"
+        @click="startNewEmbedChat"
+      >
         新对话
       </ElButton>
     </div>
@@ -547,11 +552,7 @@ onMounted(async () => {
         placeholder="输入消息..."
         @keydown.enter.exact.prevent="sendEmbedChat"
       />
-      <ElButton
-        type="primary"
-        :loading="streaming"
-        @click="sendEmbedChat"
-      >
+      <ElButton type="primary" :loading="streaming" @click="sendEmbedChat">
         发送
       </ElButton>
     </div>
@@ -755,6 +756,23 @@ onMounted(async () => {
 </template>
 
 <style scoped lang="scss">
+@media (max-width: 900px) {
+  .toolbar,
+  .debug-toolbar,
+  .agent-chat,
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .message-row {
+    max-width: 100%;
+  }
+
+  .chat-composer {
+    grid-template-columns: 1fr;
+  }
+}
+
 .public-page {
   display: flex;
   flex-direction: column;
@@ -1051,8 +1069,8 @@ onMounted(async () => {
   justify-content: space-between;
   height: 48px;
   padding: 0 16px;
-  background: var(--el-color-primary);
   color: #fff;
+  background: var(--el-color-primary);
 }
 
 .embed-header__left {
@@ -1070,7 +1088,7 @@ onMounted(async () => {
   width: 28px;
   height: 28px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255 255 255 / 20%);
   border-radius: 6px;
 }
 
@@ -1081,16 +1099,16 @@ onMounted(async () => {
 }
 
 .embed-header__name {
-  font-size: 14px;
-  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .embed-header__action {
-  color: inherit !important;
   flex: 0 0 auto;
+  color: inherit !important;
 }
 
 .embed-body {
@@ -1120,22 +1138,5 @@ onMounted(async () => {
   align-items: end;
   padding: 10px 12px;
   border-top: 1px solid var(--el-border-color-lighter);
-}
-
-@media (max-width: 900px) {
-  .toolbar,
-  .debug-toolbar,
-  .agent-chat,
-  .two-col {
-    grid-template-columns: 1fr;
-  }
-
-  .message-row {
-    max-width: 100%;
-  }
-
-  .chat-composer {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

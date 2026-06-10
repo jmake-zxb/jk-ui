@@ -84,7 +84,6 @@ import {
   toggleApplicationKey,
   updateApplication,
 } from '#/api/ai/applications';
-
 import {
   listResourceAuth,
   listResourceFolders,
@@ -1018,11 +1017,7 @@ async function openAuthDrawer(row: ApplicationRecord) {
 
 async function updateAuthPermission(row: ResourceAuthRecord) {
   const app = authTargetApp.value;
-  if (
-    !app?.id ||
-    row.principalId === undefined ||
-    row.principalId === null
-  ) {
+  if (!app?.id || row.principalId === undefined || row.principalId === null) {
     return;
   }
   // Backend (ResourceController#saveAuth) maps OrchestrationRequest ->
@@ -1578,19 +1573,24 @@ onMounted(loadApplications);
       </ElDialog>
 
       <!-- Resource Auth Drawer -->
-      <ElDrawer
-        v-model="authDrawerOpen"
-        size="850px"
-        title="资源授权"
-      >
+      <ElDrawer v-model="authDrawerOpen" size="850px" title="资源授权">
         <ElTable v-loading="authLoading" :data="authRecords">
-          <ElTableColumn label="主体类型" min-width="120" prop="principalType" />
+          <ElTableColumn
+            label="主体类型"
+            min-width="120"
+            prop="principalType"
+          />
           <ElTableColumn label="主体ID" min-width="160" prop="principalId" />
           <ElTableColumn label="权限" min-width="180">
             <template #default="{ row }">
               <ElSelect
                 :model-value="row.permission || 'NOT_AUTH'"
-                @change="(val: string) => { row.permission = val; updateAuthPermission(row) }"
+                @change="
+                  (val: string) => {
+                    row.permission = val;
+                    updateAuthPermission(row);
+                  }
+                "
               >
                 <ElOption label="未授权" value="NOT_AUTH" />
                 <ElOption label="查看" value="VIEW" />
@@ -1599,21 +1599,23 @@ onMounted(loadApplications);
             </template>
           </ElTableColumn>
         </ElTable>
-        <ElEmpty v-if="!authLoading && authRecords.length === 0" description="暂无授权数据" />
+        <ElEmpty
+          v-if="!authLoading && authRecords.length === 0"
+          description="暂无授权数据"
+        />
       </ElDrawer>
 
       <!-- Resource Mappings Drawer -->
-      <ElDrawer
-        v-model="mappingsDrawerOpen"
-        size="60%"
-        title="查看关联资源"
-      >
+      <ElDrawer v-model="mappingsDrawerOpen" size="60%" title="查看关联资源">
         <ElTable v-loading="mappingsLoading" :data="mappings">
           <ElTableColumn label="名称" min-width="160" prop="name" />
           <ElTableColumn label="类型" min-width="120" prop="type" />
           <ElTableColumn label="描述" min-width="200" prop="description" />
         </ElTable>
-        <ElEmpty v-if="!mappingsLoading && mappings.length === 0" description="暂无关联资源" />
+        <ElEmpty
+          v-if="!mappingsLoading && mappings.length === 0"
+          description="暂无关联资源"
+        />
       </ElDrawer>
     </div>
   </Page>

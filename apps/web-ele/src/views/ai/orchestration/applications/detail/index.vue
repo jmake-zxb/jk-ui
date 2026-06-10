@@ -88,13 +88,13 @@ import {
   WORKFLOW_EDITOR_PATH,
 } from '../application-entry';
 import DisplaySettingDialog from '../DisplaySettingDialog.vue';
+import EmbedDialog from '../EmbedDialog.vue';
 import {
   createDefaultSimpleApplicationSettings,
   parseSimpleApplicationSettings,
   serializeSimpleApplicationGraph,
 } from '../simple-application-settings';
 import SimpleApplicationSettingsPanel from '../SimpleApplicationSettings.vue';
-import EmbedDialog from '../EmbedDialog.vue';
 import AnnotationDialog from './AnnotationDialog.vue';
 
 type Id = number | string;
