@@ -1,6 +1,12 @@
 import type { AiQuery } from './types';
 
+import { useAppConfig } from '@vben/hooks';
+import { useAccessStore } from '@vben/stores';
+
 import { requestClient } from '#/api/request';
+import { adaptationUrl } from '#/utils/other';
+
+const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
 
 export type AiModelId = number | string;
 export type JsonPrimitive = boolean | null | number | string;
@@ -164,4 +170,52 @@ export function updateModelParamsForm(
 
 export function getModelMeta(id: AiModelId) {
   return requestClient.get(`/ai/api/models/${id}/meta`);
+}
+
+export interface PromptGenerateMessage {
+  content?: string;
+  role?: string;
+}
+
+export interface PromptGenerateRequest {
+  applicationId?: string;
+  application_id?: string;
+  messages?: PromptGenerateMessage[];
+  modelId?: AiModelId;
+  model_id?: AiModelId;
+  prompt?: string;
+}
+
+function formatPromptToken(token: null | string) {
+  return token ? `Bearer ${token}` : '';
+}
+
+export async function generatePromptStream(
+  id: AiModelId,
+  data: PromptGenerateRequest,
+  signal?: AbortSignal,
+) {
+  const accessStore = useAccessStore();
+  const target = `/ai/api/models/${id}/prompt-generate`;
+  const path = adaptationUrl(target) || target;
+  const headers: HeadersInit = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  };
+  const authorization = formatPromptToken(accessStore.accessToken);
+  if (authorization) headers.Authorization = authorization;
+
+  const response = await fetch(`${apiURL}${path}`, {
+    body: JSON.stringify(data),
+    headers,
+    method: 'POST',
+    signal,
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `提示词生成请求失败：${response.status}`);
+  }
+  if (!response.body) throw new Error('提示词生成接口未返回流数据');
+  return response.body;
 }

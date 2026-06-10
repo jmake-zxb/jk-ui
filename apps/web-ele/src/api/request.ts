@@ -23,6 +23,10 @@ import { refreshTokenApi } from './core';
 
 const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
 
+function isSkipTokenRequest(error: any) {
+  return !!error?.config?.headers?.skipToken;
+}
+
 function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   const client = new RequestClient({
     ...options,
@@ -108,12 +112,16 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       switch (status) {
         case 401: {
           msg = errMsg || $t('ui.fallback.http.unauthorized');
-          doReAuthenticate();
+          if (!isSkipTokenRequest(error)) {
+            doReAuthenticate();
+          }
           break;
         }
         case 424: {
           msg = errMsg || $t('ui.fallback.http.unauthorized');
-          doReAuthenticate();
+          if (!isSkipTokenRequest(error)) {
+            doReAuthenticate();
+          }
           break;
         }
         case 500: {

@@ -1,11 +1,36 @@
 import type { PublicChatPayload } from './types';
 
+import { useAppConfig } from '@vben/hooks';
+
 import { requestClient } from '#/api/request';
+import { adaptationUrl } from '#/utils/other';
+
+const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
 
 function publicHeaders(token?: string) {
   return token
     ? { Authorization: `Bearer ${token}`, skipToken: true }
     : { skipToken: true };
+}
+
+/**
+ * Public SSE chat stream — returns raw Response for manual stream reading.
+ * Endpoint: POST /api/public/applications/{id}/chat/stream
+ */
+export function publicChatStream(
+  applicationId: number | string,
+  data: { chatId?: number | string; message: string },
+  token: string,
+): Promise<Response> {
+  const url = `${apiURL}${adaptationUrl(`/ai/api/public/applications/${applicationId}/chat/stream`)}`;
+  return fetch(url, {
+    body: JSON.stringify(data),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
 }
 
 export function publicChat(
@@ -62,6 +87,13 @@ export function getPublicShare(shareToken: string) {
   });
 }
 
+export function getApplicationProfile(applicationId: number | string) {
+  return requestClient.get(
+    `/ai/api/public/applications/${applicationId}/profile`,
+    { headers: publicHeaders() },
+  );
+}
+
 export function openAiChatCompletion(
   applicationId: number | string,
   data: object,
@@ -75,5 +107,33 @@ export function openAiChatCompletion(
         ? { Authorization: `Bearer ${apiKey}`, skipToken: true }
         : undefined,
     },
+  );
+}
+
+export function publicTextToSpeech(
+  applicationId: number | string,
+  data: { text: string },
+  token?: string,
+) {
+  return requestClient.download<Blob>(
+    `/ai/api/public/applications/${applicationId}/text_to_speech`,
+    {
+      method: 'POST',
+      data,
+      responseReturn: 'body',
+      headers: publicHeaders(token),
+    },
+  );
+}
+
+export function publicSpeechToText(
+  applicationId: number | string,
+  file: Blob | File,
+  token?: string,
+) {
+  return requestClient.upload<string>(
+    `/ai/api/public/applications/${applicationId}/speech_to_text`,
+    { file },
+    { headers: publicHeaders(token) },
   );
 }
