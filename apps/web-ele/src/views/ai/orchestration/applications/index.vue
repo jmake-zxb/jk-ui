@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { UploadFile, UploadFiles } from 'element-plus';
 
-import type { SimpleApplicationSettings } from './simple-application-settings';
-
 import type { ApplicationPayload } from '#/api/ai/types';
 
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -21,6 +19,8 @@ import {
   Delete,
   Download,
   EditPen,
+  FolderAdd,
+  FolderOpened,
   Key,
   Lock,
   MoreFilled,
@@ -31,10 +31,11 @@ import {
   Search,
   Setting,
   Share,
-  Tickets,
   Upload,
 } from '@element-plus/icons-vue';
 import {
+  ElBreadcrumb,
+  ElBreadcrumbItem,
   ElButton,
   ElCheckbox,
   ElDialog,
@@ -54,61 +55,43 @@ import {
   ElSwitch,
   ElTable,
   ElTableColumn,
-  ElTabPane,
-  ElTabs,
   ElTag,
+  ElTree,
   ElUpload,
 } from 'element-plus';
 
 import {
   batchDeleteApplications,
   copyApplication,
-  createAccessToken,
   createApplication,
-  createApplicationKey,
-  deleteAccessToken,
   deleteApplication,
-  deleteApplicationKey,
   exportApplication,
-  getWorkflowDraft,
   importApplication,
   moveApplication,
-  pageAccessTokens,
-  pageApplicationKeys,
   pageApplications,
-  pageWorkflowVersions,
-  publishWorkflow,
-  restoreWorkflowVersion,
-  saveWorkflowDraft,
-  toggleAccessToken,
-  toggleApplicationKey,
   updateApplication,
 } from '#/api/ai/applications';
 import {
+  createResourceFolder,
+  deleteResourceFolder,
   listResourceAuth,
   listResourceFolders,
   listResourceMappings,
   saveResourceAuth,
+  updateResourceFolder,
 } from '#/api/ai/resources';
+import { pageList as pageUsers } from '#/api/core/user';
 
-import { enabledText, prettyJson, recordsOf, totalOf } from '../utils';
+import { recordsOf, totalOf } from '../utils';
 import {
   applicationChatEntry,
   applicationDetailEntry,
   applicationPrimaryEntry,
   isWorkflowApplication,
   normalizeApplicationType,
-  WORKFLOW_EDITOR_PATH,
 } from './application-entry';
-import {
-  createDefaultSimpleApplicationSettings,
-  parseSimpleApplicationSettings,
-  serializeSimpleApplicationGraph,
-} from './simple-application-settings';
-import SimpleApplicationSettingsPanel from './SimpleApplicationSettings.vue';
 
 type Id = number | string;
-type DetailTab = 'access' | 'settings' | 'workflow';
 
 interface ApplicationRecord extends Record<string, unknown> {
   accessEnabled?: boolean;
@@ -146,36 +129,55 @@ interface ApplicationRecord extends Record<string, unknown> {
   workspace_id?: string;
 }
 
-interface AccessTokenRecord extends Record<string, unknown> {
-  enabled?: boolean;
+interface FolderNode extends Record<string, unknown> {
+  children?: FolderNode[];
   id?: Id;
   name?: string;
-  token?: string;
+  parentId?: Id;
+  parent_id?: Id;
 }
 
-interface ApplicationKeyRecord extends Record<string, unknown> {
-  enabled?: boolean;
+interface UserOption {
+  id: Id;
+  label: string;
+}
+
+interface ResourceAuthRecord extends Record<string, unknown> {
   id?: Id;
-  keyValue?: string;
+  permission?: string;
+  principalId?: Id;
+  principalType?: string;
+}
+
+interface ResourceMappingRecord extends Record<string, unknown> {
+  description?: string;
   name?: string;
-}
-
-interface WorkflowVersionRecord extends Record<string, unknown> {
-  createTime?: string;
-  graphData?: unknown;
-  id?: Id;
-  status?: string;
-  versionNo?: string;
+  type?: string;
 }
 
 const router = useRouter();
 const loading = ref(false);
+const treeLoading = ref(false);
 const applications = ref<ApplicationRecord[]>([]);
 const total = ref(0);
 const selectedIds = ref<Id[]>([]);
 const batchMode = ref(false);
+
+// --- Folder tree ---
+const rootFolderId = '__root__';
+const folders = ref<FolderNode[]>([]);
+const activeFolderId = ref<Id>(rootFolderId);
+
+// --- Search type switcher ---
+type SearchType = 'create_user' | 'name' | 'publish_status';
+const searchType = ref<SearchType>('name');
+const createUserFilter = ref('');
+const userOptions = ref<UserOption[]>([]);
+const userSearchLoading = ref(false);
+
 const query = reactive({
   current: 1,
+  folderId: undefined as Id | undefined,
   name: '',
   page: 1,
   publishStatus: '',
@@ -183,6 +185,7 @@ const query = reactive({
   type: '',
 });
 
+// --- Create / edit dialog ---
 const dialogOpen = ref(false);
 const editingId = ref<Id>();
 const form = reactive<ApplicationPayload>({
@@ -197,33 +200,46 @@ const form = reactive<ApplicationPayload>({
   workspaceId: 'default',
 });
 
+// --- Import dialog ---
 const importDialogOpen = ref(false);
 const importing = ref(false);
 const importFiles = ref<UploadFile[]>([]);
 
-const drawerOpen = ref(false);
-const activeApp = ref<ApplicationRecord>();
-const detailTab = ref<DetailTab>('settings');
-const workflowGraphData = ref('{}');
-const applicationConfig = ref('{}');
-const simpleSettingsLoading = ref(false);
-const simpleSettings = ref<SimpleApplicationSettings>(
-  createDefaultSimpleApplicationSettings(),
-);
-const accessTokens = ref<AccessTokenRecord[]>([]);
-const appKeys = ref<ApplicationKeyRecord[]>([]);
-const versions = ref<WorkflowVersionRecord[]>([]);
+// --- Folder creation dialog ---
+const folderDialogOpen = ref(false);
+const folderDialogMode = ref<'create' | 'edit'>('create');
+const folderForm = reactive({
+  name: '',
+  description: '',
+  _parentId: '' as string,
+});
+const editFolderId = ref<Id>();
 
-const drawerTitle = computed(() => activeApp.value?.name || '应用设置');
-const drawerSize = computed(() =>
-  activeApp.value && !isWorkflowApplication(activeApp.value.type)
-    ? '920px'
-    : '760px',
-);
-const activeAppId = computed(() => activeApp.value?.id);
-const isActiveWorkflowApp = computed(() =>
-  isWorkflowApplication(activeApp.value?.type),
-);
+// --- Folder move dialog ---
+const movingFolder = ref<FolderNode>();
+const folderMoveDialogOpen = ref(false);
+const folderMoveForm = reactive({ parent_id: '' as string });
+
+// --- Move dialog ---
+const moveDialogOpen = ref(false);
+const moveTargetApp = ref<ApplicationRecord>();
+const moveFolders = ref<Array<{ id?: Id; name?: string }>>([]);
+const selectedFolderId = ref<Id>();
+const moveLoading = ref(false);
+
+// --- Auth drawer ---
+const authDrawerOpen = ref(false);
+const authTargetApp = ref<ApplicationRecord>();
+const authRecords = ref<ResourceAuthRecord[]>([]);
+const authLoading = ref(false);
+
+// --- Mappings drawer ---
+const mappingsDrawerOpen = ref(false);
+const mappingsTargetApp = ref<ApplicationRecord>();
+const mappings = ref<ResourceMappingRecord[]>([]);
+const mappingsLoading = ref(false);
+
+// --- Computed ---
 const selectedApps = computed(() =>
   applications.value.filter(
     (item) => item.id !== undefined && selectedIds.value.includes(item.id),
@@ -231,9 +247,41 @@ const selectedApps = computed(() =>
 );
 const hasActiveFilter = computed(
   () =>
-    query.name.trim() !== '' || query.publishStatus !== '' || query.type !== '',
+    query.name.trim() !== '' ||
+    query.publishStatus !== '' ||
+    query.type !== '' ||
+    createUserFilter.value !== '',
 );
+const currentFolder = computed(() => {
+  if (activeFolderId.value === rootFolderId) {
+    return { id: rootFolderId as Id, name: '全部应用' };
+  }
+  return (
+    findFolderById(folders.value, activeFolderId.value) || {
+      id: rootFolderId as Id,
+      name: '全部应用',
+    }
+  );
+});
+const currentFolderId = computed(() =>
+  activeFolderId.value === rootFolderId ? undefined : activeFolderId.value,
+);
+const breadcrumbPath = computed(() => {
+  if (activeFolderId.value === rootFolderId) return ['全部应用'];
+  const path = findFolderPath(folders.value, activeFolderId.value);
+  return path.length > 0
+    ? ['全部应用', ...path]
+    : ['全部应用', folderDisplayName(currentFolder.value)];
+});
+const visibleFolderTree = computed<FolderNode[]>(() => [
+  {
+    children: folders.value,
+    id: rootFolderId as Id,
+    name: '全部应用',
+  },
+]);
 
+// --- Utility functions ---
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -347,14 +395,6 @@ function publishState(row?: ApplicationRecord) {
     : 'unpublished';
 }
 
-function publishLabel(row?: ApplicationRecord) {
-  return publishState(row) === 'published' ? '已发布' : '未发布';
-}
-
-function publishTagType(row?: ApplicationRecord) {
-  return publishState(row) === 'published' ? 'success' : 'info';
-}
-
 function iconInitial(row?: ApplicationRecord) {
   return applicationName(row).slice(0, 1).toUpperCase();
 }
@@ -371,17 +411,122 @@ function appIconUrl(row?: ApplicationRecord) {
   return '';
 }
 
+// --- Folder tree functions ---
+function folderDisplayName(folder?: FolderNode) {
+  if (!folder || folder.id === rootFolderId) return '全部应用';
+  return stringValue(folder.name || folder.id, '未命名文件夹');
+}
+
+function findFolderById(
+  list: FolderNode[],
+  folderId?: Id,
+): FolderNode | undefined {
+  if (folderId === undefined) return undefined;
+  for (const folder of list) {
+    if (folder.id === folderId) return folder;
+    const child = findFolderById(folder.children || [], folderId);
+    if (child) return child;
+  }
+  return undefined;
+}
+
+function findFolderPath(list: FolderNode[], folderId?: Id): string[] {
+  if (folderId === undefined) return [];
+  for (const item of list) {
+    if (item.id === folderId) return [item.name || '未命名文件夹'];
+    const childPath = findFolderPath(item.children || [], folderId);
+    if (childPath.length > 0)
+      return [item.name || '未命名文件夹', ...childPath];
+  }
+  return [];
+}
+
+function buildFolderHierarchy(list: FolderNode[]): FolderNode[] {
+  const foldersById = new Map<string, FolderNode>();
+  list.forEach((folder) => {
+    const key = idValue(folder.id);
+    if (key !== undefined && !foldersById.has(String(key))) {
+      foldersById.set(String(key), folder);
+    }
+  });
+
+  const rootFolders: FolderNode[] = [];
+  list.forEach((folder) => {
+    const folderKey = idValue(folder.id);
+    const parentKey = idValue(folder.parentId ?? folder.parent_id);
+    const parent =
+      parentKey === undefined ? undefined : foldersById.get(String(parentKey));
+    if (
+      parentKey === undefined ||
+      parent === undefined ||
+      folderKey === undefined ||
+      String(parentKey) === String(folderKey)
+    ) {
+      rootFolders.push(folder);
+      return;
+    }
+    if (!parent.children) parent.children = [];
+    parent.children.push(folder);
+  });
+  return rootFolders;
+}
+
+function normalizeFolderList(data: unknown): FolderNode[] {
+  const records = recordsOf<FolderNode>(data);
+  return buildFolderHierarchy(
+    records.map((item) => ({
+      ...item,
+      id: idValue(item.id),
+      name: stringValue(item.name, '未命名文件夹'),
+      parentId: idValue(item.parentId ?? item.parent_id),
+      parent_id: idValue(item.parentId ?? item.parent_id),
+    })),
+  );
+}
+
+async function loadFolders() {
+  treeLoading.value = true;
+  try {
+    const data = await listResourceFolders({ resourceType: 'APPLICATION' });
+    folders.value = normalizeFolderList(data);
+  } finally {
+    treeLoading.value = false;
+  }
+}
+
+function selectFolder(folder: FolderNode) {
+  activeFolderId.value = folder.id ?? rootFolderId;
+  query.folderId = currentFolderId.value;
+  searchApplications();
+}
+
+// --- Data loading ---
 async function loadApplications() {
   loading.value = true;
   try {
-    const data = await pageApplications({
+    const params: Record<string, unknown> = {
       current: query.current,
-      name: query.name.trim() || undefined,
       page: query.page,
-      publishStatus: query.publishStatus || undefined,
       size: query.size,
-      type: query.type || undefined,
-    });
+    };
+    if (query.folderId !== undefined) {
+      params.folderId = query.folderId;
+      params.folder_id = query.folderId;
+    }
+    if (query.name.trim()) {
+      params.name = query.name.trim();
+    }
+    if (query.publishStatus) {
+      params.publishStatus = query.publishStatus;
+    }
+    if (query.type) {
+      params.type = query.type;
+    }
+    if (createUserFilter.value) {
+      params.createUser = createUserFilter.value;
+      params.create_user = createUserFilter.value;
+    }
+    const data = await pageApplications(params);
     applications.value = recordsOf<ApplicationRecord>(data);
     total.value = totalOf(data);
     selectedIds.value = selectedIds.value.filter((id) =>
@@ -402,6 +547,8 @@ function resetFilters() {
   query.name = '';
   query.publishStatus = '';
   query.type = '';
+  createUserFilter.value = '';
+  searchType.value = 'name';
   searchApplications();
 }
 
@@ -411,6 +558,7 @@ function handlePageChange(page: number) {
   void loadApplications();
 }
 
+// --- Create / edit dialog ---
 function resetForm(row?: ApplicationRecord, type = 'WORK_FLOW') {
   editingId.value = row?.id;
   Object.assign(form, {
@@ -468,79 +616,9 @@ async function saveApplication() {
       openWorkflow({ id: createdId, type: payload.type });
     }
   }
-  if (activeApp.value?.id === editingId.value) {
-    activeApp.value =
-      applications.value.find((item) => item.id === editingId.value) ||
-      activeApp.value;
-  }
 }
 
-async function saveSettings() {
-  const id = activeAppId.value;
-  if (id === undefined) return;
-  if (!isActiveWorkflowApp.value) {
-    await saveSimpleSettings(id);
-    return;
-  }
-  await updateApplication(id, { ...form });
-  ElMessage.success('设置已保存');
-  await loadApplications();
-  activeApp.value =
-    applications.value.find((item) => item.id === id) || activeApp.value;
-}
-
-async function saveSimpleSettings(id: Id) {
-  const persisted = await persistSimpleSettings(id);
-  if (!persisted) return;
-  ElMessage.success('设置已保存');
-  await refreshActiveApplication(id);
-}
-
-async function publishSimpleSettings() {
-  const id = activeAppId.value;
-  if (id === undefined) return;
-  const persisted = await persistSimpleSettings(id);
-  if (!persisted) return;
-  await publishWorkflow(id, { description: '从简易智能体设置发布' });
-  ElMessage.success('发布成功');
-  await refreshActiveApplication(id);
-}
-
-async function persistSimpleSettings(id: Id) {
-  const name = simpleSettings.value.name.trim();
-  if (!name) {
-    ElMessage.warning('请输入应用名称');
-    return false;
-  }
-  simpleSettings.value = {
-    ...simpleSettings.value,
-    name,
-  };
-  const payload: ApplicationPayload = {
-    ...form,
-    description: simpleSettings.value.desc,
-    name,
-    type: 'SIMPLE',
-  };
-  await updateApplication(id, payload);
-  await saveWorkflowDraft(id, {
-    applicationConfig: applicationConfig.value || '{}',
-    graphData: serializeSimpleApplicationGraph(simpleSettings.value),
-  });
-  return true;
-}
-
-async function refreshActiveApplication(id: Id) {
-  await loadApplications();
-  activeApp.value = applications.value.find((item) => item.id === id) || {
-    ...activeApp.value,
-    description: simpleSettings.value.desc,
-    name: simpleSettings.value.name,
-    type: 'SIMPLE',
-  };
-  resetForm(activeApp.value);
-}
-
+// --- Delete / duplicate / export ---
 function removeApplication(row: ApplicationRecord) {
   confirm(`确认删除应用 ${applicationName(row)}？`).then(async () => {
     if (row.id === undefined) return;
@@ -578,6 +656,7 @@ async function exportApplicationFile(row: ApplicationRecord) {
   await exportApplication(row.id);
 }
 
+// --- Import ---
 function openImportDialog() {
   importFiles.value = [];
   importing.value = false;
@@ -617,6 +696,7 @@ async function confirmImport() {
   }
 }
 
+// --- Selection / batch ---
 function isSelected(row: ApplicationRecord) {
   return row.id !== undefined && selectedIds.value.includes(row.id);
 }
@@ -633,29 +713,8 @@ function toggleBatchMode() {
   if (!batchMode.value) selectedIds.value = [];
 }
 
-async function openManagementDrawer(
-  row: ApplicationRecord,
-  tab: DetailTab = 'settings',
-) {
-  activeApp.value = row;
-  detailTab.value =
-    tab === 'workflow' && !isWorkflowApplication(row.type) ? 'settings' : tab;
-  resetForm(row);
-  if (!isWorkflowApplication(row.type)) {
-    simpleSettings.value = createDefaultSimpleApplicationSettings(row);
-  }
-  drawerOpen.value = true;
-  await loadDrawerTab(detailTab.value);
-}
-
+// --- Navigation ---
 function openApplicationSetting(row: ApplicationRecord) {
-  // Matches MaxKB settingApplication(): SIMPLE apps open the detail page's
-  // setting tab (in-place form); WORKFLOW (高级智能体) apps go DIRECTLY to the
-  // full-page workflow editor, bypassing the detail page entirely. Routing
-  // workflow "设置" through the detail page would briefly render it and then
-  // redirect to the editor (a visible flash) — so we navigate straight there.
-  // 概览/对话日志 for workflow apps are reached via the card body click
-  // (openApplicationDetail -> overview), not this entry.
   if (isWorkflowApplication(row.type)) {
     openWorkflow(row);
     return;
@@ -665,211 +724,23 @@ function openApplicationSetting(row: ApplicationRecord) {
 }
 
 function openApplicationAccess(row: ApplicationRecord) {
-  if (!isWorkflowApplication(row.type)) {
-    const entry = applicationDetailEntry(row, 'overview');
-    router.push({ path: entry.path, query: entry.query });
-    return;
-  }
-  void openManagementDrawer(row, 'access');
+  const entry = applicationDetailEntry(row, 'overview');
+  router.push({ path: entry.path, query: entry.query });
 }
 
-async function loadDrawerTab(tab: DetailTab) {
-  if (tab === 'settings' && activeApp.value && !isActiveWorkflowApp.value) {
-    await loadSimpleSettings();
-    return;
-  }
-  if (tab === 'access') {
-    await Promise.all([loadTokens(), loadKeys()]);
-    return;
-  }
-  if (tab === 'workflow') {
-    await Promise.all([loadDraft(), loadVersions()]);
-  }
-}
-
-async function loadSimpleSettings() {
-  const id = activeAppId.value;
-  if (id === undefined || isActiveWorkflowApp.value) return;
-  simpleSettingsLoading.value = true;
-  try {
-    const draft = await getWorkflowDraft(id);
-    const graphData = isRecord(draft)
-      ? draft.graphData || draft.graph_data
-      : draft;
-    applicationConfig.value = prettyJson(
-      isRecord(draft)
-        ? draft.applicationConfig || draft.application_config
-        : undefined,
-      '{}',
-    );
-    simpleSettings.value = parseSimpleApplicationSettings(
-      graphData,
-      activeApp.value,
-    );
-  } finally {
-    simpleSettingsLoading.value = false;
-  }
-}
-
-function handleDetailTabChange(name: number | string) {
-  if (name === 'settings' || name === 'access' || name === 'workflow') {
-    void loadDrawerTab(name);
-  }
-}
-
-async function loadDraft() {
-  const id = activeAppId.value;
-  if (id === undefined || !isActiveWorkflowApp.value) {
-    resetWorkflowDetail();
-    return;
-  }
-  const draft = await getWorkflowDraft(id);
-  workflowGraphData.value = prettyJson(
-    isRecord(draft) ? draft.graphData || draft : draft,
-    '{}',
-  );
-  applicationConfig.value = prettyJson(
-    isRecord(draft) ? draft.applicationConfig : undefined,
-    '{}',
-  );
-}
-
-function resetWorkflowDetail() {
-  workflowGraphData.value = '{}';
-  applicationConfig.value = '{}';
-  versions.value = [];
-}
-
-async function loadTokens() {
-  const id = activeAppId.value;
-  if (id === undefined) return;
-  accessTokens.value = recordsOf<AccessTokenRecord>(
-    await pageAccessTokens(id, {
-      current: 1,
-      page: 1,
-      size: 20,
-    }),
-  );
-}
-
-async function loadKeys() {
-  const id = activeAppId.value;
-  if (id === undefined) return;
-  appKeys.value = recordsOf<ApplicationKeyRecord>(
-    await pageApplicationKeys(id, {
-      current: 1,
-      page: 1,
-      size: 20,
-    }),
-  );
-}
-
-async function loadVersions() {
-  const id = activeAppId.value;
-  if (id === undefined || !isActiveWorkflowApp.value) {
-    versions.value = [];
-    return;
-  }
-  versions.value = recordsOf<WorkflowVersionRecord>(
-    await pageWorkflowVersions(id, {
-      current: 1,
-      page: 1,
-      size: 20,
-    }),
-  );
-}
-
-async function saveDraft() {
-  const id = activeAppId.value;
-  if (id === undefined || !isActiveWorkflowApp.value) return;
-  await saveWorkflowDraft(id, {
-    applicationConfig: applicationConfig.value,
-    graphData: workflowGraphData.value,
-  });
-  ElMessage.success('草稿已保存');
-}
-
-async function publishActiveWorkflow() {
-  const id = activeAppId.value;
-  if (id === undefined || !isActiveWorkflowApp.value) return;
-  await publishWorkflow(id, { description: '从应用管理发布' });
-  ElMessage.success('发布成功');
-  await loadVersions();
-  await loadApplications();
-}
-
-async function addToken() {
-  const id = activeAppId.value;
-  if (id === undefined) return;
-  await createAccessToken(id, {
-    enabled: true,
-    name: '访问令牌',
-  });
-  ElMessage.success('令牌已创建');
-  await loadTokens();
-}
-
-async function addKey() {
-  const id = activeAppId.value;
-  if (id === undefined) return;
-  await createApplicationKey(id, {
-    enabled: true,
-    name: 'API Key',
-  });
-  ElMessage.success('密钥已创建');
-  await loadKeys();
-}
-
-async function toggleToken(row: AccessTokenRecord) {
-  const id = activeAppId.value;
-  if (id === undefined || row.id === undefined) return;
-  await toggleAccessToken(id, row.id, !row.enabled);
-  await loadTokens();
-}
-
-async function toggleKey(row: ApplicationKeyRecord) {
-  const id = activeAppId.value;
-  if (id === undefined || row.id === undefined) return;
-  await toggleApplicationKey(id, row.id, !row.enabled);
-  await loadKeys();
-}
-
-async function removeToken(row: AccessTokenRecord) {
-  const id = activeAppId.value;
-  if (id === undefined || row.id === undefined) return;
-  await deleteAccessToken(id, row.id);
-  await loadTokens();
-}
-
-async function removeKey(row: ApplicationKeyRecord) {
-  const id = activeAppId.value;
-  if (id === undefined || row.id === undefined) return;
-  await deleteApplicationKey(id, row.id);
-  await loadKeys();
-}
-
-async function restoreVersion(row: WorkflowVersionRecord) {
-  const id = activeAppId.value;
-  if (id === undefined || row.id === undefined || !isActiveWorkflowApp.value)
-    return;
-  await restoreWorkflowVersion(id, row.id);
-  ElMessage.success('已恢复到草稿');
-  await loadDraft();
-}
-
-function openWorkflow(row = activeApp.value) {
+function openWorkflow(row?: ApplicationRecord) {
   if (!row?.id) return;
   if (!isWorkflowApplication(row.type)) {
     openApplicationPrimary(row);
     return;
   }
   router.push({
-    path: WORKFLOW_EDITOR_PATH,
-    query: { applicationId: row.id },
+    name: 'AiOrchestrationApplicationWorkflow',
+    params: { id: row.id },
   });
 }
 
-function openApplicationPrimary(row = activeApp.value) {
+function openApplicationPrimary(row?: ApplicationRecord) {
   if (!row?.id) return;
   const entry = applicationPrimaryEntry(row);
   router.push({
@@ -878,29 +749,211 @@ function openApplicationPrimary(row = activeApp.value) {
   });
 }
 
-// Card body click: enter the detail page overview for BOTH app types,
-// matching MaxKB's goApp/get_route (which returns /overview). This is the
-// ONLY way workflow (高级智能体) apps reach 概览/对话日志, since their "设置"
-// dropdown shortcuts directly to the workflow editor.
 function openApplicationDetail(row: ApplicationRecord) {
   if (!row?.id) return;
   const entry = applicationDetailEntry(row, 'overview');
   router.push({ path: entry.path, query: entry.query });
 }
 
-function openPublic(row = activeApp.value) {
+function openPublic(row?: ApplicationRecord) {
   if (!row?.id) return;
   const entry = applicationChatEntry(row);
   router.push({ path: entry.path, query: entry.query });
 }
 
-// --- Move To (转移到) ---
-const moveDialogOpen = ref(false);
-const moveTargetApp = ref<ApplicationRecord>();
-const moveFolders = ref<Array<{ id?: Id; name?: string }>>([]);
-const selectedFolderId = ref<Id>();
-const moveLoading = ref(false);
+function openPublishManagement(row: ApplicationRecord) {
+  const entry = applicationDetailEntry(row, 'overview');
+  router.push({ path: entry.path, query: entry.query });
+}
 
+// --- Search type switcher ---
+function handleSearchTypeChange() {
+  query.name = '';
+  query.publishStatus = '';
+  createUserFilter.value = '';
+  searchApplications();
+}
+
+async function searchUsers(queryStr: string) {
+  if (!queryStr.trim()) {
+    userOptions.value = [];
+    return;
+  }
+  userSearchLoading.value = true;
+  try {
+    const data = await pageUsers({
+      current: 1,
+      size: 20,
+      nickname: queryStr.trim(),
+    });
+    const records = recordsOf<Record<string, unknown>>(data);
+    userOptions.value = records.map((item) => ({
+      id: idValue(item.userId ?? item.id) ?? '',
+      label:
+        stringValue(
+          item.nick_name ??
+            item.nickname ??
+            item.realName ??
+            item.userName ??
+            item.username,
+        ) ||
+        stringValue(item.userId ?? item.id) ||
+        '',
+    }));
+  } finally {
+    userSearchLoading.value = false;
+  }
+}
+
+function handleCreateUserChange(userId: string) {
+  createUserFilter.value = userId;
+  searchApplications();
+}
+
+// --- Folder creation / edit dialog ---
+function isSyntheticRootFolder(folder?: FolderNode) {
+  return folder?.id === rootFolderId;
+}
+
+function openCreateFolderDialog(parentFolder?: FolderNode) {
+  folderDialogMode.value = 'create';
+  editFolderId.value = undefined;
+  Object.assign(folderForm, {
+    name: '',
+    description: '',
+  });
+  folderForm._parentId =
+    parentFolder && !isSyntheticRootFolder(parentFolder)
+      ? String(idValue(parentFolder.id) ?? '')
+      : '';
+  folderDialogOpen.value = true;
+}
+
+function openCreateSubFolder(folder: FolderNode) {
+  if (isSyntheticRootFolder(folder)) {
+    openCreateFolderDialog();
+    return;
+  }
+  openCreateFolderDialog(folder);
+}
+
+function openEditFolder(folder: FolderNode) {
+  if (isSyntheticRootFolder(folder)) {
+    ElMessage.warning('根目录不可编辑');
+    return;
+  }
+  folderDialogMode.value = 'edit';
+  editFolderId.value = idValue(folder.id);
+  Object.assign(folderForm, {
+    name: stringValue(folder.name),
+    description: '',
+  });
+  folderDialogOpen.value = true;
+}
+
+async function saveFolder() {
+  const name = folderForm.name.trim();
+  if (!name) {
+    ElMessage.warning('请输入文件夹名称');
+    return;
+  }
+  if (folderDialogMode.value === 'edit' && editFolderId.value !== undefined) {
+    await updateResourceFolder(editFolderId.value, {
+      name,
+      type: 'APPLICATION',
+    });
+    ElMessage.success('文件夹已更新');
+  } else {
+    const parentId = folderForm._parentId || undefined;
+    await createResourceFolder({
+      name,
+      type: 'APPLICATION',
+      ...(parentId ? { parentId, parent_id: parentId } : {}),
+    });
+    ElMessage.success('文件夹已创建');
+  }
+  folderDialogOpen.value = false;
+  await loadFolders();
+  await loadApplications();
+}
+
+async function removeFolder(folder: FolderNode) {
+  if (isSyntheticRootFolder(folder)) {
+    ElMessage.warning('根目录不可删除');
+    return;
+  }
+  const folderId = idValue(folder.id);
+  if (folderId === undefined) return;
+  confirm(
+    `确认删除文件夹 ${folder.name || folderId}？该文件夹下的应用会移动到根目录。`,
+  ).then(async () => {
+    await deleteResourceFolder(folderId);
+    ElMessage.success('文件夹已删除');
+    if (activeFolderId.value === folderId) {
+      activeFolderId.value = rootFolderId;
+      query.folderId = undefined;
+    }
+    await loadFolders();
+    await loadApplications();
+  });
+}
+
+// --- Folder move ---
+const folderMoveOptions = computed(() => {
+  const rootOption = { id: '' as string, name: '根目录' };
+  const flatList = flattenFolders(folders.value);
+  return [rootOption, ...flatList];
+});
+
+function flattenFolders(
+  list: FolderNode[],
+): Array<{ id: string; name: string }> {
+  const result: Array<{ id: string; name: string }> = [];
+  for (const folder of list) {
+    const folderId = idValue(folder.id);
+    if (folderId !== undefined) {
+      result.push({
+        id: String(folderId),
+        name: stringValue(folder.name, '未命名'),
+      });
+    }
+    if (folder.children?.length) {
+      result.push(...flattenFolders(folder.children));
+    }
+  }
+  return result;
+}
+
+function openMoveFolder(folder: FolderNode) {
+  if (isSyntheticRootFolder(folder)) {
+    ElMessage.warning('根目录不可转移');
+    return;
+  }
+  movingFolder.value = folder;
+  const parentId = idValue(folder.parentId ?? folder.parent_id) ?? '';
+  folderMoveForm.parent_id = parentId ? String(parentId) : '';
+  folderMoveDialogOpen.value = true;
+}
+
+async function saveFolderMove() {
+  const folder = movingFolder.value;
+  if (!folder) return;
+  const folderId = idValue(folder.id);
+  if (folderId === undefined) return;
+  const targetId = folderMoveForm.parent_id || undefined;
+  await updateResourceFolder(folderId, {
+    name: stringValue(folder.name, '未命名文件夹'),
+    type: 'APPLICATION',
+    ...(targetId ? { parentId: targetId, parent_id: targetId } : {}),
+  });
+  ElMessage.success('文件夹已移动');
+  folderMoveDialogOpen.value = false;
+  movingFolder.value = undefined;
+  await loadFolders();
+  await loadApplications();
+}
+
+// --- Move dialog ---
 function openMoveDialog(row: ApplicationRecord) {
   moveTargetApp.value = row;
   selectedFolderId.value = undefined;
@@ -927,7 +980,7 @@ async function confirmMove() {
   await loadApplications();
 }
 
-// --- Triggers (触发器) ---
+// --- Triggers ---
 function navigateToTriggers(row: ApplicationRecord) {
   router.push({
     path: '/ai/orchestration/triggers/index',
@@ -935,49 +988,7 @@ function navigateToTriggers(row: ApplicationRecord) {
   });
 }
 
-// --- View Related Resources (查看关联资源) ---
-interface ResourceMappingRecord extends Record<string, unknown> {
-  description?: string;
-  name?: string;
-  type?: string;
-}
-
-const mappingsDrawerOpen = ref(false);
-const mappingsTargetApp = ref<ApplicationRecord>();
-const mappings = ref<ResourceMappingRecord[]>([]);
-const mappingsLoading = ref(false);
-
-async function openMappingsDrawer(row: ApplicationRecord) {
-  mappingsTargetApp.value = row;
-  mappingsDrawerOpen.value = true;
-  mappingsLoading.value = true;
-  try {
-    const data = await listResourceMappings({
-      resourceId: row.id,
-      resourceType: 'APPLICATION',
-    });
-    mappings.value = recordsOf<ResourceMappingRecord>(data);
-  } finally {
-    mappingsLoading.value = false;
-  }
-}
-
-// --- Resource Authorization (资源授权) ---
-// Backend `listAuth` returns ai_resource_auth rows: { id, principalId,
-// principalType, permissionJson (JSON string) }. We parse permissionJson
-// into a flat `permission` for the select control.
-interface ResourceAuthRecord extends Record<string, unknown> {
-  id?: Id;
-  permission?: string;
-  principalId?: Id;
-  principalType?: string;
-}
-
-const authDrawerOpen = ref(false);
-const authTargetApp = ref<ApplicationRecord>();
-const authRecords = ref<ResourceAuthRecord[]>([]);
-const authLoading = ref(false);
-
+// --- Resource Authorization ---
 function parseAuthPermission(permissionJson: unknown): string {
   if (typeof permissionJson !== 'string' || !permissionJson.trim()) {
     return 'NOT_AUTH';
@@ -988,7 +999,6 @@ function parseAuthPermission(permissionJson: unknown): string {
       ? parsed.permission
       : 'NOT_AUTH';
   } catch {
-    // Malformed permissionJson: fall back to the unauthorized default.
     return 'NOT_AUTH';
   }
 }
@@ -1020,10 +1030,6 @@ async function updateAuthPermission(row: ResourceAuthRecord) {
   if (!app?.id || row.principalId === undefined || row.principalId === null) {
     return;
   }
-  // Backend (ResourceController#saveAuth) maps OrchestrationRequest ->
-  // ResourceAuth as: id -> resourceId (the application being authorized),
-  // applicationId -> principalId (the granted user), name -> principalType,
-  // configJson -> permissionJson, type -> resourceType.
   await saveResourceAuth({
     id: app.id,
     applicationId: row.principalId,
@@ -1034,263 +1040,457 @@ async function updateAuthPermission(row: ResourceAuthRecord) {
   ElMessage.success('授权已更新');
 }
 
-onMounted(loadApplications);
+// --- Resource Mappings ---
+async function openMappingsDrawer(row: ApplicationRecord) {
+  mappingsTargetApp.value = row;
+  mappingsDrawerOpen.value = true;
+  mappingsLoading.value = true;
+  try {
+    const data = await listResourceMappings({
+      resourceId: row.id,
+      resourceType: 'APPLICATION',
+    });
+    mappings.value = recordsOf<ResourceMappingRecord>(data);
+  } finally {
+    mappingsLoading.value = false;
+  }
+}
+
+onMounted(() => {
+  void loadFolders();
+  void loadApplications();
+});
 </script>
 
 <template>
   <Page auto-content-height>
     <div class="application-manager" v-loading="loading">
-      <section class="application-toolbar">
-        <div class="toolbar-title">
-          <h2>应用</h2>
-          <span>共 {{ total }} 个应用</span>
-        </div>
-        <div class="toolbar-actions">
-          <div class="filter-bar">
-            <ElInput
-              v-model="query.name"
-              class="filter-name"
-              clearable
-              placeholder="搜索应用名称"
-              @keyup.enter="searchApplications"
-              @clear="searchApplications"
-            >
-              <template #prefix>
-                <ElIcon><Search /></ElIcon>
-              </template>
-            </ElInput>
-            <ElSelect
-              v-model="query.type"
-              class="filter-select"
-              clearable
-              placeholder="全部类型"
-              @change="searchApplications"
-            >
-              <ElOption label="简易智能体" value="SIMPLE" />
-              <ElOption label="高级智能体" value="WORK_FLOW" />
-            </ElSelect>
-            <ElSelect
-              v-model="query.publishStatus"
-              class="filter-select"
-              clearable
-              placeholder="全部状态"
-              @change="searchApplications"
-            >
-              <ElOption label="已发布" value="published" />
-              <ElOption label="未发布" value="unpublished" />
-            </ElSelect>
-            <ElButton v-if="hasActiveFilter" link @click="resetFilters">
-              重置
-            </ElButton>
+      <section class="application-management-shell">
+        <aside class="application-folder-pane" v-loading="treeLoading">
+          <div class="folder-pane-header">
+            <h4>应用</h4>
           </div>
-          <ElButton :icon="Refresh" @click="loadApplications">刷新</ElButton>
-          <ElButton :icon="Upload" @click="openImportDialog">导入应用</ElButton>
-          <ElButton @click="toggleBatchMode">
-            {{ batchMode ? '取消选择' : '批量选择' }}
-          </ElButton>
-          <ElButton
-            v-if="batchMode"
-            :disabled="selectedIds.length === 0"
-            type="danger"
-            @click="removeSelectedApplications"
+          <ElTree
+            class="application-folder-tree"
+            :current-node-key="activeFolderId"
+            :data="visibleFolderTree"
+            :expand-on-click-node="false"
+            :props="{ children: 'children', label: 'name' }"
+            default-expand-all
+            highlight-current
+            node-key="id"
+            @node-click="selectFolder"
           >
-            删除 {{ selectedIds.length > 0 ? selectedIds.length : '' }}
-          </ElButton>
-          <ElDropdown trigger="click">
-            <ElButton type="primary">
-              <ElIcon><Plus /></ElIcon>
-              创建应用
-              <ElIcon class="button-arrow"><ArrowDown /></ElIcon>
-            </ElButton>
-            <template #dropdown>
-              <ElDropdownMenu class="create-dropdown">
-                <ElDropdownItem @click="openDialog(undefined, 'SIMPLE')">
-                  <div class="create-option">
-                    <span class="create-option__icon simple">简</span>
-                    <span>
-                      <strong>简易智能体</strong>
-                      <small>基于提示词快速创建对话应用</small>
-                    </span>
-                  </div>
-                </ElDropdownItem>
-                <ElDropdownItem @click="openDialog(undefined, 'WORK_FLOW')">
-                  <div class="create-option">
-                    <span class="create-option__icon advanced">高</span>
-                    <span>
-                      <strong>高级智能体</strong>
-                      <small>使用工作流编排复杂应用能力</small>
-                    </span>
-                  </div>
-                </ElDropdownItem>
-              </ElDropdownMenu>
-            </template>
-          </ElDropdown>
-        </div>
-      </section>
-
-      <section v-if="batchMode" class="batch-strip">
-        <span>
-          已选择 {{ selectedIds.length }} / {{ applications.length }}
-        </span>
-        <span class="muted">
-          {{ selectedApps.map(applicationName).join('、') }}
-        </span>
-      </section>
-
-      <section
-        class="application-content"
-        :class="{ 'is-empty': applications.length === 0 }"
-      >
-        <div v-if="applications.length > 0" class="application-grid">
-          <article
-            v-for="item in applications"
-            :key="item.id"
-            class="application-card"
-            @click="openApplicationDetail(item)"
-          >
-            <div class="card-head">
-              <ElCheckbox
-                v-if="batchMode"
-                :model-value="isSelected(item)"
-                @click.stop
-                @change="(checked) => toggleSelection(item, checked === true)"
-              />
-              <div class="app-identity">
-                <span
-                  class="app-avatar"
-                  :class="{ advanced: !isSimpleApplication(item.type) }"
-                >
-                  <img v-if="appIconUrl(item)" :src="appIconUrl(item)" alt="" />
-                  <span v-else>{{ iconInitial(item) }}</span>
-                </span>
-                <div class="app-title">
-                  <strong :title="applicationName(item)">{{
-                    applicationName(item)
-                  }}</strong>
-                  <span :title="applicationDescription(item)">
-                    {{ applicationDescription(item) }}
-                  </span>
-                </div>
-              </div>
-              <ElTag
-                class="type-tag"
-                :class="{ advanced: !isSimpleApplication(item.type) }"
-                size="small"
+            <template #default="{ data }">
+              <div
+                class="folder-node"
+                :class="{ 'is-root': data.id === rootFolderId }"
               >
-                {{ appTypeLabel(item.type) }}
-              </ElTag>
-            </div>
-
-            <div class="card-meta">
-              <span>{{ creatorLabel(item) }}</span>
-              <span>创建于</span>
-              <span>{{ createTimeLabel(item) }}</span>
-            </div>
-
-            <div class="card-footer">
-              <div class="publish-state">
-                <ElIcon :class="publishState(item)">
-                  <CircleCheckFilled
-                    v-if="publishState(item) === 'published'"
-                  />
-                  <CircleCloseFilled v-else />
-                </ElIcon>
-                <span>发布状态</span>
-                <ElTag :type="publishTagType(item)" size="small">
-                  {{ publishLabel(item) }}
-                </ElTag>
-                <span v-if="updateTimeLabel(item) !== '-'" class="publish-time">
-                  {{ updateTimeLabel(item) }}
+                <span class="folder-node__main">
+                  <FolderOpened class="folder-node__icon" />
+                  <span
+                    class="folder-node__label"
+                    :title="folderDisplayName(data)"
+                  >
+                    {{ folderDisplayName(data) }}
+                  </span>
+                </span>
+                <span class="folder-node__actions" @click.stop>
+                  <ElDropdown trigger="click">
+                    <ElButton class="folder-node__more" text>
+                      <MoreFilled />
+                    </ElButton>
+                    <template #dropdown>
+                      <ElDropdownMenu class="folder-action-menu">
+                        <ElDropdownItem @click.stop="openCreateSubFolder(data)">
+                          <span class="folder-action-menu__item">
+                            <FolderAdd class="folder-action-menu__icon" />
+                            <span>添加子文件夹</span>
+                          </span>
+                        </ElDropdownItem>
+                        <ElDropdownItem
+                          v-if="!isSyntheticRootFolder(data)"
+                          @click.stop="openEditFolder(data)"
+                        >
+                          <span class="folder-action-menu__item">
+                            <EditPen class="folder-action-menu__icon" />
+                            <span>编辑</span>
+                          </span>
+                        </ElDropdownItem>
+                        <ElDropdownItem
+                          v-if="!isSyntheticRootFolder(data)"
+                          @click.stop="openMoveFolder(data)"
+                        >
+                          <span class="folder-action-menu__item">
+                            <Rank class="folder-action-menu__icon" />
+                            <span>转移到</span>
+                          </span>
+                        </ElDropdownItem>
+                        <ElDropdownItem
+                          divided
+                          :disabled="isSyntheticRootFolder(data)"
+                          @click.stop="removeFolder(data)"
+                        >
+                          <span class="folder-action-menu__item">
+                            <Delete class="folder-action-menu__icon" />
+                            <span>删除</span>
+                          </span>
+                        </ElDropdownItem>
+                      </ElDropdownMenu>
+                    </template>
+                  </ElDropdown>
                 </span>
               </div>
-              <div class="card-actions" @click.stop>
-                <ElButton
-                  link
-                  type="primary"
-                  :icon="ChatDotRound"
-                  @click="openPublic(item)"
-                >
-                  对话
-                </ElButton>
-                <ElDropdown trigger="click">
-                  <ElButton link>
-                    更多
-                    <ElIcon><MoreFilled /></ElIcon>
-                  </ElButton>
-                  <template #dropdown>
-                    <ElDropdownMenu>
-                      <ElDropdownItem @click="openApplicationSetting(item)">
-                        <ElIcon><Setting /></ElIcon>
-                        设置
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="openApplicationAccess(item)">
-                        <ElIcon><Key /></ElIcon>
-                        访问管理
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="openAuthDrawer(item)">
-                        <ElIcon><Lock /></ElIcon>
-                        资源授权
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="openMappingsDrawer(item)">
-                        <ElIcon><Share /></ElIcon>
-                        查看关联资源
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="navigateToTriggers(item)">
-                        <ElIcon><AlarmClock /></ElIcon>
-                        触发器
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="openMoveDialog(item)">
-                        <ElIcon><Rank /></ElIcon>
-                        转移到
-                      </ElDropdownItem>
-                      <ElDropdownItem
-                        v-if="isWorkflowApplication(item.type)"
-                        @click="openManagementDrawer(item, 'workflow')"
-                      >
-                        <ElIcon><Promotion /></ElIcon>
-                        发布管理
-                      </ElDropdownItem>
-                      <ElDropdownItem
-                        v-if="isWorkflowApplication(item.type)"
-                        @click="openWorkflow(item)"
-                      >
-                        <ElIcon><Connection /></ElIcon>
-                        工作流编辑
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="duplicateApplication(item)">
-                        <ElIcon><CopyDocument /></ElIcon>
-                        复制
-                      </ElDropdownItem>
-                      <ElDropdownItem @click="exportApplicationFile(item)">
-                        <ElIcon><Download /></ElIcon>
-                        导出
-                      </ElDropdownItem>
-                      <ElDropdownItem divided @click="removeApplication(item)">
-                        <ElIcon><Delete /></ElIcon>
-                        删除
-                      </ElDropdownItem>
-                    </ElDropdownMenu>
-                  </template>
-                </ElDropdown>
-              </div>
-            </div>
-          </article>
-        </div>
-        <ElEmpty v-else class="empty-panel" description="暂无应用" />
-      </section>
+            </template>
+          </ElTree>
+        </aside>
 
-      <div v-if="total > 0" class="pager">
-        <span>共 {{ total }} 个应用</span>
-        <ElPagination
-          :current-page="query.current"
-          :page-size="query.size"
-          :total="total"
-          background
-          layout="prev, pager, next"
-          small
-          @current-change="handlePageChange"
-        />
-      </div>
+        <main class="application-list-pane">
+          <header class="application-list-header">
+            <ElBreadcrumb separator="/">
+              <ElBreadcrumbItem
+                v-for="(crumb, index) in breadcrumbPath"
+                :key="index"
+                @click="
+                  index < breadcrumbPath.length - 1
+                    ? selectFolder({ id: rootFolderId } as FolderNode)
+                    : undefined
+                "
+              >
+                <span
+                  :class="{
+                    'breadcrumb-link': index < breadcrumbPath.length - 1,
+                  }"
+                >
+                  {{ crumb }}
+                </span>
+              </ElBreadcrumbItem>
+            </ElBreadcrumb>
+          </header>
+
+          <section class="application-toolbar">
+            <div class="toolbar-title">
+              <span>共 {{ total }} 个应用</span>
+            </div>
+            <div class="toolbar-actions">
+              <div class="filter-bar">
+                <ElSelect
+                  v-model="searchType"
+                  class="filter-search-type"
+                  @change="handleSearchTypeChange"
+                >
+                  <ElOption label="名称" value="name" />
+                  <ElOption label="创建人" value="create_user" />
+                  <ElOption label="发布状态" value="publish_status" />
+                </ElSelect>
+                <ElInput
+                  v-if="searchType === 'name'"
+                  v-model="query.name"
+                  class="filter-name"
+                  clearable
+                  placeholder="搜索应用名称"
+                  @keyup.enter="searchApplications"
+                  @clear="searchApplications"
+                >
+                  <template #prefix>
+                    <ElIcon><Search /></ElIcon>
+                  </template>
+                </ElInput>
+                <ElSelect
+                  v-else-if="searchType === 'create_user'"
+                  v-model="createUserFilter"
+                  class="filter-name"
+                  clearable
+                  filterable
+                  remote
+                  :remote-method="searchUsers"
+                  :loading="userSearchLoading"
+                  placeholder="搜索创建人"
+                  @change="handleCreateUserChange"
+                  @clear="searchApplications"
+                >
+                  <ElOption
+                    v-for="user in userOptions"
+                    :key="user.id"
+                    :label="user.label"
+                    :value="String(user.id)"
+                  />
+                </ElSelect>
+                <ElSelect
+                  v-else-if="searchType === 'publish_status'"
+                  v-model="query.publishStatus"
+                  class="filter-name"
+                  clearable
+                  placeholder="选择状态"
+                  @change="searchApplications"
+                >
+                  <ElOption label="已发布" value="published" />
+                  <ElOption label="未发布" value="unpublished" />
+                </ElSelect>
+                <ElSelect
+                  v-model="query.type"
+                  class="filter-select"
+                  clearable
+                  placeholder="全部类型"
+                  @change="searchApplications"
+                >
+                  <ElOption label="简易智能体" value="SIMPLE" />
+                  <ElOption label="高级智能体" value="WORK_FLOW" />
+                </ElSelect>
+                <ElButton v-if="hasActiveFilter" link @click="resetFilters">
+                  重置
+                </ElButton>
+              </div>
+              <ElButton :icon="Refresh" @click="loadApplications">
+                刷新
+              </ElButton>
+              <ElButton :icon="Upload" @click="openImportDialog">
+                导入应用
+              </ElButton>
+              <ElButton @click="toggleBatchMode">
+                {{ batchMode ? '取消选择' : '批量选择' }}
+              </ElButton>
+              <ElButton
+                v-if="batchMode"
+                :disabled="selectedIds.length === 0"
+                type="danger"
+                @click="removeSelectedApplications"
+              >
+                删除 {{ selectedIds.length > 0 ? selectedIds.length : '' }}
+              </ElButton>
+              <ElDropdown trigger="click">
+                <ElButton type="primary">
+                  <ElIcon><Plus /></ElIcon>
+                  创建应用
+                  <ElIcon class="button-arrow"><ArrowDown /></ElIcon>
+                </ElButton>
+                <template #dropdown>
+                  <ElDropdownMenu class="create-dropdown">
+                    <ElDropdownItem @click="openDialog(undefined, 'SIMPLE')">
+                      <div class="create-option">
+                        <span class="create-option__icon simple">简</span>
+                        <span>
+                          <strong>简易智能体</strong>
+                          <small>基于提示词快速创建对话应用</small>
+                        </span>
+                      </div>
+                    </ElDropdownItem>
+                    <ElDropdownItem @click="openDialog(undefined, 'WORK_FLOW')">
+                      <div class="create-option">
+                        <span class="create-option__icon advanced">高</span>
+                        <span>
+                          <strong>高级智能体</strong>
+                          <small>使用工作流编排复杂应用能力</small>
+                        </span>
+                      </div>
+                    </ElDropdownItem>
+                    <ElDropdownItem divided @click="openCreateFolderDialog">
+                      <div class="create-option">
+                        <span class="create-option__icon folder">
+                          <ElIcon><FolderAdd /></ElIcon>
+                        </span>
+                        <span>
+                          <strong>创建文件夹</strong>
+                        </span>
+                      </div>
+                    </ElDropdownItem>
+                  </ElDropdownMenu>
+                </template>
+              </ElDropdown>
+            </div>
+          </section>
+
+          <section v-if="batchMode" class="batch-strip">
+            <span>
+              已选择 {{ selectedIds.length }} / {{ applications.length }}
+            </span>
+            <span class="muted">
+              {{ selectedApps.map(applicationName).join('、') }}
+            </span>
+          </section>
+
+          <section
+            class="application-content"
+            :class="{ 'is-empty': applications.length === 0 }"
+          >
+            <div v-if="applications.length > 0" class="application-grid">
+              <article
+                v-for="item in applications"
+                :key="item.id"
+                class="application-card"
+                @click="openApplicationDetail(item)"
+              >
+                <!-- Batch checkbox - position absolute top-left -->
+                <ElCheckbox
+                  v-if="batchMode"
+                  class="card-batch-check"
+                  :model-value="isSelected(item)"
+                  @click.stop
+                  @change="(checked) => toggleSelection(item, checked === true)"
+                />
+
+                <!-- Card header: icon + title/subtitle -->
+                <div class="card-header">
+                  <div class="card-icon">
+                    <span
+                      class="app-avatar"
+                      :class="{ advanced: !isSimpleApplication(item.type) }"
+                    >
+                      <img
+                        v-if="appIconUrl(item)"
+                        :src="appIconUrl(item)"
+                        alt=""
+                      />
+                      <span v-else>{{ iconInitial(item) }}</span>
+                    </span>
+                  </div>
+                  <div class="card-title-area">
+                    <div class="card-title" :title="applicationName(item)">
+                      {{ applicationName(item) }}
+                    </div>
+                    <div class="card-subtitle">
+                      <span class="card-creator" :title="creatorLabel(item)">{{
+                        creatorLabel(item)
+                      }}</span>
+                      <span class="card-subtitle-sep">创建于</span>
+                      <span>{{ createTimeLabel(item) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Type tag - absolute top-right (or batch checkbox) -->
+                <div class="card-status-tag">
+                  <ElTag
+                    v-if="!batchMode"
+                    class="type-tag"
+                    :class="{ advanced: !isSimpleApplication(item.type) }"
+                    size="small"
+                  >
+                    {{ appTypeLabel(item.type) }}
+                  </ElTag>
+                </div>
+
+                <!-- Description - 2-line clamp -->
+                <div class="card-description">
+                  {{ applicationDescription(item) }}
+                </div>
+
+                <!-- Footer - absolute bottom -->
+                <div class="card-footer">
+                  <div class="card-footer-left card-footer-default">
+                    <template v-if="publishState(item) === 'published'">
+                      <ElIcon class="card-publish-icon published">
+                        <CircleCheckFilled />
+                      </ElIcon>
+                      <span class="card-footer-text">已发布</span>
+                      <span
+                        v-if="updateTimeLabel(item) !== '-'"
+                        class="publish-time"
+                        >{{ updateTimeLabel(item) }}</span
+                      >
+                    </template>
+                    <template v-else>
+                      <ElIcon class="card-publish-icon unpublished">
+                        <CircleCloseFilled />
+                      </ElIcon>
+                      <span class="card-footer-text">未发布</span>
+                    </template>
+                  </div>
+
+                  <!-- Hover actions - shows on hover via CSS -->
+                  <div class="card-hover-actions" @click.stop>
+                    <ElButton
+                      link
+                      type="primary"
+                      :icon="ChatDotRound"
+                      @click="openPublic(item)"
+                    >
+                      对话
+                    </ElButton>
+                    <ElDropdown trigger="click" :teleported="false">
+                      <ElButton link>
+                        更多
+                        <ElIcon><MoreFilled /></ElIcon>
+                      </ElButton>
+                      <template #dropdown>
+                        <ElDropdownMenu>
+                          <ElDropdownItem @click="openApplicationSetting(item)">
+                            <ElIcon><Setting /></ElIcon>
+                            设置
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="openApplicationAccess(item)">
+                            <ElIcon><Key /></ElIcon>
+                            访问管理
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="openAuthDrawer(item)">
+                            <ElIcon><Lock /></ElIcon>
+                            资源授权
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="openMappingsDrawer(item)">
+                            <ElIcon><Share /></ElIcon>
+                            查看关联资源
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="navigateToTriggers(item)">
+                            <ElIcon><AlarmClock /></ElIcon>
+                            触发器
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="openMoveDialog(item)">
+                            <ElIcon><Rank /></ElIcon>
+                            转移到
+                          </ElDropdownItem>
+                          <ElDropdownItem
+                            v-if="isWorkflowApplication(item.type)"
+                            @click="openPublishManagement(item)"
+                          >
+                            <ElIcon><Promotion /></ElIcon>
+                            发布管理
+                          </ElDropdownItem>
+                          <ElDropdownItem
+                            v-if="isWorkflowApplication(item.type)"
+                            @click="openWorkflow(item)"
+                          >
+                            <ElIcon><Connection /></ElIcon>
+                            工作流编辑
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="duplicateApplication(item)">
+                            <ElIcon><CopyDocument /></ElIcon>
+                            复制
+                          </ElDropdownItem>
+                          <ElDropdownItem @click="exportApplicationFile(item)">
+                            <ElIcon><Download /></ElIcon>
+                            导出
+                          </ElDropdownItem>
+                          <ElDropdownItem
+                            divided
+                            @click="removeApplication(item)"
+                          >
+                            <ElIcon><Delete /></ElIcon>
+                            删除
+                          </ElDropdownItem>
+                        </ElDropdownMenu>
+                      </template>
+                    </ElDropdown>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <ElEmpty v-else class="empty-panel" description="暂无应用" />
+          </section>
+
+          <div v-if="total > 0" class="pager">
+            <span>共 {{ total }} 个应用</span>
+            <ElPagination
+              :current-page="query.current"
+              :page-size="query.size"
+              :total="total"
+              background
+              layout="prev, pager, next"
+              small
+              @current-change="handlePageChange"
+            />
+          </div>
+        </main>
+      </section>
 
       <ElDialog
         v-model="dialogOpen"
@@ -1358,187 +1558,56 @@ onMounted(loadApplications);
         </template>
       </ElDialog>
 
-      <ElDrawer v-model="drawerOpen" :title="drawerTitle" :size="drawerSize">
-        <ElTabs
-          v-model="detailTab"
-          class="detail-tabs"
-          @tab-change="handleDetailTabChange"
-        >
-          <ElTabPane label="设置" name="settings">
-            <template v-if="activeApp && !isActiveWorkflowApp">
-              <SimpleApplicationSettingsPanel
-                v-model="simpleSettings"
-                v-loading="simpleSettingsLoading"
+      <ElDialog
+        v-model="folderDialogOpen"
+        :title="folderDialogMode === 'edit' ? '编辑文件夹' : '创建文件夹'"
+        width="420px"
+      >
+        <ElForm label-width="80px" @submit.prevent>
+          <ElFormItem label="文件夹名">
+            <ElInput
+              v-model="folderForm.name"
+              placeholder="请输入文件夹名称"
+              @keyup.enter="saveFolder"
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="folderDialogOpen = false">取消</ElButton>
+          <ElButton type="primary" @click="saveFolder">
+            {{ folderDialogMode === 'edit' ? '确定' : '添加' }}
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <!-- Folder Move Dialog -->
+      <ElDialog v-model="folderMoveDialogOpen" title="转移到" width="460px">
+        <ElForm label-width="90px">
+          <ElFormItem label="当前目录">
+            <ElInput :model-value="folderDisplayName(movingFolder)" disabled />
+          </ElFormItem>
+          <ElFormItem label="目标目录">
+            <ElSelect
+              v-model="folderMoveForm.parent_id"
+              clearable
+              filterable
+              placeholder="请选择目标目录"
+              style="width: 100%"
+            >
+              <ElOption
+                v-for="item in folderMoveOptions"
+                :key="item.id === '' ? 'root' : item.id"
+                :label="item.name"
+                :value="item.id"
               />
-              <div class="drawer-toolbar mt12">
-                <ElButton type="primary" :icon="EditPen" @click="saveSettings">
-                  保存设置
-                </ElButton>
-                <ElButton :icon="Promotion" @click="publishSimpleSettings">
-                  发布
-                </ElButton>
-                <ElButton
-                  :icon="ChatDotRound"
-                  @click="openApplicationPrimary()"
-                >
-                  打开对话
-                </ElButton>
-              </div>
-            </template>
-            <ElForm v-else label-width="100px" :model="form">
-              <ElFormItem label="应用名称">
-                <ElInput v-model="form.name" />
-              </ElFormItem>
-              <ElFormItem label="应用描述">
-                <ElInput v-model="form.description" type="textarea" :rows="4" />
-              </ElFormItem>
-              <ElFormItem label="应用类型">
-                <ElInput :model-value="appTypeLabel(form.type)" disabled />
-              </ElFormItem>
-              <ElFormItem label="工作空间">
-                <ElInput v-model="form.workspaceId" />
-              </ElFormItem>
-              <ElFormItem label="访问能力">
-                <div class="switch-row">
-                  <ElSwitch
-                    v-model="form.accessEnabled"
-                    active-text="公开访问"
-                  />
-                  <ElSwitch v-model="form.showSource" active-text="引用来源" />
-                  <ElSwitch v-model="form.showHistory" active-text="历史记录" />
-                  <ElSwitch v-model="form.showGuide" active-text="开场引导" />
-                </div>
-              </ElFormItem>
-              <div class="drawer-toolbar">
-                <ElButton type="primary" :icon="EditPen" @click="saveSettings">
-                  保存设置
-                </ElButton>
-                <ElButton
-                  :icon="ChatDotRound"
-                  @click="openApplicationPrimary()"
-                >
-                  打开对话
-                </ElButton>
-              </div>
-            </ElForm>
-          </ElTabPane>
-
-          <ElTabPane label="访问管理" name="access">
-            <div class="access-grid">
-              <section class="detail-section">
-                <div class="section-title">
-                  <span>访问令牌</span>
-                  <ElButton size="small" type="primary" @click="addToken">
-                    创建令牌
-                  </ElButton>
-                </div>
-                <ElTable :data="accessTokens" size="small">
-                  <ElTableColumn prop="name" label="名称" />
-                  <ElTableColumn prop="token" label="Token" min-width="220" />
-                  <ElTableColumn label="状态" width="90">
-                    <template #default="{ row }">
-                      <ElTag size="small">{{ enabledText(row.enabled) }}</ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="操作" width="150">
-                    <template #default="{ row }">
-                      <ElButton link @click="toggleToken(row)">切换</ElButton>
-                      <ElButton link type="danger" @click="removeToken(row)">
-                        删除
-                      </ElButton>
-                    </template>
-                  </ElTableColumn>
-                </ElTable>
-              </section>
-              <section class="detail-section">
-                <div class="section-title">
-                  <span>API Keys</span>
-                  <ElButton size="small" type="primary" @click="addKey">
-                    创建 Key
-                  </ElButton>
-                </div>
-                <ElTable :data="appKeys" size="small">
-                  <ElTableColumn prop="name" label="名称" />
-                  <ElTableColumn prop="keyValue" label="Key" min-width="220" />
-                  <ElTableColumn label="状态" width="90">
-                    <template #default="{ row }">
-                      <ElTag size="small">{{ enabledText(row.enabled) }}</ElTag>
-                    </template>
-                  </ElTableColumn>
-                  <ElTableColumn label="操作" width="150">
-                    <template #default="{ row }">
-                      <ElButton link @click="toggleKey(row)">切换</ElButton>
-                      <ElButton link type="danger" @click="removeKey(row)">
-                        删除
-                      </ElButton>
-                    </template>
-                  </ElTableColumn>
-                </ElTable>
-              </section>
-            </div>
-          </ElTabPane>
-
-          <ElTabPane
-            v-if="isActiveWorkflowApp"
-            label="发布管理"
-            name="workflow"
-          >
-            <div class="drawer-toolbar">
-              <ElButton type="primary" @click="saveDraft">保存草稿</ElButton>
-              <ElButton :icon="Promotion" @click="publishActiveWorkflow">
-                发布
-              </ElButton>
-              <ElButton :icon="Connection" @click="openWorkflow()">
-                完整编辑器
-              </ElButton>
-            </div>
-            <ElInput
-              v-model="workflowGraphData"
-              class="mt12"
-              type="textarea"
-              :rows="12"
-              placeholder="graphData JSON"
-            />
-            <ElInput
-              v-model="applicationConfig"
-              class="mt8"
-              type="textarea"
-              :rows="5"
-              placeholder="applicationConfig JSON"
-            />
-            <section class="detail-section mt12">
-              <div class="section-title">
-                <span>版本历史</span>
-                <span class="muted">发布后可恢复到草稿</span>
-              </div>
-              <ElTable :data="versions" size="small">
-                <ElTableColumn prop="versionNo" label="版本" width="90" />
-                <ElTableColumn prop="status" label="状态" width="100" />
-                <ElTableColumn prop="createTime" label="发布时间" width="170" />
-                <ElTableColumn prop="graphData" label="Graph">
-                  <template #default="{ row }">
-                    <span class="mono-line">{{
-                      prettyJson(row.graphData, '-')
-                    }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn label="操作" width="100">
-                  <template #default="{ row }">
-                    <ElButton
-                      :icon="Tickets"
-                      link
-                      type="primary"
-                      @click="restoreVersion(row)"
-                    >
-                      恢复
-                    </ElButton>
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </section>
-          </ElTabPane>
-        </ElTabs>
-      </ElDrawer>
+            </ElSelect>
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton @click="folderMoveDialogOpen = false">取消</ElButton>
+          <ElButton type="primary" @click="saveFolderMove">确定</ElButton>
+        </template>
+      </ElDialog>
 
       <!-- Move To Dialog -->
       <ElDialog v-model="moveDialogOpen" title="转移到" width="480px">
@@ -1643,16 +1712,173 @@ onMounted(loadApplications);
   --app-shadow-dropdown: var(--el-box-shadow-light);
   --app-shadow-hover: var(--el-box-shadow-light);
   --app-tab-header-height: 48px;
-  --app-title-max-width: 220px;
-  --app-toolbar-height: 66px;
+  --app-folder-pane-width: clamp(260px, 18vw, 320px);
 
   display: flex;
   flex-direction: column;
   gap: var(--app-space-3);
   height: 100%;
-  padding: var(--app-space-3);
   overflow: hidden;
   background: var(--app-page-bg);
+}
+
+.application-management-shell {
+  display: grid;
+  flex: 1;
+  grid-template-columns: var(--app-folder-pane-width) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  background: var(--app-panel-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: var(--app-radius);
+}
+
+.application-folder-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--app-space-4) var(--app-space-2) var(--app-space-3);
+  overflow: hidden;
+  border-right: 1px solid var(--app-border-color);
+}
+
+.folder-pane-header {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--app-space-2);
+  align-items: center;
+  padding: var(--app-space-1) var(--app-space-2) var(--app-space-3);
+}
+
+.folder-pane-header h4 {
+  margin: 0;
+  font-size: calc(var(--el-font-size-base) * 1.25);
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.application-folder-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: transparent;
+}
+
+.application-folder-tree :deep(.el-tree-node__content) {
+  height: 36px;
+  border-radius: var(--app-radius);
+}
+
+.application-folder-tree :deep(.el-tree-node__content:hover) {
+  background: var(--el-fill-color-lighter);
+}
+
+.application-folder-tree
+  :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.folder-node {
+  display: flex;
+  flex: 1;
+  gap: var(--app-space-2);
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.folder-node__main {
+  display: inline-flex;
+  gap: var(--app-space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.folder-node__icon {
+  flex-shrink: 0;
+  width: calc(var(--el-font-size-base) * 1.25);
+  height: calc(var(--el-font-size-base) * 1.25);
+  color: var(--el-color-warning);
+}
+
+.folder-node__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: calc(var(--el-font-size-base) * 0.875);
+  white-space: nowrap;
+}
+
+.application-folder-tree
+  :deep(.el-tree-node.is-current > .el-tree-node__content .folder-node__label) {
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
+.folder-node__actions {
+  flex-shrink: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--el-transition-duration);
+}
+
+.application-folder-tree
+  :deep(.el-tree-node__content:hover .folder-node__actions),
+.application-folder-tree
+  :deep(
+    .el-tree-node.is-current > .el-tree-node__content .folder-node__actions
+  ),
+.folder-node:focus-within .folder-node__actions {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.folder-node__more {
+  width: calc(var(--app-space-4) + var(--app-space-2));
+  height: calc(var(--app-space-4) + var(--app-space-2));
+  color: var(--el-text-color-secondary);
+}
+
+.folder-node__more:hover {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.folder-action-menu__item {
+  display: inline-flex;
+  gap: var(--app-space-3);
+  align-items: center;
+}
+
+.folder-action-menu__icon {
+  width: calc(var(--el-font-size-base) * 1.125);
+  height: calc(var(--el-font-size-base) * 1.125);
+  color: var(--el-text-color-secondary);
+}
+
+.application-list-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.application-list-header {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--app-space-2);
+  align-items: center;
+  padding: var(--app-space-3) var(--app-space-4);
+  border-bottom: 1px solid var(--app-border-color);
+}
+
+.breadcrumb-link {
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+
+.breadcrumb-link:hover {
+  text-decoration: underline;
 }
 
 .application-toolbar,
@@ -1670,8 +1896,9 @@ onMounted(loadApplications);
   gap: var(--app-space-3);
   align-items: center;
   justify-content: space-between;
-  min-height: var(--app-toolbar-height);
+  min-height: var(--app-toolbar-height, 66px);
   padding: var(--app-space-3) var(--app-space-4);
+  margin: var(--app-space-3) var(--app-space-4) 0;
 }
 
 .toolbar-title {
@@ -1690,7 +1917,6 @@ onMounted(loadApplications);
 
 .toolbar-title span,
 .muted,
-.card-meta,
 .publish-time,
 .create-option small {
   font-size: var(--el-font-size-extra-small);
@@ -1700,11 +1926,6 @@ onMounted(loadApplications);
 .toolbar-actions,
 .filter-bar,
 .batch-strip,
-.card-head,
-.app-identity,
-.card-footer,
-.publish-state,
-.card-actions,
 .drawer-toolbar,
 .switch-row,
 .section-title {
@@ -1731,6 +1952,10 @@ onMounted(loadApplications);
   width: var(--app-search-control-width);
 }
 
+.filter-bar .filter-search-type {
+  width: 100px;
+}
+
 .filter-bar .filter-select {
   width: var(--app-filter-select-width);
 }
@@ -1742,12 +1967,14 @@ onMounted(loadApplications);
 .batch-strip {
   flex-shrink: 0;
   padding: var(--app-space-2) var(--app-space-3);
+  margin: 0 var(--app-space-4);
 }
 
 .application-content {
   flex: 1;
   min-height: 0;
   padding: var(--app-space-4);
+  margin: var(--app-space-3) var(--app-space-4);
   overflow: auto;
 }
 
@@ -1765,6 +1992,7 @@ onMounted(loadApplications);
   align-items: center;
   justify-content: space-between;
   padding: var(--app-space-2) var(--app-space-4);
+  margin: 0 var(--app-space-4) var(--app-space-3);
   background: var(--app-panel-bg);
   border: 1px solid var(--app-border-color);
   border-radius: var(--app-radius);
@@ -1802,11 +2030,12 @@ onMounted(loadApplications);
 }
 
 .application-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--app-space-3);
+  min-width: var(--app-card-min-width);
   min-height: var(--app-card-min-height);
-  padding: var(--app-space-3);
+  padding: 16px;
   cursor: pointer;
   background: var(--app-panel-bg);
   border: 1px solid var(--app-border-color);
@@ -1818,16 +2047,149 @@ onMounted(loadApplications);
 
 .application-card:hover {
   border-color: var(--el-color-primary-light-5);
-  box-shadow: var(--app-shadow-hover);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
 }
 
-.card-head,
-.card-footer {
-  justify-content: space-between;
+.card-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: -5px;
 }
 
-.app-identity {
+.card-icon {
+  flex-shrink: 0;
+}
+
+.card-title-area {
+  flex: 1;
   min-width: 0;
+}
+
+.card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+
+.card-subtitle {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--el-text-color-secondary);
+}
+
+.card-creator {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-subtitle-sep {
+  margin: 0 4px;
+}
+
+.card-status-tag {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+
+.card-batch-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+}
+
+.card-description {
+  display: -webkit-box;
+  min-height: 44px;
+  margin-top: 12px;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--el-text-color-secondary);
+  -webkit-box-orient: vertical;
+}
+
+.card-footer {
+  position: absolute;
+  right: 0;
+  bottom: 8px;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 16px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.card-footer-left {
+  position: absolute;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.card-footer-default {
+  opacity: 1;
+  transition: opacity var(--el-transition-duration);
+}
+
+.application-card:hover .card-footer-default {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.card-publish-icon {
+  font-size: 16px;
+}
+
+.card-publish-icon.published {
+  color: var(--el-color-success);
+}
+
+.card-publish-icon.unpublished {
+  color: var(--el-text-color-secondary);
+}
+
+.card-footer-text {
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+}
+
+.card-hover-actions {
+  position: absolute;
+  right: 16px;
+  display: flex;
+  gap: 0;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--el-transition-duration);
+}
+
+.application-card:hover .card-hover-actions {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.application-card:hover .card-hover-actions:focus-within {
+  pointer-events: auto;
+  opacity: 1;
 }
 
 .app-avatar,
@@ -1853,33 +2215,16 @@ onMounted(loadApplications);
   border-color: var(--el-color-warning-light-7);
 }
 
+.create-option__icon.folder {
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  border-color: var(--el-color-success-light-7);
+}
+
 .app-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.app-title {
-  min-width: 0;
-}
-
-.app-title strong,
-.app-title span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-title strong {
-  color: var(--el-text-color-primary);
-}
-
-.app-title span {
-  max-width: var(--app-title-max-width);
-  margin-top: var(--app-space-1);
-  font-size: var(--el-font-size-extra-small);
-  color: var(--el-text-color-secondary);
 }
 
 .type-tag {
@@ -1892,39 +2237,6 @@ onMounted(loadApplications);
   color: var(--el-color-warning);
   background: var(--el-color-warning-light-9);
   border-color: var(--el-color-warning-light-7);
-}
-
-.card-meta {
-  gap: var(--app-space-1);
-  min-height: 18px;
-}
-
-.card-footer {
-  padding-top: var(--app-space-2);
-  border-top: 1px solid var(--app-border-color);
-}
-
-.publish-state {
-  min-width: 0;
-  color: var(--el-text-color-secondary);
-}
-
-.publish-state .published {
-  color: var(--el-color-success);
-}
-
-.publish-state .unpublished {
-  color: var(--el-text-color-secondary);
-}
-
-.card-actions {
-  opacity: 0;
-  transition: opacity var(--el-transition-duration);
-}
-
-.application-card:hover .card-actions,
-.card-actions:focus-within {
-  opacity: 1;
 }
 
 .create-dropdown {
@@ -1989,30 +2301,6 @@ onMounted(loadApplications);
   margin-top: var(--app-space-1);
 }
 
-.detail-tabs {
-  height: 100%;
-}
-
-.detail-tabs :deep(.el-tabs__content) {
-  height: calc(100% - var(--app-tab-header-height));
-  overflow: auto;
-}
-
-.access-grid {
-  display: grid;
-  gap: var(--app-space-3);
-}
-
-.detail-section {
-  padding: var(--app-space-3);
-}
-
-.section-title {
-  justify-content: space-between;
-  margin-bottom: var(--app-space-2);
-  font-weight: var(--el-font-weight-primary);
-}
-
 .switch-row {
   flex-wrap: wrap;
 }
@@ -2034,6 +2322,14 @@ onMounted(loadApplications);
 }
 
 @media (max-width: 960px) {
+  .application-management-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .application-folder-pane {
+    display: none;
+  }
+
   .application-toolbar,
   .toolbar-title,
   .toolbar-actions {

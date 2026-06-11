@@ -52,21 +52,23 @@ import {
 } from 'element-plus';
 
 import {
+  getWorkflowDraft,
+  publishWorkflow,
+  saveWorkflowDraft,
+} from '#/api/ai/application-workflow';
+import {
   clearApplicationChats,
   createAccessToken,
   createApplicationKey,
   deleteApplicationChat,
   deleteApplicationKey,
   getApplication,
-  getWorkflowDraft,
   openApplicationChat,
   pageAccessTokens,
   pageApplicationChatRecords,
   pageApplicationChats,
   pageApplicationKeys,
-  publishWorkflow,
   renameApplicationChat,
-  saveWorkflowDraft,
   toggleAccessToken,
   toggleApplicationKey,
   updateApplication,
@@ -85,7 +87,6 @@ import {
   APPLICATION_DETAIL_PATH,
   applicationChatEntry,
   isWorkflowApplication,
-  WORKFLOW_EDITOR_PATH,
 } from '../application-entry';
 import DisplaySettingDialog from '../DisplaySettingDialog.vue';
 import EmbedDialog from '../EmbedDialog.vue';
@@ -211,8 +212,8 @@ function redirectWorkflowSettings() {
   const id = applicationId.value;
   if (id === undefined || id === null) return false;
   router.replace({
-    path: WORKFLOW_EDITOR_PATH,
-    query: { applicationId: id },
+    name: 'AiOrchestrationApplicationWorkflow',
+    params: { id },
   });
   return true;
 }
