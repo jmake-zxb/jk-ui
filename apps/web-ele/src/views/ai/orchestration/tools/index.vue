@@ -3,10 +3,7 @@ import type { UploadFile, UploadFiles } from 'element-plus';
 
 import type { Component } from 'vue';
 
-import type {
-  InitParamValue,
-  InitParamValues,
-} from './component/init-param-utils';
+import type { InitParamValues } from './component/init-param-utils';
 import type { ToolSearchType } from './component/tool-query-utils';
 
 import type {
@@ -56,7 +53,6 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
-  ElInputNumber,
   ElMessage,
   ElOption,
   ElPagination,
@@ -79,8 +75,6 @@ import {
   batchMoveTools,
   createTool,
   createToolFolder,
-  debugDraftTool,
-  debugTool,
   deleteTool,
   deleteToolFolder,
   downloadSkillFile,
@@ -111,7 +105,9 @@ import {
   statusType,
   totalOf,
 } from '../utils';
+import DataSourceToolFormDrawer from './component/DataSourceToolFormDrawer.vue';
 import DynamicInitForm from './component/DynamicInitForm.vue';
+import ExecutionRecordDrawer from './component/ExecutionRecordDrawer.vue';
 import GenerateCodeDialog from './component/GenerateCodeDialog.vue';
 import {
   normalizeInitFields,
@@ -121,6 +117,8 @@ import {
   validateInitParamValues,
 } from './component/init-param-utils';
 import InitParamDrawer from './component/InitParamDrawer.vue';
+import McpToolFormDrawer from './component/McpToolFormDrawer.vue';
+import SkillToolFormDrawer from './component/SkillToolFormDrawer.vue';
 import {
   buildToolPayload,
   defaultCodeForToolType,
@@ -138,16 +136,11 @@ import {
   normalizeCreatorLabel,
   normalizeCreatorValue,
 } from './component/tool-query-utils';
+import ToolDebugDrawer from './component/ToolDebugDrawer.vue';
+import ToolFormDrawer from './component/ToolFormDrawer.vue';
+import WorkflowDebugDrawer from './component/WorkflowDebugDrawer.vue';
 
 type Id = number | string;
-type DebugControl =
-  | 'boolean'
-  | 'json'
-  | 'multiselect'
-  | 'number'
-  | 'select'
-  | 'text'
-  | 'textarea';
 type FieldMode = 'init' | 'input';
 type FolderSortType =
   | 'createTimeAsc'
@@ -256,23 +249,6 @@ interface FieldFormState {
   required: boolean;
   show_default_value: boolean;
   source: string;
-  type: string;
-}
-
-interface DebugOption {
-  label: string;
-  value: boolean | number | string;
-}
-
-interface DebugFieldView {
-  control: DebugControl;
-  desc: string;
-  inputType: string;
-  key: string;
-  label: string;
-  options: DebugOption[];
-  required: boolean;
-  schema: ToolFieldSchema;
   type: string;
 }
 
@@ -449,21 +425,16 @@ const fieldMode = ref<FieldMode>('input');
 const fieldIndex = ref<number>();
 const fieldForm = reactive<FieldFormState>(createEmptyFieldForm('input'));
 
-const debugOpen = ref(false);
-const debugRunning = ref(false);
-const debugTitle = ref('工具调试');
+const toolDebugDrawerRef = ref<InstanceType<typeof ToolDebugDrawer>>();
+const toolFormDrawerRef = ref<InstanceType<typeof ToolFormDrawer>>();
+const mcpToolFormDrawerRef = ref<InstanceType<typeof McpToolFormDrawer>>();
+const dataSourceDrawerRef =
+  ref<InstanceType<typeof DataSourceToolFormDrawer>>();
+const skillDrawerRef = ref<InstanceType<typeof SkillToolFormDrawer>>();
+const workflowDebugDrawerRef = ref<InstanceType<typeof WorkflowDebugDrawer>>();
+const executionRecordDrawerRef = ref();
 const debugTargetId = ref<Id>();
 const debugDraftPayload = ref<ToolRequest>();
-const debugInputTab = ref<'form' | 'raw'>('form');
-const debugInitParamTab = ref<InitParamTab>('raw');
-const debugInput = ref('{\n  "query": "ping"\n}');
-const debugInitParamsRaw = ref('{}');
-const debugOutput = ref<unknown>();
-const debugInitFormRef = ref<InstanceType<typeof DynamicInitForm>>();
-const debugInitSchemaFields = ref<ToolFieldSchema[]>([]);
-const debugInitParamValues = reactive<InitParamValues>({});
-const debugSchemaFields = ref<ToolFieldSchema[]>([]);
-const debugFieldValues = reactive<Record<string, InitParamValue>>({});
 const pythonSyntaxLoading = ref(false);
 const pythonSyntaxCheckedCode = ref('');
 const pythonSyntaxDiagnostics = ref<PythonSyntaxDiagnostic[]>([]);
@@ -630,19 +601,6 @@ const mcpConfigJsonSyntax = computed(() =>
     successMessage: 'MCP JSON 语法正确',
   }),
 );
-const debugInitParamsJsonSyntax = computed(() =>
-  checkJsonSyntax(debugInitParamsRaw.value, {
-    emptyMessage: '空值将按 {} 运行',
-    requireObject: true,
-    successMessage: '调试初始化 JSON 语法正确',
-  }),
-);
-const debugInputJsonSyntax = computed(() =>
-  checkJsonSyntax(debugInput.value, {
-    emptyMessage: '空值将按 {} 运行',
-    successMessage: '调试输入 JSON 语法正确',
-  }),
-);
 const pythonSyntaxHasErrors = computed(() =>
   pythonSyntaxDiagnostics.value.some((item) => isPythonSyntaxError(item)),
 );
@@ -672,13 +630,6 @@ const pythonSyntaxStatusText = computed(() => {
 });
 const hasFormInitSchema = computed(
   () => normalizeInitFields(form.init_field_list).length > 0,
-);
-const debugFields = computed<DebugFieldView[]>(() =>
-  normalizeDebugFields(debugSchemaFields.value),
-);
-const hasDebugSchema = computed(() => debugFields.value.length > 0);
-const hasDebugInitSchema = computed(
-  () => normalizeInitFields(debugInitSchemaFields.value).length > 0,
 );
 const initParamDrawerToolName = computed(() =>
   stringValue(
@@ -1080,353 +1031,6 @@ function setEnableDrawerParams(
   replaceInitParamValues(initParamDrawerValues, seeded);
   initParamDrawerRawText.value = stringifyInitParamsForPayload(fields, seeded);
   initParamDrawerOpen.value = true;
-}
-
-function syncDebugInitRawFromForm() {
-  debugInitParamsRaw.value = stringifyInitParamsForPayload(
-    debugInitSchemaFields.value,
-    debugInitParamValues,
-  );
-}
-
-function syncDebugInitFormFromRaw(showWarning = false) {
-  const parsed = parseInitParamsText(debugInitParamsRaw.value || '{}');
-  if (!parsed) {
-    if (showWarning) ElMessage.warning('调试初始化参数必须是 JSON 对象');
-    return false;
-  }
-  replaceInitParamValues(
-    debugInitParamValues,
-    seedInitParams(debugInitSchemaFields.value, parsed),
-  );
-  return true;
-}
-
-function handleDebugInitParamsUpdate(values: InitParamValues) {
-  replaceInitParamValues(debugInitParamValues, values);
-  syncDebugInitRawFromForm();
-}
-
-function handleDebugInitParamTabChange(tabName: number | string) {
-  if (tabName === 'raw') syncDebugInitRawFromForm();
-  if (tabName === 'form') syncDebugInitFormFromRaw(false);
-}
-
-function initializeDebugInitSchema(fields: ToolFieldSchema[], params: unknown) {
-  debugInitSchemaFields.value = cloneDeep(fields);
-  replaceInitParamValues(debugInitParamValues, seedInitParams(fields, params));
-  debugInitParamTab.value = hasDebugInitSchema.value ? 'form' : 'raw';
-  syncDebugInitRawFromForm();
-}
-
-async function prepareDebugInitParamsForRun() {
-  if (!hasDebugInitSchema.value) return { ok: true };
-  if (debugInitParamTab.value === 'raw' && !syncDebugInitFormFromRaw(true)) {
-    return { ok: false };
-  }
-  const valid = await debugInitFormRef.value?.validate();
-  if (valid === false) return { ok: false };
-  const errors = validateInitParamValues(
-    debugInitSchemaFields.value,
-    debugInitParamValues,
-  );
-  if (errors.length > 0) {
-    debugInitParamTab.value = 'form';
-    ElMessage.warning(errors[0]);
-    return { ok: false };
-  }
-  syncDebugInitRawFromForm();
-  return { ok: true, value: debugInitParamsRaw.value };
-}
-
-function debugFieldKey(field: ToolFieldSchema) {
-  return stringValue(field.name ?? field.field ?? field.variable).trim();
-}
-
-function debugFieldLabel(field: ToolFieldSchema, key: string) {
-  const rawLabel = field.label;
-  if (isRecord(rawLabel))
-    return stringValue(rawLabel.label ?? rawLabel.value, key);
-  return stringValue(rawLabel ?? field.name ?? field.field, key);
-}
-
-function debugFieldInputType(field: ToolFieldSchema) {
-  return stringValue(field.input_type ?? field.inputType).trim();
-}
-
-function debugFieldType(field: ToolFieldSchema) {
-  return stringValue(field.type).trim().toLowerCase();
-}
-
-function debugFieldDefaultValue(field: ToolFieldSchema) {
-  return field.default_value ?? field.defaultValue;
-}
-
-function normalizeDebugOptionValue(value: unknown): boolean | number | string {
-  if (typeof value === 'boolean' || typeof value === 'number') return value;
-  return stringValue(value);
-}
-
-function normalizeDebugOptions(field: ToolFieldSchema): DebugOption[] {
-  const rawSource = field.option_list ?? field.optionList;
-  const source =
-    typeof rawSource === 'string' ? safeParseJson(rawSource, []) : rawSource;
-  if (!Array.isArray(source)) return [];
-  return source
-    .map((option, index) => {
-      if (!isRecord(option)) {
-        const value = normalizeDebugOptionValue(option);
-        return { label: stringValue(option, `选项 ${index + 1}`), value };
-      }
-      const rawValue =
-        option.value ??
-        option.key ??
-        option.id ??
-        option.name ??
-        option.label ??
-        '';
-      const rawLabel =
-        option.label ?? option.name ?? option.text ?? option.key ?? rawValue;
-      return {
-        label: stringValue(rawLabel, `选项 ${index + 1}`),
-        value: normalizeDebugOptionValue(rawValue),
-      };
-    })
-    .filter((option) => option.label || `${option.value}`.length > 0);
-}
-
-function debugFieldControl(
-  field: ToolFieldSchema,
-  options: DebugOption[],
-): DebugControl {
-  const inputType = debugFieldInputType(field);
-  const type = debugFieldType(field);
-  if (options.length > 0) {
-    if (inputType === 'MultiSelect' || type === 'array') return 'multiselect';
-    return 'select';
-  }
-  if (['array', 'dict', 'object'].includes(type) || inputType === 'JsonInput') {
-    return 'json';
-  }
-  if (['bool', 'boolean'].includes(type) || inputType === 'SwitchInput') {
-    return 'boolean';
-  }
-  if (['float', 'int', 'integer', 'number'].includes(type)) return 'number';
-  if (['MultiRow', 'TextareaInput'].includes(inputType)) return 'textarea';
-  return 'text';
-}
-
-function normalizeDebugFields(fields: ToolFieldSchema[]): DebugFieldView[] {
-  const seenKeys = new Set<string>();
-  const normalized: DebugFieldView[] = [];
-  fields.forEach((field) => {
-    const key = debugFieldKey(field);
-    if (!key || seenKeys.has(key)) return;
-    seenKeys.add(key);
-    const options = normalizeDebugOptions(field);
-    normalized.push({
-      control: debugFieldControl(field, options),
-      desc: stringValue(field.desc ?? field.description),
-      inputType: debugFieldInputType(field),
-      key,
-      label: debugFieldLabel(field, key),
-      options,
-      required: booleanValue(field.is_required ?? field.required, false),
-      schema: field,
-      type: debugFieldType(field),
-    });
-  });
-  return normalized;
-}
-
-function debugDefaultJsonText(field: DebugFieldView) {
-  return field.type === 'array' ? '[]' : '{}';
-}
-
-function debugBooleanValue(value: unknown) {
-  if (typeof value === 'boolean') return value;
-  if (value === undefined || value === null || value === '') return false;
-  return ['1', 'on', 'true', 'y', 'yes'].includes(
-    stringValue(value).toLowerCase(),
-  );
-}
-
-function debugNumberValue(value: unknown) {
-  if (value === undefined || value === null || value === '') return undefined;
-  const numericValue = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(numericValue) ? numericValue : undefined;
-}
-
-function debugSelectValue(key: string) {
-  const value = debugFieldValues[key];
-  if (
-    typeof value === 'boolean' ||
-    typeof value === 'number' ||
-    typeof value === 'string'
-  ) {
-    return value;
-  }
-  return undefined;
-}
-
-function debugMultiSelectValue(key: string): Array<boolean | number | string> {
-  const value = debugFieldValues[key];
-  if (!Array.isArray(value)) return [];
-  const values: Array<boolean | number | string> = [];
-  value.forEach((item) => {
-    if (
-      typeof item === 'boolean' ||
-      typeof item === 'number' ||
-      typeof item === 'string'
-    ) {
-      values.push(item);
-    }
-  });
-  return values;
-}
-
-function debugTextValue(key: string) {
-  return stringValue(debugFieldValues[key]);
-}
-
-function patchDebugFieldValue(key: string, value: unknown) {
-  debugFieldValues[key] =
-    value === undefined ||
-    value === null ||
-    typeof value === 'boolean' ||
-    typeof value === 'number' ||
-    typeof value === 'string' ||
-    Array.isArray(value) ||
-    isRecord(value)
-      ? value
-      : stringValue(value);
-  syncRawDebugInputFromForm();
-}
-
-function coerceDebugOptionValue(field: DebugFieldView, value: unknown) {
-  const normalizedValue = normalizeDebugOptionValue(value);
-  const option = field.options.find(
-    (item) => item.value === value || `${item.value}` === `${normalizedValue}`,
-  );
-  return option ? option.value : normalizedValue;
-}
-
-function normalizeDebugValueForForm(
-  field: DebugFieldView,
-  value: unknown,
-): InitParamValue {
-  if (field.control === 'boolean') return debugBooleanValue(value);
-  if (field.control === 'number') return debugNumberValue(value);
-  if (field.control === 'multiselect') {
-    if (value === undefined || value === null || value === '') return [];
-    const values = Array.isArray(value) ? value : [value];
-    return values.map((item) => coerceDebugOptionValue(field, item));
-  }
-  if (field.control === 'select') {
-    if (value === undefined || value === null) return '';
-    return coerceDebugOptionValue(field, value);
-  }
-  if (field.control === 'json') {
-    if (value === undefined || value === null || value === '')
-      return debugDefaultJsonText(field);
-    return typeof value === 'string'
-      ? value
-      : prettyJson(value, debugDefaultJsonText(field));
-  }
-  return stringValue(value);
-}
-
-function debugDefaultFormValue(field: DebugFieldView): InitParamValue {
-  const defaultValue = debugFieldDefaultValue(field.schema);
-  if (
-    defaultValue !== undefined &&
-    defaultValue !== null &&
-    defaultValue !== ''
-  ) {
-    return normalizeDebugValueForForm(field, defaultValue);
-  }
-  if (field.control === 'boolean') return false;
-  if (field.control === 'json') return debugDefaultJsonText(field);
-  if (field.control === 'multiselect') return [];
-  if (field.control === 'number') return undefined;
-  return '';
-}
-
-function normalizeDebugValueForPayload(
-  field: DebugFieldView,
-  value: unknown,
-): unknown {
-  if (field.control === 'boolean') return debugBooleanValue(value);
-  if (field.control === 'number') return debugNumberValue(value) ?? null;
-  if (field.control === 'multiselect') return Array.isArray(value) ? value : [];
-  if (field.control === 'json') {
-    if (typeof value !== 'string') return value;
-    const text = value.trim();
-    if (!text) return field.type === 'array' ? [] : {};
-    const parsed = safeParseJson(text, undefined);
-    return parsed === undefined ? value : parsed;
-  }
-  return value ?? '';
-}
-
-function resetDebugFieldValues() {
-  Object.keys(debugFieldValues).forEach((key) => {
-    delete debugFieldValues[key];
-  });
-}
-
-function syncRawDebugInputFromForm() {
-  if (!hasDebugSchema.value) return;
-  const input: Record<string, unknown> = {};
-  debugFields.value.forEach((field) => {
-    input[field.key] = normalizeDebugValueForPayload(
-      field,
-      debugFieldValues[field.key],
-    );
-  });
-  debugInput.value = prettyJson(input, '{}');
-}
-
-function syncDebugFormFromRaw(showWarning = false) {
-  if (!hasDebugSchema.value) return false;
-  const parsed = safeParseJson(debugInput.value, undefined);
-  if (!isRecord(parsed)) {
-    if (showWarning) {
-      ElMessage.warning('原始 JSON 不是对象，表单字段未同步，但仍可直接运行');
-    }
-    return false;
-  }
-  debugFields.value.forEach((field) => {
-    const value = Object.prototype.hasOwnProperty.call(parsed, field.key)
-      ? parsed[field.key]
-      : debugDefaultFormValue(field);
-    debugFieldValues[field.key] = normalizeDebugValueForForm(field, value);
-  });
-  return true;
-}
-
-function initializeDebugSchema(fields: ToolFieldSchema[]) {
-  debugSchemaFields.value = cloneDeep(fields);
-  resetDebugFieldValues();
-  debugFields.value.forEach((field) => {
-    debugFieldValues[field.key] = debugDefaultFormValue(field);
-  });
-  debugInputTab.value = hasDebugSchema.value ? 'form' : 'raw';
-  if (hasDebugSchema.value) syncRawDebugInputFromForm();
-}
-
-function handleDebugTabChange(tabName: number | string) {
-  if (tabName === 'form') syncDebugFormFromRaw(false);
-}
-
-function debugInputJsonForRun() {
-  const text = debugInput.value.trim();
-  if (!text) return '{}';
-  if (safeParseJson(text, undefined) === undefined) {
-    ElMessage.warning('调试输入不是合法 JSON，将按原始内容提交');
-    return text;
-  }
-  return normalizeJsonText(text, '{}');
 }
 
 function toolTypeOf(row?: ToolRecord): AiToolType {
@@ -2130,15 +1734,40 @@ async function openWorkflowEditor(row: ToolRecord) {
   }
   await router.push({
     name: 'AiOrchestrationToolWorkflow',
-    query: { toolId },
+    params: { id: toolId },
   });
 }
 
 async function openToolDrawer(type: AiToolType = 'CUSTOM', row?: ToolRecord) {
+  const targetType = row ? toolTypeOf(row) : type;
+  if (targetType === 'CUSTOM') {
+    toolDrawerOpen.value = false;
+    workflowDialogOpen.value = false;
+    await toolFormDrawerRef.value?.open(row);
+    return;
+  }
+  if (targetType === 'MCP') {
+    toolDrawerOpen.value = false;
+    workflowDialogOpen.value = false;
+    await mcpToolFormDrawerRef.value?.open(row);
+    return;
+  }
+  if (targetType === 'DATA_SOURCE') {
+    toolDrawerOpen.value = false;
+    workflowDialogOpen.value = false;
+    await dataSourceDrawerRef.value?.open(row);
+    return;
+  }
+  if (targetType === 'SKILL') {
+    toolDrawerOpen.value = false;
+    workflowDialogOpen.value = false;
+    await skillDrawerRef.value?.open(row);
+    return;
+  }
+
   drawerLoading.value = true;
   try {
     editingId.value = row?.id;
-    const targetType = row ? toolTypeOf(row) : type;
     applyFormDefaults(targetType);
     if (row?.id) {
       const detail = await getTool(row.id);
@@ -2161,6 +1790,19 @@ async function copyTool(row: ToolRecord) {
   try {
     const detail = row.id ? await getTool(row.id) : row;
     const record = detailToToolRecord(detail, row);
+    if (toolTypeOf(record) === 'CUSTOM') {
+      toolDrawerOpen.value = false;
+      workflowDialogOpen.value = false;
+      await toolFormDrawerRef.value?.open({
+        ...record,
+        enabled: false,
+        id: undefined,
+        isActive: false,
+        is_active: false,
+        name: `${stringValue(record.name, '未命名工具')} 副本`,
+      });
+      return;
+    }
     editingId.value = undefined;
     setFormFromRecord(record, true);
     if (form.tool_type === 'WORKFLOW') {
@@ -2228,7 +1870,7 @@ async function saveTool() {
         ElMessage.success('工作流工具已创建，正在打开工作流编辑器');
         await router.push({
           name: 'AiOrchestrationToolWorkflow',
-          query: { toolId: createdId },
+          params: { id: createdId },
         });
         return;
       }
@@ -2600,67 +2242,40 @@ async function saveIcon() {
 }
 
 async function openDebugDialog(row?: ToolRecord) {
-  debugOutput.value = undefined;
+  // WORKFLOW tools use dedicated debug drawer with input params
+  if (row?.id && toolTypeOf(row) === 'WORKFLOW') {
+    workflowDebugDrawerRef.value?.open(row.id);
+    return;
+  }
+
   if (row?.id) {
     const detail = await getTool(row.id).catch(() => row);
     const record = detailToToolRecord(detail, row);
     debugTargetId.value = row.id;
     debugDraftPayload.value = undefined;
-    debugTitle.value = `${record.name || row.name || row.id} 调试`;
-    initializeDebugInitSchema(
-      parseArrayValue(record.init_field_list ?? record.initFieldList),
-      initParamSourceFromRecord(record),
-    );
-    initializeDebugSchema(
-      parseArrayValue(record.input_field_list ?? record.inputFieldList),
-    );
+    toolDebugDrawerRef.value?.open({
+      code: record.code ?? '',
+      init_field_list: parseArrayValue(
+        record.init_field_list ?? record.initFieldList,
+      ),
+      input_field_list: parseArrayValue(
+        record.input_field_list ?? record.inputFieldList,
+      ),
+    });
   } else {
-    if (hasFormInitSchema.value) syncToolInitRawFromForm();
     debugTargetId.value = undefined;
     debugDraftPayload.value = buildPayload();
-    debugTitle.value = form.name ? `${form.name} 草稿调试` : '草稿调试';
-    initializeDebugInitSchema(form.init_field_list, form.init_params);
-    initializeDebugSchema(form.input_field_list);
-  }
-  debugOpen.value = true;
-}
-
-async function runDebug() {
-  debugRunning.value = true;
-  try {
-    const initParams = await prepareDebugInitParamsForRun();
-    if (!initParams.ok) return;
-    if (debugInputTab.value === 'form' && hasDebugSchema.value) {
-      syncRawDebugInputFromForm();
-    }
-    const inputJson = debugInputJsonForRun();
-    const initParamPayload = initParams.value
-      ? { initParams: initParams.value, init_params: initParams.value }
-      : {};
-    debugOutput.value = debugTargetId.value
-      ? await debugTool(debugTargetId.value, {
-          ...initParamPayload,
-          input_json: inputJson,
-          inputJson,
-        })
-      : await debugDraftTool({
-          ...(debugDraftPayload.value || buildPayload()),
-          ...initParamPayload,
-          input_json: inputJson,
-          inputJson,
-        });
-  } finally {
-    debugRunning.value = false;
+    toolDebugDrawerRef.value?.open({
+      code: form.code,
+      init_field_list: form.init_field_list,
+      input_field_list: form.input_field_list,
+    });
   }
 }
 
 async function openRecords(row: ToolRecord) {
   if (!row.id) return;
-  activeTool.value = row;
-  recordsQuery.current = 1;
-  recordsQuery.page = 1;
-  recordsOpen.value = true;
-  await loadRecords();
+  executionRecordDrawerRef.value?.open(row.id);
 }
 
 async function loadRecords() {
@@ -3216,6 +2831,36 @@ onMounted(init);
           </div>
         </main>
       </section>
+
+      <ToolFormDrawer
+        ref="toolFormDrawerRef"
+        :folder-id="currentFolderId"
+        :workspace-id="query.workspaceId"
+        @refresh="refreshAll"
+      />
+
+      <McpToolFormDrawer
+        ref="mcpToolFormDrawerRef"
+        :folder-id="currentFolderId"
+        :workspace-id="query.workspaceId"
+        @refresh="refreshAll"
+      />
+
+      <DataSourceToolFormDrawer
+        ref="dataSourceDrawerRef"
+        :folder-id="currentFolderId"
+        :workspace-id="query.workspaceId"
+        @refresh="refreshAll"
+      />
+
+      <SkillToolFormDrawer
+        ref="skillDrawerRef"
+        :folder-id="currentFolderId"
+        :workspace-id="query.workspaceId"
+        @refresh="refreshAll"
+      />
+
+      <WorkflowDebugDrawer ref="workflowDebugDrawerRef" />
 
       <ElDrawer v-model="toolDrawerOpen" :title="toolDrawerTitle" size="60%">
         <div class="tool-form-stack">
@@ -3803,229 +3448,9 @@ onMounted(init);
         </template>
       </ElDialog>
 
-      <ElDialog v-model="debugOpen" :title="debugTitle" width="860px">
-        <div class="debug-grid">
-          <section>
-            <div v-if="hasDebugInitSchema" class="debug-init-panel">
-              <div class="section-title">
-                <span>初始化参数</span><span class="muted">仅本次调试</span>
-              </div>
-              <ElTabs
-                v-model="debugInitParamTab"
-                class="debug-tabs"
-                @tab-change="handleDebugInitParamTabChange"
-              >
-                <ElTabPane label="参数表单" name="form">
-                  <DynamicInitForm
-                    ref="debugInitFormRef"
-                    :fields="debugInitSchemaFields"
-                    :model-value="debugInitParamValues"
-                    @update:model-value="handleDebugInitParamsUpdate"
-                  />
-                </ElTabPane>
-                <ElTabPane label="原始 JSON" name="raw">
-                  <div class="debug-raw-hint">
-                    高级编辑入口。运行前会校验必填启动参数。
-                  </div>
-                  <CodeEditor
-                    v-model="debugInitParamsRaw"
-                    class="debug-raw-input tool-code-editor"
-                    height="180px"
-                    mode="json"
-                    @blur="syncDebugInitFormFromRaw(false)"
-                    @change="syncDebugInitFormFromRaw(false)"
-                  />
-                  <div
-                    class="syntax-status"
-                    :class="
-                      debugInitParamsJsonSyntax.valid
-                        ? 'is-success'
-                        : 'is-error'
-                    "
-                  >
-                    <ElTag
-                      effect="plain"
-                      size="small"
-                      :type="jsonSyntaxTagType(debugInitParamsJsonSyntax)"
-                    >
-                      {{ jsonSyntaxTagText(debugInitParamsJsonSyntax) }}
-                    </ElTag>
-                    <span>{{
-                      jsonSyntaxMessage(debugInitParamsJsonSyntax)
-                    }}</span>
-                  </div>
-                </ElTabPane>
-              </ElTabs>
-            </div>
-            <div class="section-title">
-              <span>调试输入</span>
-              <span class="muted">支持已保存工具和当前草稿</span>
-            </div>
-            <ElTabs
-              v-model="debugInputTab"
-              class="debug-tabs"
-              @tab-change="handleDebugTabChange"
-            >
-              <ElTabPane label="参数表单" name="form">
-                <ElForm
-                  v-if="hasDebugSchema"
-                  class="debug-form"
-                  label-position="top"
-                >
-                  <ElFormItem
-                    v-for="item in debugFields"
-                    :key="item.key"
-                    :label="item.label"
-                    :required="item.required"
-                  >
-                    <ElSelect
-                      v-if="item.control === 'select'"
-                      class="debug-control"
-                      clearable
-                      filterable
-                      :model-value="debugSelectValue(item.key)"
-                      :placeholder="`请选择${item.label}`"
-                      @update:model-value="
-                        (value) => patchDebugFieldValue(item.key, value)
-                      "
-                    >
-                      <ElOption
-                        v-for="option in item.options"
-                        :key="`${item.key}-${option.value}`"
-                        :label="option.label"
-                        :value="option.value"
-                      />
-                    </ElSelect>
-                    <ElSelect
-                      v-else-if="item.control === 'multiselect'"
-                      class="debug-control"
-                      clearable
-                      collapse-tags
-                      collapse-tags-tooltip
-                      filterable
-                      :model-value="debugMultiSelectValue(item.key)"
-                      multiple
-                      :placeholder="`请选择${item.label}`"
-                      @update:model-value="
-                        (value) => patchDebugFieldValue(item.key, value)
-                      "
-                    >
-                      <ElOption
-                        v-for="option in item.options"
-                        :key="`${item.key}-${option.value}`"
-                        :label="option.label"
-                        :value="option.value"
-                      />
-                    </ElSelect>
-                    <ElInputNumber
-                      v-else-if="item.control === 'number'"
-                      class="debug-control"
-                      controls-position="right"
-                      :model-value="
-                        debugNumberValue(debugFieldValues[item.key])
-                      "
-                      :placeholder="`请输入${item.label}`"
-                      @update:model-value="
-                        (value) => patchDebugFieldValue(item.key, value)
-                      "
-                    />
-                    <ElSwitch
-                      v-else-if="item.control === 'boolean'"
-                      :model-value="
-                        debugBooleanValue(debugFieldValues[item.key])
-                      "
-                      @update:model-value="
-                        (value) => patchDebugFieldValue(item.key, value)
-                      "
-                    />
-                    <ElInput
-                      v-else-if="
-                        item.control === 'json' || item.control === 'textarea'
-                      "
-                      :model-value="debugTextValue(item.key)"
-                      type="textarea"
-                      :placeholder="
-                        item.control === 'json'
-                          ? debugDefaultJsonText(item)
-                          : `请输入${item.label}`
-                      "
-                      :rows="item.control === 'json' ? 4 : 3"
-                      @update:model-value="
-                        (value) => patchDebugFieldValue(item.key, value)
-                      "
-                    />
-                    <ElInput
-                      v-else
-                      clearable
-                      :model-value="debugTextValue(item.key)"
-                      :placeholder="`请输入${item.label}`"
-                      :show-password="item.inputType === 'PasswordInput'"
-                      @update:model-value="
-                        (value) => patchDebugFieldValue(item.key, value)
-                      "
-                    />
-                    <div v-if="item.desc" class="debug-field-desc">
-                      {{ item.desc }}
-                    </div>
-                  </ElFormItem>
-                </ElForm>
-                <ElEmpty
-                  v-else
-                  class="debug-empty"
-                  description="当前工具未声明 input_field_list，请使用原始 JSON 调试"
-                />
-              </ElTabPane>
-              <ElTabPane label="原始 JSON" name="raw">
-                <div class="debug-raw-hint">
-                  高级编辑入口。JSON 无法解析时仍会按原始内容提交。
-                </div>
-                <CodeEditor
-                  v-model="debugInput"
-                  class="debug-raw-input tool-code-editor"
-                  height="var(--debug-panel-height)"
-                  mode="json"
-                  @blur="syncDebugFormFromRaw(false)"
-                  @change="syncDebugFormFromRaw(false)"
-                />
-                <div
-                  class="syntax-status"
-                  :class="
-                    debugInputJsonSyntax.valid ? 'is-success' : 'is-error'
-                  "
-                >
-                  <ElTag
-                    effect="plain"
-                    size="small"
-                    :type="jsonSyntaxTagType(debugInputJsonSyntax)"
-                  >
-                    {{ jsonSyntaxTagText(debugInputJsonSyntax) }}
-                  </ElTag>
-                  <span>
-                    {{
-                      jsonSyntaxMessage(debugInputJsonSyntax)
-                    }}，无效时仍会按原始内容提交
-                  </span>
-                </div>
-              </ElTabPane>
-            </ElTabs>
-          </section>
-          <section>
-            <div class="section-title">
-              <span>输出</span>
-              <span class="muted">R.ok 已按请求拦截器解包</span>
-            </div>
-            <pre class="result-box debug-result">{{
-              prettyJson(debugOutput, '暂无调试结果')
-            }}</pre>
-          </section>
-        </div>
-        <template #footer>
-          <ElButton @click="debugOpen = false">关闭</ElButton>
-          <ElButton :loading="debugRunning" type="primary" @click="runDebug">
-            运行调试
-          </ElButton>
-        </template>
-      </ElDialog>
+      <ToolDebugDrawer ref="toolDebugDrawerRef" :tool-id="debugTargetId" />
+
+      <ExecutionRecordDrawer ref="executionRecordDrawerRef" />
 
       <ElDialog v-model="moveDialogOpen" title="移动工具" width="460px">
         <ElForm label-width="90px" :model="moveForm">
@@ -4749,8 +4174,7 @@ onMounted(init);
 }
 
 .form-grid,
-.schema-grid,
-.debug-grid {
+.schema-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--tool-space-3);
@@ -4987,10 +4411,6 @@ onMounted(init);
   border-radius: var(--tool-radius);
 }
 
-.debug-result {
-  height: var(--debug-panel-height);
-}
-
 .init-param-tabs {
   margin-top: var(--tool-space-2);
 }
@@ -5000,50 +4420,6 @@ onMounted(init);
   font-size: calc(var(--font-size-base) * 0.75);
   line-height: 1.5;
   color: var(--el-text-color-secondary);
-}
-
-.debug-grid {
-  --debug-space-xs: var(--tool-space-1);
-  --debug-space-sm: var(--tool-space-2);
-  --debug-panel-height: min(52vh, 420px);
-
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-}
-
-.debug-tabs :deep(.el-tabs__content) {
-  min-height: var(--debug-panel-height);
-}
-
-.debug-form {
-  max-height: var(--debug-panel-height);
-  padding-right: var(--debug-space-xs);
-  overflow: auto;
-}
-
-.debug-init-panel {
-  padding-bottom: var(--debug-space-sm);
-  margin-bottom: var(--debug-space-sm);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-
-.debug-control {
-  width: 100%;
-}
-
-.debug-field-desc,
-.debug-raw-hint {
-  margin-top: var(--debug-space-xs);
-  font-size: calc(var(--font-size-base) * 0.75);
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
-}
-
-.debug-raw-hint {
-  margin-bottom: var(--debug-space-sm);
-}
-
-.debug-empty {
-  height: var(--debug-panel-height);
 }
 
 .mono-line {
