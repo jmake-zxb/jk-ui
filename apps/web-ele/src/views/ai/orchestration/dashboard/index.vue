@@ -16,7 +16,8 @@ import {
   ElTag,
 } from 'element-plus';
 
-import { listApplications, pageWorkflowRuns } from '#/api/ai/applications';
+import { pageWorkflowRuns } from '#/api/ai/application-workflow';
+import { listApplications } from '#/api/ai/applications';
 import { getApplicationStats, getDashboardStats } from '#/api/ai/dashboard';
 
 import { prettyJson, recordsOf, statusType } from '../utils';

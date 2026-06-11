@@ -16,7 +16,8 @@ import {
 } from 'element-plus';
 import { cloneDeep, set } from 'lodash-es';
 
-import { getTool, getToolWorkflow, listTools } from '#/api/ai/tools';
+import { getToolWorkflow } from '#/api/ai/tool-workflow';
+import { getTool, listTools } from '#/api/ai/tools';
 
 import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
