@@ -8,14 +8,14 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 
 import {
-  debugTool,
-  getTool,
   getToolWorkflow,
   pageToolVersions,
   publishToolWorkflow,
   saveToolWorkflow,
-} from '#/api/ai/tools';
+} from '#/api/ai/tool-workflow';
+import { getTool } from '#/api/ai/tools';
 
+import WorkflowDebugDrawer from '../../tools/component/WorkflowDebugDrawer.vue';
 import { prettyJson, recordsOf, safeParseJson } from '../../utils';
 import { normalizeGraphData } from '../designer/graph-data';
 import { DEFAULT_GRAPH_DATA, DEFAULT_TOOL_GRAPH_DATA } from '../designer/nodes';
@@ -24,13 +24,7 @@ import {
   toBackendToolWorkflowGraphData,
   toEditorToolWorkflowGraphData,
 } from '../tool-workflow-utils';
-import {
-  debugResultTitle,
-  isRecord,
-  showApiError,
-  useAutoSave,
-  useDebugLog,
-} from './workflow-host-shared';
+import { isRecord, showApiError, useAutoSave } from './workflow-host-shared';
 import WorkflowHostChromeComponent from './WorkflowHostChrome.vue';
 
 const props = defineProps<{ toolId: number | string }>();
@@ -38,12 +32,11 @@ const props = defineProps<{ toolId: number | string }>();
 const router = useRouter();
 
 const chromeRef = ref<InstanceType<typeof WorkflowHostChrome>>();
+const debugDrawerRef = ref<InstanceType<typeof WorkflowDebugDrawer>>();
 const tools = ref<any[]>([]);
 const toolDetail = ref<any>();
 const toolId = ref<number | string>(props.toolId || '');
 const workflowGraphJson = ref(DEFAULT_TOOL_GRAPH_DATA);
-const debugInput = ref('{\n  "message": "测试工作流"\n}');
-const debugMessage = ref('测试工作流');
 const validation = ref<any>();
 const localValidation = ref<ValidationState>({ errors: [], warnings: [] });
 const loading = ref(false);
@@ -53,7 +46,6 @@ const versionsLoading = ref(false);
 const { autoSaveEnabled, lastSavedAt, markSaved, startAutoSave } = useAutoSave(
   () => autoSaveDraft(),
 );
-const { debugEvents, debugRows, pushResultRow, resetDebugLog } = useDebugLog();
 
 const currentTool = computed(() =>
   `${toolDetail.value?.id || ''}` === `${toolId.value}`
@@ -262,12 +254,6 @@ async function autoSaveDraft() {
   await saveDraft(false);
 }
 
-async function validateDraft() {
-  if (!(await saveDraft(false))) return;
-  validation.value = { message: '本地校验通过', result: 'LOCAL' };
-  ElMessage.success('本地校验完成');
-}
-
 async function publishDraft() {
   if (!(await saveDraft(false))) return;
   await publishToolWorkflow(toolId.value, toolWorkflowPayload());
@@ -295,24 +281,10 @@ function restoreVersion() {
   ElMessage.warning('工具工作流暂不支持版本恢复');
 }
 
-async function debugStream() {
+async function openDebug() {
   if (!runLocalValidation(true)) return;
   if (!(await saveDraft(false))) return;
-  resetDebugLog();
-  const payload = safeParseJson(debugInput.value, {});
-  const inputJson = prettyJson(payload, '{}');
-  const result = await debugTool(toolId.value, {
-    input_json: inputJson,
-    inputJson,
-    message: debugMessage.value,
-  });
-  const raw = prettyJson(result, '{}');
-  pushResultRow(raw, {
-    event: 'tool_debug',
-    raw,
-    status: 'SUCCESS',
-    title: debugResultTitle(result),
-  });
+  debugDrawerRef.value?.open(toolId.value);
 }
 
 watch(
@@ -334,35 +306,33 @@ onMounted(async () => {
 </script>
 
 <template>
-  <WorkflowHostChromeComponent
-    ref="chromeRef"
-    v-model:graph-data="workflowGraphJson"
-    v-model:debug-message="debugMessage"
-    v-model:debug-input="debugInput"
-    v-model:debug-rows="debugRows"
-    v-model:debug-events="debugEvents"
-    :auto-save-enabled="autoSaveEnabled"
-    back-list-label="工具管理"
-    :can-restore-version="false"
-    debug-drawer-title="工具工作流调试"
-    foundation-mode="tool"
-    :loading="loading"
-    :local-validation="localValidation"
-    palette-mode="tool"
-    :subtitle-text="subtitleText"
-    :title="currentToolName"
-    :validation="validation"
-    :versions="versions"
-    versions-drawer-title="工具发布历史"
-    :versions-loading="versionsLoading"
-    @back="backToTools"
-    @debug="debugStream"
-    @local-validation-change="localValidation = $event"
-    @open-versions="loadVersions()"
-    @publish="publishDraft"
-    @restore-version="restoreVersion"
-    @save="saveDraft()"
-    @toggle-auto-save="autoSaveEnabled = !autoSaveEnabled"
-    @validate="validateDraft"
-  />
+  <div>
+    <WorkflowHostChromeComponent
+      ref="chromeRef"
+      v-model:graph-data="workflowGraphJson"
+      :auto-save-enabled="autoSaveEnabled"
+      back-list-label="工具管理"
+      :can-restore-version="false"
+      debug-drawer-title="工具工作流调试"
+      foundation-mode="tool"
+      :loading="loading"
+      :local-validation="localValidation"
+      palette-mode="tool"
+      :subtitle-text="subtitleText"
+      :title="currentToolName"
+      :validation="validation"
+      :versions="versions"
+      versions-drawer-title="工具发布历史"
+      :versions-loading="versionsLoading"
+      @back="backToTools"
+      @debug="openDebug"
+      @local-validation-change="localValidation = $event"
+      @open-versions="loadVersions()"
+      @publish="publishDraft"
+      @restore-version="restoreVersion"
+      @save="saveDraft(true)"
+    />
+
+    <WorkflowDebugDrawer ref="debugDrawerRef" />
+  </div>
 </template>

@@ -8,15 +8,14 @@ import { useRouter } from 'vue-router';
 import { ElDrawer, ElDropdownItem, ElInput, ElMessage } from 'element-plus';
 
 import {
-  getApplication,
   getWorkflowDraft,
-  listApplications,
   pageWorkflowVersions,
   publishWorkflow,
   restoreWorkflowVersion,
   saveWorkflowDraft,
   validateWorkflowDraft,
-} from '#/api/ai/applications';
+} from '#/api/ai/application-workflow';
+import { getApplication, listApplications } from '#/api/ai/applications';
 
 import {
   APPLICATION_CHAT_PATH,
