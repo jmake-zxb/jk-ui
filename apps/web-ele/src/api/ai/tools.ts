@@ -57,6 +57,8 @@ export interface ToolRequest extends OrchestrationRequest {
   initParams?: Record<string, unknown> | string;
   init_params?: Record<string, unknown> | string;
   input_field_list?: string | ToolFieldSchema[];
+  debugFieldList?: Array<Record<string, unknown>>;
+  debug_field_list?: Array<Record<string, unknown>>;
   input_json?: string;
   isActive?: boolean;
   is_active?: boolean;
@@ -268,43 +270,6 @@ export function addStoreTool(id: number | string, data: ToolRequest) {
 
 export function updateStoreTool(id: number | string, data: ToolRequest) {
   return requestClient.post(`${base}/${id}/update-store-tool`, data);
-}
-
-export function getToolWorkflow(id: number | string) {
-  return requestClient.get(`${base}/${id}/workflow`);
-}
-
-export function saveToolWorkflow(id: number | string, data: ToolRequest) {
-  return requestClient.put(`${base}/${id}/workflow`, data);
-}
-
-export function publishToolWorkflow(id: number | string, data?: ToolRequest) {
-  return requestClient.put(`${base}/${id}/publish`, data || {});
-}
-
-export function listToolVersions(id: number | string, query?: AiQuery) {
-  return requestClient.get(`${base}/${id}/tool-version`, { params: query });
-}
-
-export function pageToolVersions(id: number | string, query?: AiQuery) {
-  return requestClient.get(`${base}/${id}/tool-version/page`, {
-    params: query,
-  });
-}
-
-export function getToolVersion(
-  id: number | string,
-  versionId: number | string,
-) {
-  return requestClient.get(`${base}/${id}/tool-version/${versionId}`);
-}
-
-export function updateToolVersion(
-  id: number | string,
-  versionId: number | string,
-  data: ToolRequest,
-) {
-  return requestClient.put(`${base}/${id}/tool-version/${versionId}`, data);
 }
 
 export function pageToolRecords(id: number | string, query?: AiQuery) {
