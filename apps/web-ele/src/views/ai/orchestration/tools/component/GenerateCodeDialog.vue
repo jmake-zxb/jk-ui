@@ -175,21 +175,28 @@ function parseStreamPayload(rawData: string): StreamPayload | undefined {
 }
 
 function handleSseEvent(eventChunk: string) {
-  const rawData = eventChunk
+  const dataLines = eventChunk
     .split(/\r?\n/)
     .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trim())
-    .join('\n')
-    .trim();
-  const payload = parseStreamPayload(rawData);
-  if (!payload) return false;
+    .map((line) => line.slice(5).trim());
 
-  if (payload.error) throw new Error(payload.error);
-  if (payload.content) {
-    generatedCode.value += payload.content;
-    scrollResultToBottom();
+  let ended = false;
+  for (const rawData of dataLines) {
+    if (!rawData) continue;
+    const payload = parseStreamPayload(rawData);
+    if (!payload) continue;
+
+    if (payload.error) throw new Error(payload.error);
+    if (payload.content) {
+      generatedCode.value += payload.content;
+      scrollResultToBottom();
+    }
+    if (payload.is_end === true) {
+      ended = true;
+      break;
+    }
   }
-  return payload.is_end === true;
+  return ended;
 }
 
 async function readGenerateStream(stream: ReadableStream<Uint8Array>) {
@@ -208,12 +215,14 @@ async function readGenerateStream(stream: ReadableStream<Uint8Array>) {
       }
 
       buffer += decoder.decode(value, { stream: true });
-      const eventChunks = buffer.split(/\r?\n\r?\n/);
-      buffer = eventChunks.pop() || '';
 
-      for (const eventChunk of eventChunks) {
-        if (!eventChunk.trim()) continue;
-        streamEnded = handleSseEvent(eventChunk);
+      // Handle non-standard SSE format: split by 'data:' prefix instead of \n\n
+      const parts = buffer.split(/(?=data:)/);
+      buffer = parts.pop() || '';
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        streamEnded = handleSseEvent(part);
         if (streamEnded) break;
       }
     }
