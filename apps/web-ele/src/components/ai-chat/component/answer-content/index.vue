@@ -1,14 +1,13 @@
 <script setup lang="ts">
+import type { ChatAnswerBlock, ChatRecord } from '../../types/application';
+
 import { computed, onBeforeUnmount, onMounted } from 'vue';
 
 import { Loading } from '@element-plus/icons-vue';
 import { ElCard, ElIcon } from 'element-plus';
 
-import { nodeTypeIcon } from '#/views/ai/orchestration/workflow/designer/common/node-type-icons';
-
 import MdRenderer from '#/components/markdown/MdRenderer.vue';
-
-import type { ChatAnswerBlock, ChatRecord } from '../../types/application';
+import { nodeTypeIcon } from '#/views/ai/orchestration/workflow/designer/common/node-type-icons';
 
 import { ChatManagement } from '../../types/application';
 import { aiChatBus } from '../../utils/bus';
@@ -22,7 +21,11 @@ const props = defineProps<{
   executionIsRightPanel?: boolean;
   loading: boolean;
   selection?: boolean;
-  sendMessage: (question: string, otherParamsData?: unknown, chat?: ChatRecord) => Promise<boolean>;
+  sendMessage: (
+    question: string,
+    otherParamsData?: unknown,
+    chat?: ChatRecord,
+  ) => Promise<boolean>;
   type: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
 }>();
 
@@ -33,9 +36,15 @@ const emit = defineEmits<{
   'update:chatRecord': [value: ChatRecord];
 }>();
 
-const showAvatar = computed(() => (props.application.show_avatar === undefined ? true : props.application.show_avatar));
+const showAvatar = computed(() =>
+  props.application.show_avatar === undefined
+    ? true
+    : props.application.show_avatar,
+);
 const showUserAvatar = computed(() =>
-  props.application.show_user_avatar === undefined ? true : props.application.show_user_avatar,
+  props.application.show_user_avatar === undefined
+    ? true
+    : props.application.show_user_avatar,
 );
 
 const progress = computed(() => {
@@ -46,7 +55,9 @@ const progress = computed(() => {
   };
 });
 
-const progressIcon = computed(() => (progress.value ? nodeTypeIcon(progress.value.node_type) : Loading));
+const progressIcon = computed(() =>
+  progress.value ? nodeTypeIcon(progress.value.node_type) : Loading,
+);
 
 const answerTextList = computed(() =>
   props.chatRecord.answer_text_list.map((item) => {
@@ -66,7 +77,11 @@ function addAnswerTextList(answerTextListValue: ChatAnswerBlock[][]) {
   answerTextListValue.push([]);
 }
 
-function chatMessage(question: string, type: 'new' | 'old', otherParamsData?: unknown) {
+function chatMessage(
+  question: string,
+  type: 'new' | 'old',
+  otherParamsData?: unknown,
+) {
   if (type === 'old') {
     addAnswerTextList(props.chatRecord.answer_text_list);
     props.sendMessage(question, otherParamsData, props.chatRecord).then(() => {
@@ -123,31 +138,51 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="answer-content">
-    <div v-for="(answerText, index) in answerTextList" :key="index" class="answer-row">
+    <div
+      v-for="(answerText, index) in answerTextList"
+      :key="index"
+      class="answer-row"
+    >
       <div v-if="showAvatar" class="avatar">
         <img v-if="application.avatar" :src="application.avatar" alt="" />
         <span v-else>AI</span>
       </div>
       <div
         class="content"
-        :style="{ paddingRight: showUserAvatar ? 'var(--answer-avatar-offset)' : '0' }"
+        :style="{
+          paddingRight: showUserAvatar ? 'var(--answer-avatar-offset)' : '0',
+        }"
         @mouseup="openControl"
       >
         <ElCard
           v-if="!chatRecord.write_ed && progress"
           shadow="always"
           class="progress-card"
-          style="--el-card-padding: 1px 16px; width: fit-content"
+          style="
+
+            --el-card-padding: 1px 16px;
+
+            width: fit-content;
+          "
         >
           <div class="progress-inner">
-            <ElIcon class="progress-icon"><component :is="progressIcon" /></ElIcon>
+            <ElIcon class="progress-icon">
+              <component :is="progressIcon" />
+            </ElIcon>
             <MdRenderer :source="progress.content" />
           </div>
         </ElCard>
-        <ElCard shadow="always" class="answer-card" style="--el-card-padding: 6px 16px">
+        <ElCard
+          shadow="always"
+          class="answer-card"
+          style="
+
+--el-card-padding: 6px 16px"
+        >
           <MdRenderer
             v-if="
-              (chatRecord.write_ed === undefined || chatRecord.write_ed === true) &&
+              (chatRecord.write_ed === undefined ||
+                chatRecord.write_ed === true) &&
               answerText.length === 0 &&
               answerText
                 .map((item) => item.content)
@@ -171,10 +206,15 @@ onBeforeUnmount(() => {
             />
           </template>
           <p v-else-if="chatRecord.is_stop" class="message-line">已停止回答</p>
-          <p v-else class="message-line">回答生成中 <span class="dotting"></span></p>
+          <p v-else class="message-line">
+            回答生成中 <span class="dotting"></span>
+          </p>
 
           <KnowledgeSourceComponent
-            v-if="showSource(chatRecord) && index === chatRecord.answer_text_list.length - 1"
+            v-if="
+              showSource(chatRecord) &&
+              index === chatRecord.answer_text_list.length - 1
+            "
             :app-type="application.type"
             :application="application"
             :data="chatRecord"
@@ -182,7 +222,9 @@ onBeforeUnmount(() => {
             :type="type"
             @open-execution-detail="emit('openExecutionDetail')"
             @open-paragraph="emit('openParagraph')"
-            @open-paragraph-document="(value) => emit('openParagraphDocument', value)"
+            @open-paragraph-document="
+              (value) => emit('openParagraphDocument', value)
+            "
           />
         </ElCard>
       </div>
@@ -243,8 +285,8 @@ onBeforeUnmount(() => {
 }
 
 .content {
-  min-width: 0;
   width: 100%;
+  min-width: 0;
 }
 
 .progress-card {

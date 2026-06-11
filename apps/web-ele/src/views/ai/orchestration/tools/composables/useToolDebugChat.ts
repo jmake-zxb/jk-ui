@@ -5,6 +5,7 @@
  * 流结束后调用 `listToolRunNodes` 补齐完整数据。
  */
 import type { ToolNodeStep } from '../component/ExecutionDetailCard.vue';
+
 import type { ChatRecord } from '#/components/ai-chat/types/application';
 
 import { ref } from 'vue';
@@ -17,17 +18,17 @@ import {
   listToolRunNodes,
   resumeToolWorkflowStream,
 } from '#/api/ai/tool-workflow';
-import { adaptationUrl } from '#/utils/other';
-
-import { safeParseJson } from '../../utils';
-import { parseDebugSseLine } from '../../workflow/host/workflow-host-shared';
+import { ChatManagement } from '#/components/ai-chat/types/application';
 import {
   applyDebugEventToChat,
   bindChatManagement,
   hydrateChatRecordFromDebugResult,
   resetDebugChatRecord,
 } from '#/components/ai-chat/utils/chat';
-import { ChatManagement } from '#/components/ai-chat/types/application';
+import { adaptationUrl } from '#/utils/other';
+
+import { safeParseJson } from '../../utils';
+import { parseDebugSseLine } from '../../workflow/host/workflow-host-shared';
 
 export interface ToolDebugResult {
   error: boolean;
@@ -160,13 +161,14 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
         result.value.finalOutput = event.payload;
         break;
       }
-      case 'node_reasoning_chunk':
-      case 'node_chunk': {
+      case 'node_chunk':
+      case 'node_reasoning_chunk': {
         const step = findActiveStep(result.value, event.nodeId);
-        if (step && event.content) step.content = `${step.content || ''}${event.content}`;
+        if (step && event.content)
+          step.content = `${step.content || ''}${event.content}`;
         if (step && event.reasoningContent) {
           step.output = {
-            ...(step.output ?? {}),
+            ...step.output,
             reasoning_content: `${step.output?.reasoning_content || ''}${event.reasoningContent}`,
           };
         }
@@ -269,7 +271,8 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
     } finally {
       await hydrateNodeRuns();
       const chatRecord = options.getChatRecord?.();
-      if (chatRecord) hydrateChatRecordFromDebugResult(chatRecord, result.value);
+      if (chatRecord)
+        hydrateChatRecordFromDebugResult(chatRecord, result.value);
       running.value = false;
       abortController = undefined;
     }
@@ -294,10 +297,7 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
    * 复用当前 runId 与同一 chatRecord（在原对话上追加），
    * 仅向后端提交 formDataJson。
    */
-  async function resume(
-    runId: number | string,
-    formDataJson: string,
-  ) {
+  async function resume(runId: number | string, formDataJson: string) {
     if (running.value) return;
     // 续跑前清除上一轮的中断态，避免误判为失败。
     result.value.error = false;

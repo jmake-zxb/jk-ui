@@ -60,7 +60,9 @@ const answerApplication = computed(() => ({
   type: 'WORK_FLOW',
 }));
 
-const answerLoading = computed(() => running.value || !currentChat.value.write_ed);
+const answerLoading = computed(
+  () => running.value || !currentChat.value.write_ed,
+);
 
 const isSuccess = computed(() => {
   if (result.value.error) return false;
@@ -113,7 +115,9 @@ async function executeDebug() {
   if (!toolId.value) return;
 
   try {
-    currentChat.value = createDebugChatRecord(JSON.stringify(inputForm.value, null, 2));
+    currentChat.value = createDebugChatRecord(
+      JSON.stringify(inputForm.value, null, 2),
+    );
     inputDrawerVisible.value = false;
     resultDrawerVisible.value = true;
     activeTab.value = 'output';
@@ -143,7 +147,9 @@ async function sendMessage(question: string, otherParamsData?: unknown) {
   // 其余场景（如重新发起对话）：从头重跑。
   const rerunParams = { ...inputForm.value, ...params };
   if (question?.trim()) rerunParams.message = question;
-  currentChat.value = createDebugChatRecord(question || JSON.stringify(rerunParams, null, 2));
+  currentChat.value = createDebugChatRecord(
+    question || JSON.stringify(rerunParams, null, 2),
+  );
   await debug(rerunParams);
   return true;
 }

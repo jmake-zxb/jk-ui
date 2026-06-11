@@ -192,7 +192,9 @@ watch(
 );
 
 function shareChatHandle() {
-  const appId = (props.appId || id || (props.applicationDetails as any)?.id) as string;
+  const appId = (props.appId ||
+    id ||
+    (props.applicationDetails as any)?.id) as string;
   postShareChat(appId, chartOpenId.value).then((res: any) => {
     const token = res?.shareToken || res?.share_token;
     if (token) {

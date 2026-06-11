@@ -3,9 +3,8 @@ import { computed } from 'vue';
 
 import { ElCard, ElScrollbar, ElText } from 'element-plus';
 
-import { getImgUrl } from '#/utils/file-util';
-
 import MarkdownBlock from '#/components/markdown/MarkdownBlock.vue';
+import { getImgUrl } from '#/utils/file-util';
 
 import CardBox from './CardBox.vue';
 import KnowledgeIcon from './KnowledgeIcon.vue';
@@ -15,7 +14,7 @@ const props = withDefaults(
     content?: string;
     data?: Record<string, any>;
     index?: number;
-    score?: number | null;
+    score?: null | number;
   }>(),
   {
     content: '',
@@ -33,13 +32,19 @@ const meta = computed<Record<string, any>>(() => {
       return {};
     }
   }
-  return props.data.meta && typeof props.data.meta === 'object' ? props.data.meta : {};
+  return props.data.meta && typeof props.data.meta === 'object'
+    ? props.data.meta
+    : {};
 });
 
-const documentName = computed(() => `${props.data.document_name || props.data.title || '知识段落'}`);
-const scoreText = computed(() => (props.score ?? props.data.similarity ?? props.data.score)?.toFixed?.(3));
+const documentName = computed(
+  () => `${props.data.document_name || props.data.title || '知识段落'}`,
+);
+const scoreText = computed(() =>
+  (props.score ?? props.data.similarity ?? props.data.score)?.toFixed?.(3),
+);
 
-function getFileUrl(fileId?: string | number) {
+function getFileUrl(fileId?: number | string) {
   if (!fileId) return '';
   return `/admin/sys-file/details?id=${encodeURIComponent(`${fileId}`)}`;
 }
@@ -72,12 +77,16 @@ function getFileUrl(fileId?: string | number) {
           >
             {{ documentName.trim() }}
           </a>
-          <span v-else :title="documentName.trim()">{{ documentName.trim() }}</span>
+          <span v-else :title="documentName.trim()">{{
+            documentName.trim()
+          }}</span>
         </ElText>
       </ElCard>
       <div class="knowledge-row">
         <KnowledgeIcon :type="data.knowledge_type" :size="18" />
-        <span :title="data.knowledge_name">{{ data.knowledge_name || '-' }}</span>
+        <span :title="data.knowledge_name">{{
+          data.knowledge_name || '-'
+        }}</span>
       </div>
     </template>
   </CardBox>
