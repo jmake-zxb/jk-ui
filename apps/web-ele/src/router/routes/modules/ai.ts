@@ -101,28 +101,53 @@ const routes: RouteRecordRaw[] = [
       },
       {
         component: () =>
-          import('#/views/ai/orchestration/workflow/host/ApplicationWorkflowHost.vue'),
+          import('#/views/ai/orchestration/application-workflow/index.vue'),
         meta: {
           hideInMenu: true,
           title: '智能体工作流',
         },
-        name: 'AiOrchestrationAgentWorkflow',
-        path: '/ai/orchestration/workflow/agent',
+        name: 'AiOrchestrationApplicationWorkflow',
+        path: '/ai/orchestration/applications/:id/workflow',
         props: (route) => ({
-          applicationId: queryString(route.query.applicationId),
+          applicationId: route.params.id,
         }),
       },
       {
         component: () =>
-          import('#/views/ai/orchestration/workflow/host/ToolWorkflowHost.vue'),
+          import('#/views/ai/orchestration/tool-workflow/index.vue'),
         meta: {
           hideInMenu: true,
           title: '工具工作流',
         },
         name: 'AiOrchestrationToolWorkflow',
-        path: '/ai/orchestration/workflow/tool',
+        path: '/ai/orchestration/tools/:id/workflow',
         props: (route) => ({
-          toolId: queryString(route.query.toolId),
+          toolId: route.params.id,
+        }),
+      },
+      {
+        // Legacy routes for backward compatibility
+        meta: {
+          hideInMenu: true,
+          title: '智能体工作流 (旧)',
+        },
+        name: 'AiOrchestrationAgentWorkflow',
+        path: '/ai/orchestration/workflow/agent',
+        redirect: (to) => ({
+          name: 'AiOrchestrationApplicationWorkflow',
+          params: { id: queryString(to.query.applicationId) },
+        }),
+      },
+      {
+        meta: {
+          hideInMenu: true,
+          title: '工具工作流 (旧)',
+        },
+        name: 'AiOrchestrationToolWorkflowLegacy',
+        path: '/ai/orchestration/workflow/tool',
+        redirect: (to) => ({
+          name: 'AiOrchestrationToolWorkflow',
+          params: { id: queryString(to.query.toolId) },
         }),
       },
       {

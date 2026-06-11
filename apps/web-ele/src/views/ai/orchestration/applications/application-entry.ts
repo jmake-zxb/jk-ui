@@ -1,4 +1,3 @@
-export const WORKFLOW_EDITOR_PATH = '/ai/orchestration/workflow/agent/index';
 export const APPLICATION_CHAT_PATH = '/ai/orchestration/public-chat/index';
 export const APPLICATION_DETAIL_PATH =
   '/ai/orchestration/applications/detail/index';
@@ -68,14 +67,10 @@ export function applicationPrimaryEntry(
 ): ApplicationPrimaryEntry {
   const workflow = isWorkflowApplication(application.type);
   if (!workflow) return applicationDetailEntry(application, 'overview');
-  const query: Record<string, number | string> = {};
-  if (application.id !== undefined && application.id !== null) {
-    query.applicationId = application.id;
-  }
   return {
     kind: 'workflow',
     label: '工作流',
-    path: WORKFLOW_EDITOR_PATH,
-    query,
+    path: `/ai/orchestration/applications/${application.id}/workflow`,
+    query: {},
   };
 }
