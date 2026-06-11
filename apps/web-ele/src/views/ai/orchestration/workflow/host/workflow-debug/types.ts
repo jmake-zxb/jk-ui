@@ -13,6 +13,7 @@ export type DebugSseEventName =
   | 'node_chunk'
   | 'node_end'
   | 'node_interrupt'
+  | 'node_reasoning_chunk'
   | 'node_start'
   | 'run_start';
 
@@ -30,6 +31,8 @@ export interface DebugSseEvent {
   nodeType?: null | string;
   /** node_end/node_interrupt/done 携带的 outputJson（JSON 字符串）。 */
   payload?: string;
+  /** node_reasoning_chunk 携带的思考内容增量。 */
+  reasoningContent?: string;
   runId?: number | string;
   versionId?: number | string;
 }

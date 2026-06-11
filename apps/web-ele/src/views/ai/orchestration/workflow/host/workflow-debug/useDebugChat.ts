@@ -15,7 +15,7 @@ import type {
 
 import { ref } from 'vue';
 
-import { listWorkflowNodeRuns } from '#/api/ai/applications';
+import { listWorkflowNodeRuns } from '#/api/ai/application-workflow';
 import { adaptationUrl } from '#/utils/other';
 
 import { recordsOf, safeParseJson } from '../../../utils';
@@ -177,6 +177,14 @@ export function useDebugChat(options: UseDebugChatOptions) {
           step.status = 'WARNING';
           step.expanded = true;
           applyNodeOutput(step, event.payload);
+        }
+        break;
+      }
+      case 'node_reasoning_chunk': {
+        const step = findActiveStep(message, event.nodeId);
+        if (step && event.reasoningContent) {
+          step.reasoningContent =
+            (step.reasoningContent || '') + event.reasoningContent;
         }
         break;
       }

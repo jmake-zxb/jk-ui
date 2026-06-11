@@ -95,6 +95,10 @@ export function parseDebugSseLine(line: string): DebugSseEvent | null {
     nodeName: data.nodeName ?? undefined,
     nodeType: data.nodeType ?? undefined,
     payload: typeof data.payload === 'string' ? data.payload : undefined,
+    reasoningContent:
+      typeof data.reasoningContent === 'string'
+        ? data.reasoningContent
+        : undefined,
     runId: data.runId,
     versionId: data.versionId,
   };
