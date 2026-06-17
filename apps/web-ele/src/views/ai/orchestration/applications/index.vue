@@ -13,19 +13,16 @@ import {
   ArrowDown,
   ChatDotRound,
   CircleCheckFilled,
-  CircleCloseFilled,
-  Connection,
+  Clock,
   CopyDocument,
   Delete,
   Download,
   EditPen,
   FolderAdd,
   FolderOpened,
-  Key,
   Lock,
   MoreFilled,
   Plus,
-  Promotion,
   Rank,
   Refresh,
   Search,
@@ -52,24 +49,25 @@ import {
   ElOption,
   ElPagination,
   ElSelect,
-  ElSwitch,
   ElTable,
   ElTableColumn,
   ElTag,
+  ElTooltip,
   ElTree,
   ElUpload,
 } from 'element-plus';
 
 import {
   batchDeleteApplications,
-  copyApplication,
+  createAccessToken,
   createApplication,
   deleteApplication,
   exportApplication,
+  getApplication,
   importApplication,
   moveApplication,
+  pageAccessTokens,
   pageApplications,
-  updateApplication,
 } from '#/api/ai/applications';
 import {
   createResourceFolder,
@@ -84,8 +82,6 @@ import { pageList as pageUsers } from '#/api/core/user';
 
 import { recordsOf, totalOf } from '../utils';
 import {
-  applicationChatEntry,
-  applicationDetailEntry,
   applicationPrimaryEntry,
   isWorkflowApplication,
   normalizeApplicationType,
@@ -185,9 +181,11 @@ const query = reactive({
   type: '',
 });
 
-// --- Create / edit dialog ---
+// --- Create dialog ---
 const dialogOpen = ref(false);
-const editingId = ref<Id>();
+const saving = ref(false);
+// Workflow template selection (blank / assistant), mirrors MaxKB CreateApplicationDialog.
+const workflowTemplate = ref<'assistant' | 'blank'>('blank');
 const form = reactive<ApplicationPayload>({
   accessEnabled: true,
   description: '',
@@ -198,6 +196,16 @@ const form = reactive<ApplicationPayload>({
   showSource: true,
   type: 'WORK_FLOW',
   workspaceId: 'default',
+});
+
+// --- Copy dialog ---
+const copyDialogOpen = ref(false);
+const copying = ref(false);
+const copyForm = reactive<ApplicationPayload>({
+  description: '',
+  icon: 'App',
+  name: '',
+  type: 'SIMPLE',
 });
 
 // --- Import dialog ---
@@ -240,11 +248,25 @@ const mappings = ref<ResourceMappingRecord[]>([]);
 const mappingsLoading = ref(false);
 
 // --- Computed ---
-const selectedApps = computed(() =>
-  applications.value.filter(
-    (item) => item.id !== undefined && selectedIds.value.includes(item.id),
-  ),
+const currentPageAppIds = computed(() =>
+  applications.value
+    .map((item) => idValue(item.id))
+    .filter((id): id is Id => id !== undefined),
 );
+const isAllCurrentPageSelected = computed(
+  () =>
+    currentPageAppIds.value.length > 0 &&
+    currentPageAppIds.value.every((id) => selectedIds.value.includes(id)),
+);
+const isCurrentPageSelectionIndeterminate = computed(() => {
+  const currentSelectedCount = currentPageAppIds.value.filter((id) =>
+    selectedIds.value.includes(id),
+  ).length;
+  return (
+    currentSelectedCount > 0 &&
+    currentSelectedCount < currentPageAppIds.value.length
+  );
+});
 const hasActiveFilter = computed(
   () =>
     query.name.trim() !== '' ||
@@ -500,6 +522,60 @@ function selectFolder(folder: FolderNode) {
   searchApplications();
 }
 
+// --- Folder tree drag-and-drop ---
+function allowDragFolder(): boolean {
+  return true;
+}
+
+function allowDropFolder(
+  dragging: FolderNode,
+  drop: FolderNode,
+  type: 'inner' | 'next' | 'prev',
+): boolean {
+  // Don't allow dropping onto the synthetic root
+  if (drop.id === rootFolderId) return type === 'inner';
+  // Don't allow dropping a folder onto itself
+  if (dragging.id === drop.id) return false;
+  return true;
+}
+
+async function handleFolderDragDrop(
+  dragging: FolderNode,
+  drop: FolderNode,
+  type: 'inner' | 'next' | 'prev',
+) {
+  const dragId = idValue(dragging.id);
+  if (dragId === undefined) return;
+
+  let targetParentId: Id | undefined;
+  if (type === 'inner') {
+    targetParentId = drop.id === rootFolderId ? undefined : drop.id;
+  } else {
+    // 'prev' or 'next' → same parent as drop node
+    targetParentId =
+      drop.id === rootFolderId
+        ? undefined
+        : idValue(drop.parentId ?? drop.parent_id);
+  }
+
+  treeLoading.value = true;
+  try {
+    await updateResourceFolder(dragId, {
+      name: stringValue(dragging.name, '未命名文件夹'),
+      type: 'APPLICATION',
+      ...(targetParentId === undefined
+        ? {}
+        : { parentId: targetParentId, parent_id: targetParentId }),
+    });
+    ElMessage.success('文件夹已移动');
+    await loadFolders();
+  } catch {
+    ElMessage.error('移动失败');
+  } finally {
+    treeLoading.value = false;
+  }
+}
+
 // --- Data loading ---
 async function loadApplications() {
   loading.value = true;
@@ -558,31 +634,25 @@ function handlePageChange(page: number) {
   void loadApplications();
 }
 
-// --- Create / edit dialog ---
-function resetForm(row?: ApplicationRecord, type = 'WORK_FLOW') {
-  editingId.value = row?.id;
+// --- Create dialog (MaxKB: only create, no edit from list page) ---
+function resetForm(type = 'WORK_FLOW') {
   Object.assign(form, {
-    accessEnabled: row?.accessEnabled !== false,
-    description:
-      applicationDescription(row) === '暂无描述'
-        ? ''
-        : applicationDescription(row),
-    folderId: idValue(firstValue(row, ['folderId', 'folder_id'])),
-    icon: stringValue(row?.icon, 'App'),
-    name: row ? applicationName(row) : '',
-    showGuide: row?.showGuide !== false,
-    showHistory: row?.showHistory !== false,
-    showSource: row?.showSource !== false,
-    type: row?.type || type,
-    workspaceId: stringValue(
-      firstValue(row, ['workspaceId', 'workspace_id']),
-      'default',
-    ),
+    accessEnabled: true,
+    description: '',
+    folderId: undefined,
+    icon: 'App',
+    name: '',
+    showGuide: true,
+    showHistory: true,
+    showSource: true,
+    type,
+    workspaceId: 'default',
   });
+  workflowTemplate.value = 'blank';
 }
 
-function openDialog(row?: ApplicationRecord, type = 'WORK_FLOW') {
-  resetForm(row, type);
+function openDialog(type = 'WORK_FLOW') {
+  resetForm(type);
   dialogOpen.value = true;
 }
 
@@ -595,26 +665,33 @@ function createdIdFromResponse(response: unknown): Id | undefined {
   return idValue(data.id);
 }
 
+function selectWorkflowTemplate(template: 'assistant' | 'blank') {
+  workflowTemplate.value = template;
+}
+
 async function saveApplication() {
-  if (!form.name) {
+  const trimmedName = form.name?.trim();
+  if (!trimmedName) {
     ElMessage.warning('请输入应用名称');
     return;
   }
-  const payload: ApplicationPayload = { ...form };
-  const wasCreating = editingId.value === undefined;
-  const saved = await (editingId.value
-    ? updateApplication(editingId.value, payload)
-    : createApplication(payload));
-  ElMessage.success('保存成功');
-  dialogOpen.value = false;
-  await loadApplications();
-  if (wasCreating && normalizeAppType(payload.type) === 'WORK_FLOW') {
-    const createdId =
-      createdIdFromResponse(saved) ||
-      applications.value.find((item) => item.name === payload.name)?.id;
-    if (createdId !== undefined) {
-      openWorkflow({ id: createdId, type: payload.type });
+  saving.value = true;
+  try {
+    const payload: ApplicationPayload = { ...form, name: trimmedName };
+    const saved = await createApplication(payload);
+    ElMessage.success('创建成功');
+    dialogOpen.value = false;
+    await loadApplications();
+    if (normalizeAppType(payload.type) === 'WORK_FLOW') {
+      const createdId =
+        createdIdFromResponse(saved) ||
+        applications.value.find((item) => item.name === trimmedName)?.id;
+      if (createdId !== undefined) {
+        openWorkflow({ id: createdId, type: payload.type });
+      }
     }
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -644,11 +721,53 @@ function removeSelectedApplications() {
   );
 }
 
-async function duplicateApplication(row: ApplicationRecord) {
+// --- Copy application (MaxKB CopyApplicationDialog: prefill from source, editable name/desc) ---
+async function openCopyDialog(row: ApplicationRecord) {
   if (row.id === undefined) return;
-  await copyApplication(row.id);
-  ElMessage.success('复制成功');
-  await loadApplications();
+  let source: ApplicationRecord = row;
+  try {
+    const detail = await getApplication(row.id);
+    if (isRecord(detail)) source = { ...row, ...(detail as ApplicationRecord) };
+  } catch {
+    // fall back to row data
+  }
+  Object.assign(copyForm, {
+    description: applicationDescription(source),
+    icon: stringValue(source.icon, 'App'),
+    name: `${applicationName(source)} 副本`,
+    type: source.type || 'SIMPLE',
+    workspaceId: stringValue(
+      firstValue(source, ['workspaceId', 'workspace_id']),
+      'default',
+    ),
+  });
+  copyDialogOpen.value = true;
+}
+
+async function confirmCopyApplication() {
+  const trimmedName = copyForm.name?.trim();
+  if (!trimmedName) {
+    ElMessage.warning('请输入应用名称');
+    return;
+  }
+  copying.value = true;
+  try {
+    const payload: ApplicationPayload = { ...copyForm, name: trimmedName };
+    const saved = await createApplication(payload);
+    ElMessage.success('复制成功');
+    copyDialogOpen.value = false;
+    await loadApplications();
+    if (normalizeAppType(payload.type) === 'WORK_FLOW') {
+      const createdId =
+        createdIdFromResponse(saved) ||
+        applications.value.find((item) => item.name === trimmedName)?.id;
+      if (createdId !== undefined) {
+        openWorkflow({ id: createdId, type: payload.type });
+      }
+    }
+  } finally {
+    copying.value = false;
+  }
 }
 
 async function exportApplicationFile(row: ApplicationRecord) {
@@ -708,9 +827,68 @@ function toggleSelection(row: ApplicationRecord, checked: boolean) {
     : selectedIds.value.filter((id) => id !== row.id);
 }
 
-function toggleBatchMode() {
-  batchMode.value = !batchMode.value;
+function toggleCurrentPageSelection(checked: boolean) {
+  if (checked) {
+    selectedIds.value = [
+      ...new Set([...currentPageAppIds.value, ...selectedIds.value]),
+    ];
+  } else {
+    const pageIds = new Set(currentPageAppIds.value);
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.has(id));
+  }
+}
+
+function toggleBatchMode(activeOrEvent?: boolean | MouseEvent) {
+  if (typeof activeOrEvent === 'boolean') {
+    batchMode.value = activeOrEvent;
+  } else if (activeOrEvent instanceof MouseEvent) {
+    activeOrEvent.preventDefault();
+    batchMode.value = !batchMode.value;
+  } else {
+    batchMode.value = !batchMode.value;
+  }
   if (!batchMode.value) selectedIds.value = [];
+}
+
+// --- toChat: open public chat (MaxKB `toChat`, jk-ui token-based public chat route) ---
+function tokenTextOf(record?: Record<string, unknown>): string {
+  return stringValue(
+    firstValue(record, ['token', 'accessToken', 'access_token']),
+  );
+}
+
+const toChatLoadingIds = ref<Id[]>([]);
+
+async function toChat(row: ApplicationRecord) {
+  if (row.id === undefined) return;
+  toChatLoadingIds.value = [...toChatLoadingIds.value, row.id];
+  try {
+    // Get-or-create an access token (jk-ui has no get-or-create endpoint).
+    const page = await pageAccessTokens(row.id, {
+      current: 1,
+      page: 1,
+      size: 20,
+    });
+    const records = recordsOf<Record<string, unknown>>(page);
+    let token = tokenTextOf(records[0]);
+    if (!token) {
+      const created = await createAccessToken(row.id, {
+        enabled: true,
+        name: '默认令牌',
+      });
+      token = tokenTextOf(created as Record<string, unknown>);
+    }
+    if (!token) {
+      ElMessage.warning('未找到公开访问令牌');
+      return;
+    }
+    const url = `/ui/chat/${encodeURIComponent(token)}`;
+    window.open(url);
+  } finally {
+    toChatLoadingIds.value = toChatLoadingIds.value.filter(
+      (id) => id !== row.id,
+    );
+  }
 }
 
 // --- Navigation ---
@@ -719,13 +897,8 @@ function openApplicationSetting(row: ApplicationRecord) {
     openWorkflow(row);
     return;
   }
-  const entry = applicationDetailEntry(row, 'setting');
-  router.push({ path: entry.path, query: entry.query });
-}
-
-function openApplicationAccess(row: ApplicationRecord) {
-  const entry = applicationDetailEntry(row, 'overview');
-  router.push({ path: entry.path, query: entry.query });
+  if (row.id === undefined) return;
+  router.push(`/ai/orchestration/applications/detail/${row.id}/setting`);
 }
 
 function openWorkflow(row?: ApplicationRecord) {
@@ -749,21 +922,20 @@ function openApplicationPrimary(row?: ApplicationRecord) {
   });
 }
 
-function openApplicationDetail(row: ApplicationRecord) {
-  if (!row?.id) return;
-  const entry = applicationDetailEntry(row, 'overview');
-  router.push({ path: entry.path, query: entry.query });
-}
-
-function openPublic(row?: ApplicationRecord) {
-  if (!row?.id) return;
-  const entry = applicationChatEntry(row);
-  router.push({ path: entry.path, query: entry.query });
-}
-
-function openPublishManagement(row: ApplicationRecord) {
-  const entry = applicationDetailEntry(row, 'overview');
-  router.push({ path: entry.path, query: entry.query });
+// --- Card click (MaxKB goApp): batch toggle + Ctrl+Click new tab ---
+function handleCardClick(event: MouseEvent, row: ApplicationRecord) {
+  if (batchMode.value) {
+    const checked = !isSelected(row);
+    toggleSelection(row, checked);
+    return;
+  }
+  const targetPath = `/ai/orchestration/applications/detail/${row.id}/overview`;
+  if (event.ctrlKey || event.metaKey) {
+    const url = router.resolve({ path: targetPath }).href;
+    window.open(url);
+  } else {
+    router.push(targetPath);
+  }
 }
 
 // --- Search type switcher ---
@@ -954,7 +1126,7 @@ async function saveFolderMove() {
 }
 
 // --- Move dialog ---
-function openMoveDialog(row: ApplicationRecord) {
+function openMoveDialog(row?: ApplicationRecord) {
   moveTargetApp.value = row;
   selectedFolderId.value = undefined;
   moveDialogOpen.value = true;
@@ -972,12 +1144,32 @@ async function loadMoveFolders() {
 }
 
 async function confirmMove() {
-  const app = moveTargetApp.value;
-  if (!app?.id || selectedFolderId.value === undefined) return;
-  await moveApplication(app.id, { targetFolderId: selectedFolderId.value });
-  ElMessage.success('移动成功');
-  moveDialogOpen.value = false;
-  await loadApplications();
+  if (selectedFolderId.value === undefined) return;
+  moveLoading.value = true;
+  try {
+    if (moveTargetApp.value?.id !== undefined) {
+      // single
+      await moveApplication(moveTargetApp.value.id, {
+        targetFolderId: selectedFolderId.value,
+      });
+    } else if (batchMode.value && selectedIds.value.length > 0) {
+      // batch
+      await Promise.all(
+        selectedIds.value.map((id) =>
+          moveApplication(id, { targetFolderId: selectedFolderId.value }),
+        ),
+      );
+      selectedIds.value = [];
+      batchMode.value = false;
+    } else {
+      return;
+    }
+    ElMessage.success('移动成功');
+    moveDialogOpen.value = false;
+    await loadApplications();
+  } finally {
+    moveLoading.value = false;
+  }
 }
 
 // --- Triggers ---
@@ -1076,10 +1268,14 @@ onMounted(() => {
             :data="visibleFolderTree"
             :expand-on-click-node="false"
             :props="{ children: 'children', label: 'name' }"
+            :allow-drop="allowDropFolder"
+            :allow-drag="allowDragFolder"
             default-expand-all
+            draggable
             highlight-current
             node-key="id"
             @node-click="selectFolder"
+            @node-drop="handleFolderDragDrop"
           >
             <template #default="{ data }">
               <div
@@ -1266,7 +1462,7 @@ onMounted(() => {
                 </ElButton>
                 <template #dropdown>
                   <ElDropdownMenu class="create-dropdown">
-                    <ElDropdownItem @click="openDialog(undefined, 'SIMPLE')">
+                    <ElDropdownItem @click="openDialog('SIMPLE')">
                       <div class="create-option">
                         <span class="create-option__icon simple">简</span>
                         <span>
@@ -1275,7 +1471,7 @@ onMounted(() => {
                         </span>
                       </div>
                     </ElDropdownItem>
-                    <ElDropdownItem @click="openDialog(undefined, 'WORK_FLOW')">
+                    <ElDropdownItem @click="openDialog('WORK_FLOW')">
                       <div class="create-option">
                         <span class="create-option__icon advanced">高</span>
                         <span>
@@ -1300,14 +1496,36 @@ onMounted(() => {
             </div>
           </section>
 
-          <section v-if="batchMode" class="batch-strip">
-            <span>
-              已选择 {{ selectedIds.length }} / {{ applications.length }}
+          <div v-if="batchMode" class="batch-operation-bar">
+            <ElCheckbox
+              :indeterminate="isCurrentPageSelectionIndeterminate"
+              :model-value="isAllCurrentPageSelected"
+              @change="
+                (checked) => toggleCurrentPageSelection(Boolean(checked))
+              "
+            >
+              全选
+            </ElCheckbox>
+            <ElButton
+              :disabled="selectedIds.length === 0"
+              @click="openMoveDialog()"
+            >
+              转移到
+            </ElButton>
+            <ElButton
+              :disabled="selectedIds.length === 0"
+              type="danger"
+              @click="removeSelectedApplications"
+            >
+              删除
+            </ElButton>
+            <span class="batch-operation-bar__summary">
+              已选择 {{ selectedIds.length }}/{{ total }} 个应用
             </span>
-            <span class="muted">
-              {{ selectedApps.map(applicationName).join('、') }}
-            </span>
-          </section>
+            <ElButton link type="primary" @click="toggleBatchMode(false)">
+              取消选择
+            </ElButton>
+          </div>
 
           <section
             class="application-content"
@@ -1318,7 +1536,7 @@ onMounted(() => {
                 v-for="item in applications"
                 :key="item.id"
                 class="application-card"
-                @click="openApplicationDetail(item)"
+                @click="handleCardClick($event, item)"
               >
                 <!-- Batch checkbox - position absolute top-left -->
                 <ElCheckbox
@@ -1375,7 +1593,7 @@ onMounted(() => {
                   {{ applicationDescription(item) }}
                 </div>
 
-                <!-- Footer - absolute bottom -->
+                <!-- Footer - absolute bottom (MaxKB: published: SuccessFilled + 已发布 + divider + clock + update_time; unpublished: disabled icon + 未发布) -->
                 <div class="card-footer">
                   <div class="card-footer-left card-footer-default">
                     <template v-if="publishState(item) === 'published'">
@@ -1383,88 +1601,95 @@ onMounted(() => {
                         <CircleCheckFilled />
                       </ElIcon>
                       <span class="card-footer-text">已发布</span>
-                      <span
-                        v-if="updateTimeLabel(item) !== '-'"
-                        class="publish-time"
-                        >{{ updateTimeLabel(item) }}</span
-                      >
+                      <span class="card-footer-separator"></span>
+                      <ElIcon class="card-publish-icon muted">
+                        <Clock />
+                      </ElIcon>
+                      <span class="card-footer-text muted">{{
+                        updateTimeLabel(item)
+                      }}</span>
                     </template>
                     <template v-else>
                       <ElIcon class="card-publish-icon unpublished">
-                        <CircleCloseFilled />
+                        <Lock />
                       </ElIcon>
                       <span class="card-footer-text">未发布</span>
                     </template>
                   </div>
 
-                  <!-- Hover actions - shows on hover via CSS -->
+                  <!-- Hover actions - shows on hover via CSS (MaxKB mouseEnter slot) -->
                   <div class="card-hover-actions" @click.stop>
-                    <ElButton
-                      link
-                      type="primary"
-                      :icon="ChatDotRound"
-                      @click="openPublic(item)"
-                    >
-                      对话
-                    </ElButton>
-                    <ElDropdown trigger="click" :teleported="false">
-                      <ElButton link>
-                        更多
-                        <ElIcon><MoreFilled /></ElIcon>
+                    <!-- toChat button (MaxKB: "开始对话") -->
+                    <ElTooltip content="开始对话" placement="top">
+                      <ElButton
+                        text
+                        :disabled="publishState(item) !== 'published'"
+                        :loading="toChatLoadingIds.includes(item.id!)"
+                        @click="toChat(item)"
+                      >
+                        <ElIcon class="color-secondary">
+                          <ChatDotRound />
+                        </ElIcon>
+                      </ElButton>
+                    </ElTooltip>
+                    <span class="card-hover-action-divider"></span>
+                    <ElDropdown trigger="click">
+                      <ElButton text @click.stop>
+                        <ElIcon class="color-secondary"><MoreFilled /></ElIcon>
                       </ElButton>
                       <template #dropdown>
                         <ElDropdownMenu>
                           <ElDropdownItem @click="openApplicationSetting(item)">
-                            <ElIcon><Setting /></ElIcon>
+                            <ElIcon class="color-secondary"><Setting /></ElIcon>
                             设置
                           </ElDropdownItem>
-                          <ElDropdownItem @click="openApplicationAccess(item)">
-                            <ElIcon><Key /></ElIcon>
-                            访问管理
-                          </ElDropdownItem>
                           <ElDropdownItem @click="openAuthDrawer(item)">
-                            <ElIcon><Lock /></ElIcon>
+                            <ElIcon class="color-secondary"><Lock /></ElIcon>
                             资源授权
                           </ElDropdownItem>
                           <ElDropdownItem @click="openMappingsDrawer(item)">
-                            <ElIcon><Share /></ElIcon>
+                            <ElIcon class="color-secondary"><Share /></ElIcon>
                             查看关联资源
                           </ElDropdownItem>
-                          <ElDropdownItem @click="navigateToTriggers(item)">
-                            <ElIcon><AlarmClock /></ElIcon>
+                          <ElDropdownItem
+                            :disabled="publishState(item) !== 'published'"
+                            @click="navigateToTriggers(item)"
+                          >
+                            <ElIcon class="color-secondary">
+                              <AlarmClock />
+                            </ElIcon>
                             触发器
                           </ElDropdownItem>
+                          <ElDropdownItem
+                            :disabled="publishState(item) !== 'published'"
+                            @click="toChat(item)"
+                          >
+                            <ElIcon class="color-secondary">
+                              <ChatDotRound />
+                            </ElIcon>
+                            开始对话
+                          </ElDropdownItem>
                           <ElDropdownItem @click="openMoveDialog(item)">
-                            <ElIcon><Rank /></ElIcon>
+                            <ElIcon class="color-secondary"><Rank /></ElIcon>
                             转移到
                           </ElDropdownItem>
-                          <ElDropdownItem
-                            v-if="isWorkflowApplication(item.type)"
-                            @click="openPublishManagement(item)"
-                          >
-                            <ElIcon><Promotion /></ElIcon>
-                            发布管理
-                          </ElDropdownItem>
-                          <ElDropdownItem
-                            v-if="isWorkflowApplication(item.type)"
-                            @click="openWorkflow(item)"
-                          >
-                            <ElIcon><Connection /></ElIcon>
-                            工作流编辑
-                          </ElDropdownItem>
-                          <ElDropdownItem @click="duplicateApplication(item)">
-                            <ElIcon><CopyDocument /></ElIcon>
+                          <ElDropdownItem @click="openCopyDialog(item)">
+                            <ElIcon class="color-secondary">
+                              <CopyDocument />
+                            </ElIcon>
                             复制
                           </ElDropdownItem>
                           <ElDropdownItem @click="exportApplicationFile(item)">
-                            <ElIcon><Download /></ElIcon>
+                            <ElIcon class="color-secondary">
+                              <Download />
+                            </ElIcon>
                             导出
                           </ElDropdownItem>
                           <ElDropdownItem
                             divided
                             @click="removeApplication(item)"
                           >
-                            <ElIcon><Delete /></ElIcon>
+                            <ElIcon class="color-secondary"><Delete /></ElIcon>
                             删除
                           </ElDropdownItem>
                         </ElDropdownMenu>
@@ -1494,34 +1719,110 @@ onMounted(() => {
 
       <ElDialog
         v-model="dialogOpen"
-        :title="editingId ? '设置应用' : '创建应用'"
-        width="560px"
+        :title="
+          normalizeAppType(form.type) === 'WORK_FLOW'
+            ? '创建工作流应用'
+            : '创建应用'
+        "
+        width="650px"
+        :close-on-click-modal="false"
       >
-        <ElForm label-width="90px" :model="form">
-          <ElFormItem label="应用名称">
-            <ElInput v-model="form.name" />
+        <ElForm label-position="top" :model="form">
+          <ElFormItem label="应用名称" required>
+            <ElInput
+              v-model="form.name"
+              maxlength="64"
+              placeholder="请输入应用名称"
+              show-word-limit
+            />
           </ElFormItem>
-          <ElFormItem label="应用描述">
-            <ElInput v-model="form.description" type="textarea" :rows="3" />
+          <ElFormItem label="描述">
+            <ElInput
+              v-model="form.description"
+              type="textarea"
+              :rows="3"
+              maxlength="256"
+              placeholder="请输入应用描述"
+              show-word-limit
+            />
           </ElFormItem>
-          <ElFormItem label="应用类型">
-            <ElInput :model-value="appTypeLabel(form.type)" disabled />
-          </ElFormItem>
-          <ElFormItem label="工作空间">
-            <ElInput v-model="form.workspaceId" />
-          </ElFormItem>
-          <ElFormItem label="应用能力">
-            <div class="switch-row">
-              <ElSwitch v-model="form.accessEnabled" active-text="公开访问" />
-              <ElSwitch v-model="form.showSource" active-text="引用来源" />
-              <ElSwitch v-model="form.showHistory" active-text="历史记录" />
-              <ElSwitch v-model="form.showGuide" active-text="开场引导" />
+          <!-- Workflow template selection (blank / assistant), mirrors MaxKB -->
+          <ElFormItem
+            v-if="normalizeAppType(form.type) === 'WORK_FLOW'"
+            label="工作流模板"
+          >
+            <div class="template-cards">
+              <div
+                class="template-card"
+                :class="{
+                  'template-card--active': workflowTemplate === 'blank',
+                }"
+                @click="selectWorkflowTemplate('blank')"
+              >
+                <span class="create-option__icon simple">空</span>
+                <strong>空白应用</strong>
+              </div>
+              <div
+                class="template-card"
+                :class="{
+                  'template-card--active': workflowTemplate === 'assistant',
+                }"
+                @click="selectWorkflowTemplate('assistant')"
+              >
+                <span class="create-option__icon advanced">助</span>
+                <strong>助手应用</strong>
+              </div>
             </div>
           </ElFormItem>
         </ElForm>
         <template #footer>
-          <ElButton @click="dialogOpen = false">取消</ElButton>
-          <ElButton type="primary" @click="saveApplication">保存</ElButton>
+          <ElButton :loading="saving" @click="dialogOpen = false">
+            取消
+          </ElButton>
+          <ElButton type="primary" :loading="saving" @click="saveApplication">
+            创建
+          </ElButton>
+        </template>
+      </ElDialog>
+
+      <!-- Copy Application Dialog -->
+      <ElDialog
+        v-model="copyDialogOpen"
+        title="复制应用"
+        width="650px"
+        :close-on-click-modal="false"
+      >
+        <ElForm label-position="top" :model="copyForm">
+          <ElFormItem label="应用名称" required>
+            <ElInput
+              v-model="copyForm.name"
+              maxlength="64"
+              placeholder="请输入应用名称"
+              show-word-limit
+            />
+          </ElFormItem>
+          <ElFormItem label="描述">
+            <ElInput
+              v-model="copyForm.description"
+              type="textarea"
+              :rows="3"
+              maxlength="256"
+              placeholder="请输入应用描述"
+              show-word-limit
+            />
+          </ElFormItem>
+        </ElForm>
+        <template #footer>
+          <ElButton :loading="copying" @click="copyDialogOpen = false">
+            取消
+          </ElButton>
+          <ElButton
+            type="primary"
+            :loading="copying"
+            @click="confirmCopyApplication"
+          >
+            复制
+          </ElButton>
         </template>
       </ElDialog>
 

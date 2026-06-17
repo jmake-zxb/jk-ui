@@ -32,6 +32,7 @@ import {
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,
+  ElDrawer,
   ElEmpty,
   ElForm,
   ElFormItem,
@@ -71,9 +72,11 @@ import {
   renameApplicationChat,
   toggleAccessToken,
   toggleApplicationKey,
+  updateAccessToken,
   updateApplication,
 } from '#/api/ai/applications';
 import { getApplicationStats } from '#/api/ai/dashboard';
+import MdRenderer from '#/components/markdown/MdRenderer.vue';
 import { adaptationUrl } from '#/utils/other';
 
 import {
@@ -85,7 +88,6 @@ import {
 } from '../../utils';
 import {
   APPLICATION_DETAIL_PATH,
-  applicationChatEntry,
   isWorkflowApplication,
 } from '../application-entry';
 import DisplaySettingDialog from '../DisplaySettingDialog.vue';
@@ -140,6 +142,9 @@ const embedDialogRef = ref<InstanceType<typeof EmbedDialog>>();
 const accessLimitDialogOpen = ref(false);
 const displaySettingDialogOpen = ref(false);
 const xpackDisplayDialogVisible = ref(false);
+const chatRecordDrawerOpen = ref(false);
+const chatRecordDrawerTitle = ref('');
+const chatRecordLoading = ref(false);
 const chatSessions = ref<JsonRecord[]>([]);
 const chatRecords = ref<JsonRecord[]>([]);
 const selectedChatId = ref<Id>();
@@ -295,12 +300,9 @@ const primaryTokenEnabled = computed(() =>
 );
 const primaryTokenText = computed(() => tokenText(primaryAccessToken.value));
 const publicShareUrl = computed(() => {
-  const id = applicationId.value;
-  if (!id) return '';
   const token = primaryTokenText.value;
-  const params = new URLSearchParams({ applicationId: `${id}` });
-  if (token) params.set('token', token);
-  return `${window.location.origin}/ai/orchestration/public-chat/index?${params.toString()}`;
+  if (!token) return '';
+  return `${window.location.origin}/ui/chat/${encodeURIComponent(token)}`;
 });
 const apiBaseUrl = computed(() => {
   const id = applicationId.value;
@@ -324,7 +326,7 @@ const navItems: Array<{
 ];
 
 function routeApplicationId(): Id | undefined {
-  const value = route.query.applicationId;
+  const value = route.params.id;
   const first = Array.isArray(value) ? value[0] : value;
   return first === null || first === undefined || first === ''
     ? undefined
@@ -332,9 +334,18 @@ function routeApplicationId(): Id | undefined {
 }
 
 function routeTab(): ApplicationDetailTab {
-  const value = route.query.tab;
+  const value = route.params.tab;
   const first = Array.isArray(value) ? value[0] : value;
-  return first === 'setting' || first === 'chat-log' ? first : 'overview';
+  const validTabs: ApplicationDetailTab[] = [
+    'overview',
+    'setting',
+    'chat-log',
+    'access',
+    'chat-user',
+  ];
+  return validTabs.includes(first as ApplicationDetailTab)
+    ? (first as ApplicationDetailTab)
+    : 'overview';
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -529,13 +540,22 @@ async function loadChatRecords() {
     recordTotal.value = 0;
     return;
   }
-  const response = await pageApplicationChatRecords(id, selectedChatId.value, {
-    current: recordQuery.current,
-    page: recordQuery.page,
-    size: recordQuery.size,
-  });
-  chatRecords.value = recordsOf<JsonRecord>(response);
-  recordTotal.value = totalOf(response);
+  chatRecordLoading.value = true;
+  try {
+    const response = await pageApplicationChatRecords(
+      id,
+      selectedChatId.value,
+      {
+        current: recordQuery.current,
+        page: recordQuery.page,
+        size: recordQuery.size,
+      },
+    );
+    chatRecords.value = recordsOf<JsonRecord>(response);
+    recordTotal.value = totalOf(response);
+  } finally {
+    chatRecordLoading.value = false;
+  }
 }
 
 async function openDebugChat() {
@@ -696,17 +716,18 @@ function goBack() {
 
 function goTab(tab: ApplicationDetailTab) {
   if (tab === activeTab.value) return;
-  router.push({
-    path: APPLICATION_DETAIL_PATH,
-    query: { applicationId: applicationId.value, tab },
-  });
+  const id = applicationId.value;
+  if (!id) return;
+  router.push(`${APPLICATION_DETAIL_PATH}/${id}/${tab}`);
 }
 
 function goChat() {
-  const id = applicationId.value;
-  if (!id) return;
-  const entry = applicationChatEntry({ id });
-  router.push({ path: entry.path, query: entry.query });
+  const token = primaryTokenText.value;
+  if (!token) {
+    ElMessage.warning('请先启用公开访问令牌');
+    return;
+  }
+  router.push(`/ui/chat/${encodeURIComponent(token)}`);
 }
 
 async function copyText(text: string) {
@@ -724,12 +745,24 @@ async function changeAccessToken(enabled: boolean | number | string) {
   const nextEnabled = enabled === true || enabled === 'true' || enabled === 1;
   const token = primaryAccessToken.value;
   const tokenId = idValue(firstValue(token, ['id']));
+
+  // Toggle token
   await (!token || tokenId === undefined
     ? createAccessToken(id, {
         enabled: nextEnabled,
         name: '默认令牌',
       })
     : toggleAccessToken(id, tokenId, nextEnabled));
+
+  // Also update application's accessEnabled field
+  if (nextEnabled) {
+    const payload = applicationDetailPayload({ accessEnabled: true });
+    if (payload) {
+      await updateApplication(id, payload);
+      application.value = { ...application.value, ...payload };
+    }
+  }
+
   await loadAccessTokens();
   ElMessage.success(nextEnabled ? '访问已启用' : '访问已停用');
 }
@@ -810,17 +843,33 @@ function openAccessLimitDialog() {
   accessLimitDialogOpen.value = true;
 }
 
-function saveAccessLimit() {
-  if (primaryAccessToken.value) {
-    primaryAccessToken.value.accessNum = accessLimitForm.accessNum;
-    primaryAccessToken.value.access_num = accessLimitForm.accessNum;
-    primaryAccessToken.value.whiteActive = accessLimitForm.whiteActive;
-    primaryAccessToken.value.white_active = accessLimitForm.whiteActive;
-    primaryAccessToken.value.whiteList = accessLimitForm.whiteList
-      ? accessLimitForm.whiteList.split('\n').filter(Boolean)
-      : [];
-    primaryAccessToken.value.white_list = primaryAccessToken.value.whiteList;
+async function saveAccessLimit() {
+  const id = applicationId.value;
+  const token = primaryAccessToken.value;
+  const tokenId = idValue(firstValue(token, ['id']));
+  if (!id || !token || tokenId === undefined) {
+    ElMessage.warning('请先启用公开访问令牌');
+    return;
   }
+
+  const payload = {
+    accessNum: accessLimitForm.accessNum,
+    whiteActive: accessLimitForm.whiteActive,
+    whiteList: accessLimitForm.whiteList
+      ? accessLimitForm.whiteList.split('\n').filter(Boolean)
+      : [],
+  };
+
+  await updateAccessToken(id, tokenId, payload);
+
+  // Update local state
+  token.accessNum = payload.accessNum;
+  token.access_num = payload.accessNum;
+  token.whiteActive = payload.whiteActive;
+  token.white_active = payload.whiteActive;
+  token.whiteList = payload.whiteList;
+  token.white_list = payload.whiteList;
+
   accessLimitDialogOpen.value = false;
   ElMessage.success('保存成功');
 }
@@ -854,15 +903,27 @@ async function saveDisplaySettings() {
     showSource: displayForm.showSource,
   });
   if (!id || !payload) return;
+
+  // Save application-level settings
   await updateApplication(id, payload);
   application.value = { ...application.value, ...payload };
-  if (primaryAccessToken.value) {
-    primaryAccessToken.value.language = displayForm.language;
-    primaryAccessToken.value.showSource = displayForm.showSource;
-    primaryAccessToken.value.show_source = displayForm.showSource;
-    primaryAccessToken.value.showExec = displayForm.showExec;
-    primaryAccessToken.value.show_exec = displayForm.showExec;
+
+  // Save token-level settings
+  const token = primaryAccessToken.value;
+  const tokenId = idValue(firstValue(token, ['id']));
+  if (token && tokenId !== undefined) {
+    await updateAccessToken(id, tokenId, {
+      language: displayForm.language,
+      showExec: displayForm.showExec,
+      showSource: displayForm.showSource,
+    });
+    token.language = displayForm.language;
+    token.showSource = displayForm.showSource;
+    token.show_source = displayForm.showSource;
+    token.showExec = displayForm.showExec;
+    token.show_exec = displayForm.showExec;
   }
+
   displaySettingDialogOpen.value = false;
   ElMessage.success('保存成功');
 }
@@ -936,9 +997,20 @@ function selectChat(row: JsonRecord) {
   const id = idValue(firstValue(row, ['id']));
   if (id === undefined) return;
   selectedChatId.value = id;
+  chatRecordDrawerTitle.value = stringValue(
+    firstValue(row, ['abstract', 'title']),
+    '对话记录',
+  );
+  chatRecordDrawerOpen.value = true;
   recordQuery.page = 1;
   recordQuery.current = 1;
   void loadChatRecords();
+}
+
+function closeChatRecordDrawer() {
+  chatRecordDrawerOpen.value = false;
+  chatRecords.value = [];
+  selectedChatId.value = undefined;
 }
 
 function openAnnotation(row: JsonRecord) {
@@ -1063,7 +1135,7 @@ async function clearAllChats() {
 }
 
 watch(
-  () => route.query.tab,
+  () => route.params.tab,
   async () => {
     activeTab.value = routeTab();
     await loadCurrentTab();
@@ -1071,7 +1143,7 @@ watch(
 );
 
 watch(
-  () => route.query.applicationId,
+  () => route.params.id,
   async () => {
     selectedChatId.value = undefined;
     chatRecords.value = [];
@@ -1206,25 +1278,37 @@ onMounted(loadPage);
                   <div class="section-actions">
                     <ElButton
                       :icon="ChatDotRound"
-                      :disabled="!primaryTokenEnabled"
+                      :disabled="!primaryTokenEnabled || !isPublished"
                       @click="goChat"
                     >
                       去对话
                     </ElButton>
                     <ElButton
                       :icon="Connection"
-                      :disabled="!primaryTokenEnabled"
+                      :disabled="!primaryTokenEnabled || !isPublished"
                       @click="openEmbedDialog"
                     >
                       嵌入第三方
                     </ElButton>
-                    <ElButton :icon="Lock" @click="openAccessLimitDialog">
+                    <ElButton
+                      :icon="Lock"
+                      :disabled="!isPublished"
+                      @click="openAccessLimitDialog"
+                    >
                       访问限制
                     </ElButton>
-                    <ElButton :icon="Setting" @click="openDisplaySettingDialog">
+                    <ElButton
+                      :icon="Setting"
+                      :disabled="!isPublished"
+                      @click="openDisplaySettingDialog"
+                    >
                       显示设置
                     </ElButton>
-                    <ElButton :icon="View" @click="openXpackDisplayDialog">
+                    <ElButton
+                      :icon="View"
+                      :disabled="!isPublished"
+                      @click="openXpackDisplayDialog"
+                    >
                       展示设置
                     </ElButton>
                   </div>
@@ -1523,68 +1607,6 @@ onMounted(loadPage);
                 @size-change="changeChatSize"
               />
             </div>
-            <div class="chat-log-card chat-record-panel">
-              <div class="chat-log-toolbar">
-                <span class="chat-record-panel__title">对话记录</span>
-              </div>
-              <ElScrollbar class="chat-record-panel__body">
-                <ElEmpty
-                  v-if="chatRecords.length === 0"
-                  description="请选择左侧会话查看对话记录"
-                  :image-size="48"
-                />
-                <div
-                  v-for="record in chatRecords"
-                  v-else
-                  :key="`${idValue(firstValue(record, ['id']))}`"
-                  class="chat-record-item"
-                >
-                  <div class="chat-record-item__question">
-                    {{
-                      stringValue(
-                        firstValue(record, [
-                          'question',
-                          'problemText',
-                          'problem_text',
-                        ]),
-                        '-',
-                      )
-                    }}
-                  </div>
-                  <div class="chat-record-item__answer">
-                    {{
-                      stringValue(
-                        firstValue(record, [
-                          'answer',
-                          'answerText',
-                          'answer_text',
-                        ]),
-                        '-',
-                      )
-                    }}
-                  </div>
-                  <div class="chat-record-item__actions">
-                    <ElButton
-                      link
-                      type="primary"
-                      :icon="Document"
-                      @click="openAnnotation(record)"
-                    >
-                      标注
-                    </ElButton>
-                  </div>
-                </div>
-              </ElScrollbar>
-              <ElPagination
-                v-if="recordTotal > recordQuery.size"
-                v-model:current-page="recordQuery.page"
-                v-model:page-size="recordQuery.size"
-                :total="recordTotal"
-                background
-                layout="prev, pager, next"
-                @current-change="changeRecordPage"
-              />
-            </div>
           </section>
         </ElScrollbar>
       </main>
@@ -1775,6 +1797,85 @@ onMounted(loadPage);
       :chat-record-id="annotationRecordId"
       :question="annotationQuestion"
     />
+
+    <!-- Chat Record Drawer -->
+    <ElDrawer
+      v-model="chatRecordDrawerOpen"
+      :title="chatRecordDrawerTitle"
+      size="60%"
+      @close="closeChatRecordDrawer"
+    >
+      <div v-loading="chatRecordLoading" class="chat-record-drawer-body">
+        <ElScrollbar>
+          <div v-if="chatRecords.length === 0" class="chat-record-empty">
+            <ElEmpty description="暂无对话记录" :image-size="48" />
+          </div>
+          <div
+            v-for="record in chatRecords"
+            v-else
+            :key="`${idValue(firstValue(record, ['id']))}`"
+            class="chat-record-item"
+          >
+            <div class="chat-record-item__question">
+              <div class="chat-record-item__label">问题</div>
+              <div class="chat-record-item__content">
+                {{
+                  stringValue(
+                    firstValue(record, [
+                      'question',
+                      'problemText',
+                      'problem_text',
+                    ]),
+                    '-',
+                  )
+                }}
+              </div>
+            </div>
+            <div class="chat-record-item__answer">
+              <div class="chat-record-item__label">回答</div>
+              <div class="chat-record-item__content">
+                <MdRenderer
+                  :source="
+                    stringValue(
+                      firstValue(record, [
+                        'answer',
+                        'answerText',
+                        'answer_text',
+                      ]),
+                      '',
+                    )
+                  "
+                  type="log"
+                />
+              </div>
+            </div>
+            <div class="chat-record-item__actions">
+              <ElButton
+                link
+                type="primary"
+                :icon="Document"
+                @click="openAnnotation(record)"
+              >
+                标注
+              </ElButton>
+            </div>
+          </div>
+        </ElScrollbar>
+        <div
+          v-if="recordTotal > recordQuery.size"
+          class="chat-record-pagination"
+        >
+          <ElPagination
+            v-model:current-page="recordQuery.page"
+            v-model:page-size="recordQuery.size"
+            :total="recordTotal"
+            background
+            layout="prev, pager, next"
+            @current-change="changeRecordPage"
+          />
+        </div>
+      </div>
+    </ElDrawer>
   </Page>
 </template>
 
@@ -2373,6 +2474,59 @@ onMounted(loadPage);
 .log-table {
   flex: 1;
   min-height: 420px;
+}
+
+.chat-record-item {
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--detail-border);
+  border-radius: var(--detail-radius);
+}
+
+.chat-record-item__question,
+.chat-record-item__answer {
+  margin-bottom: 12px;
+}
+
+.chat-record-item__label {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+
+.chat-record-item__content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--el-text-color-primary);
+}
+
+.chat-record-item__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--detail-border);
+}
+
+.chat-record-drawer-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 16px;
+}
+
+.chat-record-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.chat-record-pagination {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+  border-top: 1px solid var(--detail-border);
 }
 
 .limit-row {

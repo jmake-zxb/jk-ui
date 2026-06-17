@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  applicationChatEntry,
   applicationDetailEntry,
   applicationPrimaryEntry,
   isWorkflowApplication,
@@ -19,8 +18,8 @@ describe('application primary entry', () => {
     ).toMatchObject({
       kind: 'workflow',
       label: '工作流',
-      path: '/ai/orchestration/workflow/agent/index',
-      query: { applicationId: 101 },
+      path: '/ai/orchestration/applications/101/workflow',
+      query: {},
     });
   });
 
@@ -36,19 +35,12 @@ describe('application primary entry', () => {
     }
   });
 
-  it('builds explicit detail and chat entries for application actions', () => {
+  it('builds explicit detail entries for application actions', () => {
     expect(applicationDetailEntry({ id: 102 }, 'setting')).toMatchObject({
       kind: 'detail',
       label: '设置',
       path: '/ai/orchestration/applications/detail/index',
       query: { applicationId: 102, tab: 'setting' },
-    });
-
-    expect(applicationChatEntry({ id: 102 })).toMatchObject({
-      kind: 'chat',
-      label: '对话调试',
-      path: '/ai/orchestration/public-chat/index',
-      query: { applicationId: 102, mode: 'debug' },
     });
   });
 });

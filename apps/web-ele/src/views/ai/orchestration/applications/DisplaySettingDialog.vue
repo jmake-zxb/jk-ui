@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 
-import { Refresh, Setting, User } from '@element-plus/icons-vue';
+import { Close, Refresh, Search, Setting, User } from '@element-plus/icons-vue';
 import {
   ElButton,
+  ElCard,
+  ElCheckbox,
   ElColorPicker,
   ElDialog,
   ElDivider,
@@ -16,7 +18,8 @@ import {
   ElOption,
   ElScrollbar,
   ElSelect,
-  ElSwitch,
+  ElText,
+  ElUpload,
 } from 'element-plus';
 import { cloneDeep } from 'lodash-es';
 
@@ -24,7 +27,6 @@ import {
   getApplicationSetting,
   saveApplicationSetting,
 } from '#/api/ai/applications';
-import { UploadImg } from '#/component';
 
 import { safeParseJson } from '../utils';
 
@@ -193,6 +195,19 @@ function resetForm() {
   form.applicationId = props.applicationId;
 }
 
+function onFileChange(file: any, field: string) {
+  // 验证文件大小 (10MB)
+  const isLimit = file?.size / 1024 / 1024 < 10;
+  if (!isLimit) {
+    ElMessage.warning('文件大小不能超过 10MB');
+    return;
+  }
+  // 创建本地预览 URL
+  const url = URL.createObjectURL(file.raw);
+  // 更新表单字段
+  (form as any)[field] = url;
+}
+
 async function submit() {
   if (!props.applicationId) {
     ElMessage.warning('缺少应用 ID');
@@ -261,7 +276,7 @@ watch(
   <ElDialog
     v-model="dialogVisible"
     title="展示设置"
-    width="960px"
+    width="900px"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
     align-center
@@ -271,51 +286,105 @@ watch(
     <template #header>
       <div class="dialog-header">
         <h3>展示设置</h3>
-        <ElButton link @click="resetForm">
-          <ElIcon class="reset-icon"><Refresh /></ElIcon>
-          恢复默认
-        </ElButton>
+        <div class="header-actions">
+          <ElButton link @click="resetForm">
+            <ElIcon class="reset-icon"><Refresh /></ElIcon>
+            恢复默认
+          </ElButton>
+          <ElDivider direction="vertical" />
+        </div>
       </div>
     </template>
 
     <div v-loading="loading" class="display-setting-body">
       <div class="preview-pane">
-        <div class="preview-frame" :style="previewBackgroundStyle">
+        <div class="preview-container" :style="previewBackgroundStyle">
           <div class="preview-header" :style="headerStyle">
-            <div class="preview-app">
-              <div class="preview-app-icon">
-                <img v-if="form.icon" :src="form.icon" alt="icon" />
-                <ElIcon v-else><Setting /></ElIcon>
+            <div class="preview-header-content">
+              <div class="preview-header-left">
+                <!-- 应用头像 -->
+                <div class="preview-app-icon">
+                  <img v-if="form.icon" :src="form.icon" alt="icon" />
+                  <ElIcon v-else><Setting /></ElIcon>
+                </div>
+                <h4 class="preview-app-name">
+                  {{ applicationName || '应用名称' }}
+                </h4>
               </div>
-              <span class="preview-app-name">
-                {{ applicationName || '应用名称' }}
-              </span>
-            </div>
-          </div>
-          <div class="preview-conversation">
-            <div class="preview-row preview-row--ai">
-              <div v-if="form.showAvatar" class="preview-avatar">
-                <img v-if="form.avatar" :src="form.avatar" alt="ai" />
-                <ElIcon v-else><Setting /></ElIcon>
-              </div>
-              <div class="preview-bubble preview-bubble--ai">
-                您好，请问有什么可以帮您？
-              </div>
-            </div>
-            <div class="preview-row preview-row--user">
-              <div class="preview-bubble preview-bubble--user">
-                这是一个示例提问，用于预览展示设置。
-              </div>
-              <div v-if="form.showUserAvatar" class="preview-avatar">
-                <img v-if="form.userAvatar" :src="form.userAvatar" alt="user" />
-                <ElIcon v-else><User /></ElIcon>
+              <div class="preview-header-right">
+                <ElIcon
+                  :size="20"
+                  :style="{ color: form.customTheme.header_font_color }"
+                >
+                  <Search />
+                </ElIcon>
+                <ElIcon
+                  :size="20"
+                  :style="{ color: form.customTheme.header_font_color }"
+                >
+                  <Close />
+                </ElIcon>
               </div>
             </div>
           </div>
-          <div v-if="form.disclaimer" class="preview-disclaimer">
-            {{ form.disclaimerValue }}
+          <div class="preview-body">
+            <div class="preview-messages">
+              <!-- AI 回复 -->
+              <div class="preview-message-row">
+                <div v-if="form.showAvatar" class="preview-avatar">
+                  <img v-if="form.avatar" :src="form.avatar" alt="ai" />
+                  <ElIcon v-else><Setting /></ElIcon>
+                </div>
+                <img
+                  src="/static/display-bg2.png"
+                  alt=""
+                  :width="
+                    form.showAvatar
+                      ? form.showUserAvatar
+                        ? '232px'
+                        : '270px'
+                      : form.showUserAvatar
+                        ? '260px'
+                        : '300px'
+                  "
+                />
+              </div>
+              <!-- 用户提问 -->
+              <div class="preview-message-row preview-message-row--user">
+                <img
+                  src="/static/display-bg3.png"
+                  alt=""
+                  :width="
+                    form.showUserAvatar
+                      ? form.showAvatar
+                        ? '227px'
+                        : '255px'
+                      : form.showAvatar
+                        ? '265px'
+                        : '292px'
+                  "
+                  style="object-fit: contain"
+                />
+                <div v-if="form.showUserAvatar" class="preview-avatar ml-8">
+                  <img
+                    v-if="form.userAvatar"
+                    :src="form.userAvatar"
+                    alt="user"
+                  />
+                  <ElIcon v-else><User /></ElIcon>
+                </div>
+              </div>
+            </div>
+            <!-- 输入区域 -->
+            <div class="preview-input-area">
+              <img src="/static/display-bg1.png" alt="" class="w-full" />
+              <div v-if="form.disclaimer" class="preview-disclaimer">
+                {{ form.disclaimerValue }}
+              </div>
+            </div>
           </div>
         </div>
+        <!-- 悬浮图标 -->
         <div class="preview-float">
           <img v-if="form.floatIcon" :src="form.floatIcon" alt="float" />
           <ElIcon v-else :size="22"><Setting /></ElIcon>
@@ -323,141 +392,188 @@ watch(
       </div>
 
       <ElScrollbar class="form-pane">
-        <ElForm :model="form" label-position="top" class="setting-form">
-          <ElDivider content-position="left">主题</ElDivider>
-          <div class="theme-row">
-            <ElFormItem label="主题色">
-              <ElColorPicker v-model="form.customTheme.theme_color" />
-            </ElFormItem>
-            <ElFormItem label="标题字色">
-              <ElColorPicker v-model="form.customTheme.header_font_color" />
-            </ElFormItem>
-          </div>
-
-          <ElDivider content-position="left">图片</ElDivider>
-          <ElFormItem label="应用 LOGO">
-            <UploadImg
-              v-model="form.icon"
-              :limit="1"
-              :file-size="2"
-              :file-type="['png', 'jpg', 'jpeg', 'svg']"
-            />
-          </ElFormItem>
-          <ElFormItem label="聊天背景">
-            <UploadImg
-              v-model="form.chatBackground"
-              :limit="1"
-              :file-size="2"
-              :file-type="['png', 'jpg', 'jpeg', 'svg']"
-            />
-          </ElFormItem>
-          <ElFormItem label="AI 回复头像">
-            <UploadImg
-              v-model="form.avatar"
-              :limit="1"
-              :file-size="2"
-              :file-type="['png', 'jpg', 'jpeg', 'svg']"
-            />
-          </ElFormItem>
-          <ElFormItem label="用户提问头像">
-            <UploadImg
-              v-model="form.userAvatar"
-              :limit="1"
-              :file-size="2"
-              :file-type="['png', 'jpg', 'jpeg', 'svg']"
-            />
-          </ElFormItem>
-          <ElFormItem label="悬浮图标">
-            <UploadImg
-              v-model="form.floatIcon"
-              :limit="1"
-              :file-size="2"
-              :file-type="['png', 'jpg', 'jpeg', 'svg']"
-            />
-          </ElFormItem>
-
-          <ElDivider content-position="left">显示选项</ElDivider>
-          <div class="switch-grid">
-            <div class="switch-row">
-              <span>显示历史记录</span>
-              <ElSwitch v-model="form.showHistory" />
-            </div>
-            <div class="switch-row">
-              <span>显示引导信息</span>
-              <ElSwitch v-model="form.showGuide" />
-            </div>
-            <div class="switch-row">
-              <span>悬浮窗可拖拽</span>
-              <ElSwitch v-model="form.draggable" />
-            </div>
-            <div class="switch-row">
-              <span>显示 AI 头像</span>
-              <ElSwitch v-model="form.showAvatar" />
-            </div>
-            <div class="switch-row">
-              <span>显示用户头像</span>
-              <ElSwitch v-model="form.showUserAvatar" />
-            </div>
-            <div class="switch-row">
-              <span>显示免责声明</span>
-              <ElSwitch v-model="form.disclaimer" />
-            </div>
-          </div>
-          <ElFormItem v-if="form.disclaimer" label="免责声明文本">
-            <ElInput
-              v-model="form.disclaimerValue"
-              :maxlength="128"
-              show-word-limit
-              placeholder="请输入免责声明"
-            />
-          </ElFormItem>
-
-          <ElDivider content-position="left">悬浮位置</ElDivider>
-          <div class="location-row">
-            <ElFormItem label="水平位置">
-              <div class="location-cell">
-                <ElSelect
-                  v-model="form.floatLocation.x.type"
-                  style="width: 90px"
-                >
-                  <ElOption label="左" value="left" />
-                  <ElOption label="右" value="right" />
-                </ElSelect>
-                <ElInputNumber
-                  v-model="form.floatLocation.x.value"
-                  :min="0"
-                  :step="1"
-                  :precision="0"
-                  :value-on-clear="0"
-                  step-strictly
-                  controls-position="right"
-                />
-                <span class="unit">px</span>
+        <div class="form-content">
+          <ElForm :model="form" label-position="top" class="setting-form">
+            <!-- 主题颜色 -->
+            <div class="theme-section">
+              <h5>自定义主题色</h5>
+              <div class="theme-row">
+                <div class="theme-item">
+                  <ElColorPicker v-model="form.customTheme.theme_color" />
+                  <span v-if="!form.customTheme.theme_color">默认</span>
+                </div>
+                <div class="theme-item">
+                  <h5>标题字色</h5>
+                  <ElColorPicker v-model="form.customTheme.header_font_color" />
+                </div>
               </div>
-            </ElFormItem>
-            <ElFormItem label="垂直位置">
-              <div class="location-cell">
-                <ElSelect
-                  v-model="form.floatLocation.y.type"
-                  style="width: 90px"
+            </div>
+
+            <!-- 图片设置 -->
+            <ElCard shadow="never" class="mb-8">
+              <div class="card-header">
+                <span class="card-title">应用 LOGO</span>
+                <ElUpload
+                  action="#"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  accept="image/jpeg, image/png, image/gif"
+                  :on-change="(file: any) => onFileChange(file, 'icon')"
                 >
-                  <ElOption label="上" value="top" />
-                  <ElOption label="下" value="bottom" />
-                </ElSelect>
-                <ElInputNumber
-                  v-model="form.floatLocation.y.value"
-                  :min="0"
-                  :step="1"
-                  :precision="0"
-                  :value-on-clear="0"
-                  step-strictly
-                  controls-position="right"
-                />
-                <span class="unit">px</span>
+                  <ElButton size="small">替换</ElButton>
+                </ElUpload>
               </div>
-            </ElFormItem>
-          </div>
-        </ElForm>
+              <ElText type="info" size="small">
+                支持 JPG/PNG/GIF，最大 10MB
+              </ElText>
+            </ElCard>
+
+            <ElCard shadow="never" class="mb-8">
+              <div class="card-header">
+                <span class="card-title">聊天背景</span>
+                <ElUpload
+                  action="#"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  accept="image/jpeg, image/png, image/gif"
+                  :on-change="
+                    (file: any) => onFileChange(file, 'chatBackground')
+                  "
+                >
+                  <ElButton size="small">替换</ElButton>
+                </ElUpload>
+              </div>
+              <ElText type="info" size="small">
+                支持 JPG/PNG/GIF，最大 10MB
+              </ElText>
+            </ElCard>
+
+            <ElCard shadow="never" class="mb-8">
+              <div class="card-header">
+                <span class="card-title">AI 回复头像</span>
+                <div class="card-actions">
+                  <ElCheckbox v-model="form.showAvatar">显示</ElCheckbox>
+                  <ElUpload
+                    action="#"
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    accept="image/jpeg, image/png, image/gif"
+                    :on-change="(file: any) => onFileChange(file, 'avatar')"
+                    class="ml-8"
+                  >
+                    <ElButton size="small">替换</ElButton>
+                  </ElUpload>
+                </div>
+              </div>
+              <ElText type="info" size="small">
+                支持 JPG/PNG/GIF，最大 10MB
+              </ElText>
+            </ElCard>
+
+            <ElCard shadow="never" class="mb-8">
+              <div class="card-header">
+                <span class="card-title">用户提问头像</span>
+                <div class="card-actions">
+                  <ElCheckbox v-model="form.showUserAvatar">显示</ElCheckbox>
+                  <ElUpload
+                    action="#"
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    accept="image/jpeg, image/png, image/gif"
+                    :on-change="(file: any) => onFileChange(file, 'userAvatar')"
+                    class="ml-8"
+                  >
+                    <ElButton size="small">替换</ElButton>
+                  </ElUpload>
+                </div>
+              </div>
+              <ElText type="info" size="small">
+                支持 JPG/PNG/GIF，最大 10MB
+              </ElText>
+            </ElCard>
+
+            <ElCard shadow="never" class="mb-8">
+              <div class="card-header">
+                <span class="card-title">悬浮图标</span>
+                <ElUpload
+                  action="#"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  accept="image/jpeg, image/png, image/gif"
+                  :on-change="(file: any) => onFileChange(file, 'floatIcon')"
+                >
+                  <ElButton size="small">替换</ElButton>
+                </ElUpload>
+              </div>
+              <ElText type="info" size="small">
+                支持 JPG/PNG/GIF，最大 10MB
+              </ElText>
+              <div class="location-section">
+                <div class="location-header">
+                  <span>图标默认位置</span>
+                  <ElCheckbox v-model="form.draggable">
+                    可拖拽调整位置
+                  </ElCheckbox>
+                </div>
+                <div class="location-row">
+                  <div class="location-cell">
+                    <ElSelect
+                      v-model="form.floatLocation.x.type"
+                      style="width: 80px"
+                    >
+                      <ElOption label="左" value="left" />
+                      <ElOption label="右" value="right" />
+                    </ElSelect>
+                    <ElInputNumber
+                      v-model="form.floatLocation.x.value"
+                      :min="0"
+                      :step="1"
+                      :precision="0"
+                      :value-on-clear="0"
+                      step-strictly
+                      controls-position="right"
+                    />
+                    <span class="unit">px</span>
+                  </div>
+                  <div class="location-cell">
+                    <ElSelect
+                      v-model="form.floatLocation.y.type"
+                      style="width: 80px"
+                    >
+                      <ElOption label="上" value="top" />
+                      <ElOption label="下" value="bottom" />
+                    </ElSelect>
+                    <ElInputNumber
+                      v-model="form.floatLocation.y.value"
+                      :min="0"
+                      :step="1"
+                      :precision="0"
+                      :value-on-clear="0"
+                      step-strictly
+                      controls-position="right"
+                    />
+                    <span class="unit">px</span>
+                  </div>
+                </div>
+              </div>
+            </ElCard>
+
+            <!-- 显示选项 -->
+            <div class="checkbox-section">
+              <ElCheckbox v-model="form.showHistory">显示历史记录</ElCheckbox>
+              <ElCheckbox v-model="form.showGuide">显示引导信息</ElCheckbox>
+              <ElCheckbox v-model="form.disclaimer">免责声明</ElCheckbox>
+              <ElFormItem v-if="form.disclaimer" label="免责声明文本">
+                <ElInput
+                  v-model="form.disclaimerValue"
+                  :maxlength="128"
+                  show-word-limit
+                  placeholder="请输入免责声明"
+                />
+              </ElFormItem>
+            </div>
+          </ElForm>
+        </div>
       </ElScrollbar>
     </div>
 
@@ -473,10 +589,9 @@ watch(
 <style scoped lang="scss">
 .dialog-header {
   display: flex;
-  gap: 16px;
   align-items: center;
   justify-content: space-between;
-  padding-right: 24px;
+  padding-right: 17px;
 }
 
 .dialog-header h3 {
@@ -485,60 +600,81 @@ watch(
   font-weight: 600;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
 .reset-icon {
   margin-right: 4px;
 }
 
 .display-setting-body {
-  display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  display: flex;
   gap: 16px;
-  height: 560px;
+  height: 570px;
 }
 
 .preview-pane {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  min-width: 400px;
+  height: 570px;
   background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
 
-.preview-frame {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  margin: 16px;
+.preview-container {
+  position: absolute;
+  top: 25px;
+  left: 16px;
+  width: 330px;
+  height: 520px;
   overflow: hidden;
-  background-color: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 6%);
+  background: var(--dialog-bg-gradient-color, var(--el-bg-color));
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: auto 100%;
+  border: 1px solid #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px 0 rgb(0 0 0 / 10%);
 }
 
 .preview-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  height: 48px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  box-sizing: border-box;
+  height: var(--app-header-height, 48px);
+  line-height: var(--app-header-height, 48px);
+  background: var(--app-header-bg-color, var(--el-bg-color));
+  border-bottom: 1px solid var(--el-border-color);
 }
 
-.preview-app {
+.preview-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.preview-header-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-left: 24px;
+}
+
+.preview-header-right {
   display: flex;
   gap: 8px;
   align-items: center;
+  margin-right: 16px;
 }
 
 .preview-app-icon {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   overflow: hidden;
   background: var(--el-fill-color-light);
   border-radius: 6px;
@@ -551,32 +687,36 @@ watch(
 }
 
 .preview-app-name {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.preview-conversation {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 12px;
+.preview-body {
+  position: relative;
+  height: calc(100% - 48px);
+}
+
+.preview-messages {
+  position: relative;
   padding: 16px;
-  overflow: auto;
 }
 
-.preview-row {
+.preview-message-row {
   display: flex;
-  gap: 8px;
   align-items: flex-start;
+  margin-bottom: 4px;
 }
 
-.preview-row--user {
-  flex-direction: row-reverse;
+.preview-message-row--user {
+  justify-content: flex-end;
 }
 
 .preview-avatar {
-  display: inline-flex;
-  flex: 0 0 28px;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
@@ -592,36 +732,34 @@ watch(
   object-fit: cover;
 }
 
-.preview-bubble {
-  max-width: 240px;
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  border-radius: 8px;
+.ml-8 {
+  margin-left: 8px;
 }
 
-.preview-bubble--ai {
-  color: var(--el-text-color-primary);
-  background: var(--el-fill-color);
+.preview-input-area {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 16px;
+  padding-bottom: 8px;
+  text-align: center;
 }
 
-.preview-bubble--user {
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-8);
+.preview-input-area img {
+  width: 100%;
 }
 
 .preview-disclaimer {
-  flex: 0 0 auto;
-  padding: 8px 16px 12px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  text-align: center;
 }
 
 .preview-float {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: 8px;
+  bottom: 15px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -641,24 +779,99 @@ watch(
 }
 
 .form-pane {
+  flex: 1;
   height: 100%;
+}
+
+.form-content {
+  padding: 8px;
 }
 
 .setting-form {
   padding-right: 8px;
 }
 
-.theme-row,
+.theme-section {
+  margin-bottom: 16px;
+}
+
+.theme-section h5 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.theme-row {
+  display: flex;
+  gap: 24px;
+}
+
+.theme-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.theme-item h5 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mb-8 {
+  margin-bottom: 8px;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.card-title {
+  font-size: 14px;
+  color: var(--el-text-color-regular);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+}
+
+.location-section {
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.location-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
 .location-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 12px;
 }
 
 .location-cell {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+}
+
+.location-cell :deep(.el-input-number) {
+  flex: 1;
+  min-width: 0;
 }
 
 .unit {
@@ -666,19 +879,17 @@ watch(
   color: var(--el-text-color-secondary);
 }
 
-.switch-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 24px;
-  margin-bottom: 12px;
+.checkbox-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
+.display-setting-dialog :deep(.el-dialog__header) {
+  padding-right: 17px;
+}
+
+.display-setting-dialog :deep(.el-dialog__headerbtn) {
+  top: 14px;
 }
 </style>

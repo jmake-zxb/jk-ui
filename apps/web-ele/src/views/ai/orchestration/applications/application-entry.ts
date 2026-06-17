@@ -1,8 +1,11 @@
-export const APPLICATION_CHAT_PATH = '/ai/orchestration/public-chat/index';
-export const APPLICATION_DETAIL_PATH =
-  '/ai/orchestration/applications/detail/index';
+export const APPLICATION_DETAIL_PATH = '/ai/orchestration/applications/detail';
 
-export type ApplicationDetailTab = 'chat-log' | 'overview' | 'setting';
+export type ApplicationDetailTab =
+  | 'access'
+  | 'chat-log'
+  | 'chat-user'
+  | 'overview'
+  | 'setting';
 export type ApplicationEntryKind = 'chat' | 'detail' | 'workflow';
 
 export interface ApplicationLike {
@@ -31,34 +34,18 @@ export function applicationDetailEntry(
   tab: ApplicationDetailTab = 'overview',
 ): ApplicationPrimaryEntry {
   const labelMap: Record<ApplicationDetailTab, string> = {
+    access: '访问设置',
     'chat-log': '对话日志',
+    'chat-user': '对话用户',
     overview: '概览',
     setting: '设置',
   };
-  const query: Record<string, number | string> = { tab };
-  if (application.id !== undefined && application.id !== null) {
-    query.applicationId = application.id;
-  }
+  const id = application.id ?? '';
   return {
     kind: 'detail',
     label: labelMap[tab],
-    path: APPLICATION_DETAIL_PATH,
-    query,
-  };
-}
-
-export function applicationChatEntry(
-  application: ApplicationLike,
-): ApplicationPrimaryEntry {
-  const query: Record<string, number | string> = { mode: 'debug' };
-  if (application.id !== undefined && application.id !== null) {
-    query.applicationId = application.id;
-  }
-  return {
-    kind: 'chat',
-    label: '对话调试',
-    path: APPLICATION_CHAT_PATH,
-    query,
+    path: `${APPLICATION_DETAIL_PATH}/${id}/${tab}`,
+    query: {},
   };
 }
 

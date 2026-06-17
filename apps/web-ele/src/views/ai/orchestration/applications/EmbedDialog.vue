@@ -7,7 +7,7 @@ import { ElButton, ElDialog, ElMessage, ElTabPane, ElTabs } from 'element-plus';
 
 import { adaptationUrl } from '#/utils/other';
 
-const props = defineProps<{
+defineProps<{
   applicationId?: number | string;
 }>();
 
@@ -16,16 +16,23 @@ const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
 const visible = ref(false);
 const activeTab = ref('fullscreen');
 const accessToken = ref('');
+const apiInputParams = ref('');
 
-const publicChatRoute = '/ai/orchestration/public-chat/index';
+const publicChatRoute = '/ui/chat';
+
+const normalizedApiInputParams = computed(() => {
+  const value = apiInputParams.value
+    .trim()
+    .replace(/^\?/, '')
+    .replace(/^&/, '');
+  return value;
+});
 
 const embedBaseUrl = computed(() => {
-  const params = new URLSearchParams();
-  if (props.applicationId)
-    params.set('applicationId', `${props.applicationId}`);
-  if (accessToken.value) params.set('token', accessToken.value);
-  params.set('mode', 'embed');
-  return `${window.location.origin}${publicChatRoute}?${params.toString()}`;
+  if (!accessToken.value) return '';
+  const params = normalizedApiInputParams.value;
+  const query = params ? `?${params}` : '';
+  return `${window.location.origin}${publicChatRoute}/${accessToken.value}${query}`;
 });
 
 const fullscreenCode = computed(() => {
@@ -34,8 +41,10 @@ const fullscreenCode = computed(() => {
 });
 
 const mobileCode = computed(() => {
-  if (!embedBaseUrl.value) return '';
-  const url = `${embedBaseUrl.value}&display=mobile`;
+  if (!accessToken.value) return '';
+  const params = normalizedApiInputParams.value;
+  const suffix = params ? `?mode=mobile&${params}` : '?mode=mobile';
+  const url = `${window.location.origin}${publicChatRoute}/${accessToken.value}${suffix}`;
   return `<iframe src="${url}" style="width: 100%; height: 100%; border: 0;" allow="microphone"></iframe>`;
 });
 
@@ -44,12 +53,15 @@ const floatingScriptCode = computed(() => {
   const protocol = window.location.protocol.replace(':', '');
   const host = window.location.host;
   const baseUrl = apiURL || window.location.origin;
-  const scriptUrl = `${baseUrl}${adaptationUrl('/ai/api/embed.js')}?protocol=${protocol}&host=${host}&token=${accessToken.value}`;
+  const params = normalizedApiInputParams.value;
+  const suffix = params ? `&${params}` : '';
+  const scriptUrl = `${baseUrl}${adaptationUrl('/ai/api/embed.js')}?protocol=${protocol}&host=${host}&token=${accessToken.value}${suffix}`;
   return `<script async defer src="${scriptUrl}"><${'/'}script>`;
 });
 
-function open(token: string) {
+function open(token: string, params = '') {
   accessToken.value = token;
+  apiInputParams.value = params;
   activeTab.value = 'fullscreen';
   visible.value = true;
 }
