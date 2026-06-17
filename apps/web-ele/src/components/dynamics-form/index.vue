@@ -227,8 +227,8 @@ defineExpose({
   <ElForm
     ref="ruleFormRef"
     v-loading="loading"
-    v-bind="$attrs"
     :model="formValue"
+    v-bind="$attrs"
     label-position="top"
     label-suffix=":"
     label-width="130px"
