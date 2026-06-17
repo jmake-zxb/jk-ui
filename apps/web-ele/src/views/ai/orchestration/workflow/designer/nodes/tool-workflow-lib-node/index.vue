@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ResourceRecord } from '../../common/tool-resource-utils';
 
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import {
   ElButton,
@@ -38,6 +38,7 @@ import {
 } from '../../common/tool-resource-utils';
 
 type FieldSource = 'custom' | 'reference';
+type WorkflowMode = 'application' | 'application-loop' | 'tool' | string;
 type InputField = Record<string, unknown> & {
   field?: string;
   is_required?: boolean;
@@ -79,6 +80,7 @@ const props = defineProps<{
   renderVersion?: number;
 }>();
 const nodeModel = props.nodeModel;
+const workflowMode = inject<WorkflowMode>('workflowMode', 'application');
 const fieldCascaderRefs = ref<Array<InstanceType<typeof NodeCascader>>>([]);
 const tools = ref<ResourceRecord[]>([]);
 const toolLoading = ref(false);
@@ -88,6 +90,9 @@ const formData = ref<NodeData>(
   normalizeNodeData(nodeModel.properties?.node_data),
 );
 const toolOptions = ref<ResourceRecord[]>([]);
+const showWorkflowOutputControls = computed(
+  () => !`${workflowMode || 'application'}`.includes('knowledge'),
+);
 
 function refreshToolOptions() {
   toolOptions.value = filterTools(tools.value, ['WORKFLOW']);
@@ -519,7 +524,10 @@ onBeforeUnmount(() => {
         />
       </section>
 
-      <section class="workflow-tool-workflow-lib-node__panel">
+      <section
+        v-if="showWorkflowOutputControls"
+        class="workflow-tool-workflow-lib-node__panel"
+      >
         <div class="workflow-tool-workflow-lib-node__switch-row">
           <div>
             <strong>返回内容</strong>

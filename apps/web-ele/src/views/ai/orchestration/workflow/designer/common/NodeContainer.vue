@@ -31,6 +31,8 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { WorkflowType } from '#/enums/application';
+
 import {
   defaultProperties,
   groupedNodeTemplates,
@@ -52,6 +54,10 @@ function getNodeModel() {
 const showNode = ref(props.nodeModel.properties?.showNode !== false);
 const titleVersion = ref(0);
 const isSelected = ref(!!props.nodeModel.isSelected);
+const runtimeStatus = computed(() => {
+  void props.renderVersion;
+  return `${props.nodeModel.runtimeStatus || ''}`.toUpperCase();
+});
 
 // Sync isSelected and isHovered from model when LogicFlow triggers re-render
 watch(
@@ -209,6 +215,29 @@ function statusTagType(status: string) {
     output: 'warning',
     resource: 'warning',
     tool: 'primary',
+  };
+  return types[status] || 'info';
+}
+
+function runtimeStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    FAILED: '失败',
+    RUNNING: '运行中',
+    SUCCESS: '成功',
+    WARNING: '中断',
+  };
+  return labels[status] || status;
+}
+
+function runtimeStatusTagType(status: string) {
+  const types: Record<
+    string,
+    'danger' | 'info' | 'primary' | 'success' | 'warning'
+  > = {
+    FAILED: 'danger',
+    RUNNING: 'primary',
+    SUCCESS: 'success',
+    WARNING: 'warning',
   };
   return types[status] || 'info';
 }
@@ -393,6 +422,17 @@ async function deleteNode() {
     );
   } catch {
     return;
+  }
+  // Cascade-delete loop-body-node before deleting loop-node (matches MaxKB pattern)
+  if (props.nodeModel.type === WorkflowType.LoopNode) {
+    const outgoing = props.nodeModel.graphModel?.getNodeOutgoingNode?.(
+      props.nodeModel.id,
+    );
+    outgoing?.forEach?.((n: any) => {
+      if (n.type === WorkflowType.LoopBodyNode) {
+        props.nodeModel.graphModel?.deleteNode?.(n.id);
+      }
+    });
   }
   props.nodeModel.graphModel?.deleteNode?.(props.nodeModel.id);
   props.nodeModel.graphModel?.eventCenter?.emit?.('node:inline-update', {
@@ -619,6 +659,7 @@ onBeforeUnmount(() => {
         'is-collapsed': !showNode,
         'is-disabled': disabled,
         'is-hovered': isNodeHoverActive,
+        [`is-runtime-${runtimeStatus.toLowerCase()}`]: runtimeStatus,
         'is-selected': isSelected,
       }"
     >
@@ -627,11 +668,19 @@ onBeforeUnmount(() => {
           <span class="workflow-vue-node__badge" :class="`is-${meta.status}`">{{
             meta.status.slice(0, 2).toUpperCase()
           }}</span>
+          <ElTag
+            v-if="runtimeStatus"
+            size="small"
+            :type="runtimeStatusTagType(runtimeStatus)"
+            effect="light"
+          >
+            {{ runtimeStatusLabel(runtimeStatus) }}
+          </ElTag>
           <div class="workflow-vue-node__title-wrap">
             <span
               class="workflow-vue-node__title"
               :title="currentTitle()"
-              v-html="highlightedTitle(currentTitle())"
+              v-safe-html="highlightedTitle(currentTitle())"
             ></span>
           </div>
           <div
@@ -877,9 +926,26 @@ onBeforeUnmount(() => {
   opacity: 0.7;
 }
 
+.workflow-vue-node__card.is-runtime-running {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
+}
+
+.workflow-vue-node__card.is-runtime-success {
+  border-color: var(--el-color-success);
+}
+
+.workflow-vue-node__card.is-runtime-warning {
+  border-color: var(--el-color-warning);
+}
+
+.workflow-vue-node__card.is-runtime-failed {
+  border-color: var(--el-color-danger);
+}
+
 .workflow-vue-node__header {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: 36px auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 10px;
@@ -893,7 +959,7 @@ onBeforeUnmount(() => {
 }
 
 .workflow-vue-node__card.is-collapsed .workflow-vue-node__header {
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 24px auto minmax(0, 1fr) auto;
   min-height: 32px;
   padding: 0;
   background: transparent;

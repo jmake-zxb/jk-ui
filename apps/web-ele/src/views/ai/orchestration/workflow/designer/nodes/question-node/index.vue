@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import {
   ElButton,
@@ -22,6 +22,8 @@ import LocalModelSelect from '../base-node/component/LocalModelSelect.vue';
 
 const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
 const nodeRenderVersion = ref(0);
+type WorkflowMode = 'application' | 'application-loop' | 'tool' | string;
+const workflowMode = inject<WorkflowMode>('workflowMode', 'application');
 
 const formData = computed({
   get: () => {
@@ -56,6 +58,10 @@ const modelParamsSummary = computed(() => {
     ? `${Object.keys(setting).length} 项`
     : '默认参数';
 });
+
+const showWorkflowOutputControls = computed(
+  () => !`${workflowMode || 'application'}`.includes('knowledge'),
+);
 
 function patchData(key: string, value: any) {
   formData.value = { ...formData.value, [key]: value };
@@ -178,7 +184,7 @@ onBeforeUnmount(() => {
           @update:model-value="patchData('prompt', $event)"
         />
       </ElFormItem>
-      <ElFormItem label="历史对话数">
+      <ElFormItem v-if="showWorkflowOutputControls" label="历史对话数">
         <ElInputNumber
           :model-value="formData.dialogue_number ?? 1"
           :min="0"
@@ -194,7 +200,7 @@ onBeforeUnmount(() => {
           <ElButton @click="openParamsDialog">设置</ElButton>
         </div>
       </ElFormItem>
-      <ElFormItem label="作为结果返回">
+      <ElFormItem v-if="showWorkflowOutputControls" label="作为结果返回">
         <ElSwitch
           :model-value="!!formData.is_result"
           size="small"

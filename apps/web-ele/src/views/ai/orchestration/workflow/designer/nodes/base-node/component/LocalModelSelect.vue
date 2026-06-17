@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
 
-import { ElOption, ElOptionGroup, ElSelect } from 'element-plus';
+import { ElButton, ElOption, ElOptionGroup, ElSelect } from 'element-plus';
 
 import { listActiveModels } from '#/api/ai/models';
 
@@ -10,16 +10,19 @@ const props = withDefaults(
     modelType?: string;
     modelValue?: number | string;
     placeholder?: string;
+    showFooter?: boolean;
   }>(),
   {
     modelType: 'CHAT',
     modelValue: undefined,
     placeholder: '请选择模型',
+    showFooter: false,
   },
 );
 
 const emit = defineEmits<{
   change: [value: number | string | undefined, model?: Record<string, any>];
+  footerClick: [];
   'update:modelValue': [value: number | string | undefined];
 }>();
 
@@ -114,6 +117,18 @@ onMounted(loadModels);
         暂无可用 {{ apiModelType() }} 模型
       </div>
     </template>
+    <template v-if="showFooter" #footer>
+      <div class="local-model-select__footer">
+        <ElButton
+          link
+          size="small"
+          type="primary"
+          @click.stop="emit('footerClick')"
+        >
+          选择模型
+        </ElButton>
+      </div>
+    </template>
   </ElSelect>
 </template>
 
@@ -122,5 +137,11 @@ onMounted(loadModels);
   padding: 8px 12px;
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+}
+
+.local-model-select__footer {
+  display: flex;
+  justify-content: center;
+  padding: 4px 8px;
 }
 </style>

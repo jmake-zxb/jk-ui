@@ -26,6 +26,7 @@ export type NodeTemplate = {
   config?: Record<string, any>;
   description: string;
   height?: number;
+  kind?: string;
   name: string;
   nodeData: Record<string, any>;
   outputs?: Array<{
@@ -81,6 +82,12 @@ export type LogicFlowGraph = {
 };
 
 export const DEFAULT_CONFIG = { chatFields: [], fields: [], globalFields: [] };
+const DEFAULT_KNOWLEDGE_GLOBAL_FIELD = {
+  label: '知识库',
+  value: 'knowledge',
+  globeLabel: '{{global.knowledge}}',
+  globeValue: "{{context['global'].knowledge}}",
+};
 export const CONDITION_EMPTY_VALUE_OPERATORS = new Set([
   'is_not_null',
   'is_not_true',
@@ -342,8 +349,15 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'input',
     description: '流程入口',
+    height: 364,
     nodeData: { question: '{{input}}' },
-    config: outputConfig([outputField('question', '用户问题')]),
+    config: outputConfig([outputField('question', '用户问题')], {
+      globalFields: [
+        outputField('time', '当前时间'),
+        outputField('history_context', '历史记录'),
+        outputField('chat_id', '对话ID'),
+      ],
+    }),
   },
   {
     type: 'question-node',
@@ -351,6 +365,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'input',
     description: '读取输入',
+    height: 345,
     nodeData: {
       dialogue_number: 1,
       is_result: false,
@@ -373,6 +388,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '模型生成',
+    height: 340,
     nodeData: {
       application_ids: [],
       dialogue_number: 1,
@@ -433,6 +449,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '理解图片内容并输出文本',
+    height: 252,
     nodeData: {
       dialogue_number: 0,
       dialogue_type: 'NODE_BASED',
@@ -470,6 +487,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '将音频内容转换为文本',
+    height: 252,
     nodeData: {
       audio_list: [],
       is_result: true,
@@ -490,6 +508,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '将文本内容转换为音频',
+    height: 252,
     nodeData: {
       content_list: [],
       is_result: true,
@@ -510,6 +529,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '根据提示词生成图片',
+    height: 252,
     nodeData: {
       dialogue_number: 0,
       dialogue_type: 'NODE_BASED',
@@ -545,6 +565,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '根据提示词生成视频',
+    height: 252,
     nodeData: {
       dialogue_number: 0,
       dialogue_type: 'NODE_BASED',
@@ -570,6 +591,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '根据首帧图片和提示词生成视频',
+    height: 252,
     nodeData: {
       dialogue_number: 0,
       dialogue_type: 'NODE_BASED',
@@ -598,6 +620,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'AI能力',
     status: 'ai',
     description: '理解视频内容并输出文本',
+    height: 252,
     nodeData: {
       dialogue_number: 0,
       dialogue_type: 'NODE_BASED',
@@ -625,6 +648,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '知识库',
     status: 'resource',
     description: '召回知识',
+    height: 355,
     nodeData: {
       knowledge_id_list: [],
       knowledge_setting: {
@@ -656,6 +680,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '知识库',
     status: 'resource',
     description: '文档过滤',
+    height: 355,
     nodeData: {
       knowledge_id_list: [],
       question_reference: ['start-node', 'question'],
@@ -673,6 +698,7 @@ export const nodeTemplates: NodeTemplate[] = [
       outputField('knowledge_list', '知识库 ID 列表', 'array'),
       outputField('knowledge_items', '知识库详情列表', 'array'),
     ]),
+    width: 600,
   },
   {
     type: 'reranker-node',
@@ -680,6 +706,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '知识库',
     status: 'ai',
     description: '结果重排',
+    height: 252,
     nodeData: {
       question_reference_address: ['start-node', 'question'],
       reranker_model_id: '',
@@ -705,6 +732,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '知识库',
     status: 'resource',
     description: '沉淀知识',
+    height: 100,
     nodeData: {
       document_list: ['document-split-node', 'paragraph_list'],
       knowledgeId: '',
@@ -721,11 +749,15 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '知识库',
     status: 'resource',
     description: '知识库应用入口模板',
-    nodeData: { userInputFields: [], knowledgeIds: [] },
-    config: outputConfig([
-      outputField('query', '问题'),
-      outputField('documents', '知识片段', 'array'),
-    ]),
+    height: 728.375,
+    nodeData: { knowledge_id_list: [] },
+    config: outputConfig(
+      [
+        outputField('query', '问题'),
+        outputField('documents', '知识片段', 'array'),
+      ],
+      { globalFields: [DEFAULT_KNOWLEDGE_GLOBAL_FIELD] },
+    ),
     width: 600,
   },
   {
@@ -734,6 +766,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '业务逻辑',
     status: 'logic',
     description: '应用基本信息',
+    height: 728.375,
     nodeData: {
       desc: '',
       file_upload_enable: false,
@@ -754,11 +787,13 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '业务逻辑',
     status: 'logic',
     description: '分支判断',
+    height: 175,
     nodeData: {},
     config: outputConfig([
       outputField('branch_id', '分支ID'),
       outputField('branch_name', '分支名称'),
     ]),
+    width: 600,
   },
   {
     type: 'loop-node',
@@ -834,6 +869,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '业务逻辑',
     status: 'output',
     description: '返回文本',
+    height: 210,
     nodeData: {
       content: '',
       fields: [],
@@ -851,6 +887,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '业务逻辑',
     status: 'input',
     description: '收集字段',
+    height: 252,
     nodeData: {
       form_content_format:
         '你好，请先填写下面表单内容：\n{{form}}\n填写后请点击【提交】按钮进行提交。',
@@ -865,6 +902,7 @@ export const nodeTemplates: NodeTemplate[] = [
         value: 'form_data',
       },
     ]),
+    width: 600,
   },
   {
     type: 'variable-assign-node',
@@ -872,6 +910,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据处理',
     status: 'data',
     description: '写入变量',
+    height: 252,
     nodeData: {
       variable_list: [
         {
@@ -897,6 +936,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据处理',
     status: 'data',
     description: '按 JSONPath 拆分对象字段',
+    height: 345,
     nodeData: { input_variable: [], variable_list: [] },
     config: outputConfig([outputField('result', '结果', 'object')]),
   },
@@ -906,6 +946,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据处理',
     status: 'data',
     description: '按策略聚合多个变量',
+    height: 252,
     nodeData: {
       group_list: [
         {
@@ -944,6 +985,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据处理',
     status: 'data',
     description: '抽取文本',
+    height: 252,
     nodeData: { document_list: ['start-node', 'document'] },
     config: outputConfig([
       outputField('content', '文档内容'),
@@ -956,18 +998,19 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据处理',
     status: 'data',
     description: '切分文本',
+    height: 252,
     nodeData: {
       chunk_size: 256,
       chunk_size_reference: [],
       chunk_size_type: 'custom',
       document_list: ['start-node', 'document'],
-      document_name_relate_problem: true,
+      document_name_relate_problem: false,
       document_name_relate_problem_reference: [],
       document_name_relate_problem_type: 'custom',
       limit: 4096,
       limit_reference: [],
       limit_type: 'custom',
-      paragraph_title_relate_problem: true,
+      paragraph_title_relate_problem: false,
       paragraph_title_relate_problem_reference: [],
       paragraph_title_relate_problem_type: 'custom',
       patterns: [],
@@ -979,6 +1022,7 @@ export const nodeTemplates: NodeTemplate[] = [
       with_filter_type: 'custom',
     },
     config: outputConfig([outputField('paragraph_list', '分段列表', 'array')]),
+    width: 500,
   },
   {
     type: 'tool-node',
@@ -986,6 +1030,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'tool',
     description: '调用工具',
+    height: 260,
     nodeData: { input: '{{input}}', toolId: '' },
     config: outputConfig([outputField('result', '工具结果')]),
   },
@@ -995,10 +1040,11 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'tool',
     description: '调用工具库工具',
+    height: 170,
     nodeData: {
       input: '{{input}}',
       input_field_list: [],
-      is_result: true,
+      is_result: false,
       toolLibId: '',
       tool_lib_id: '',
     },
@@ -1010,6 +1056,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'tool',
     description: '工作流工具库调用',
+    height: 170,
     nodeData: {
       input: '{{input}}',
       input_field_list: [],
@@ -1027,6 +1074,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'input',
     description: '工具工作流入口',
+    height: 728.375,
     nodeData: { input_field_list: [] },
     config: {
       chatFields: [],
@@ -1040,6 +1088,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'tool',
     description: '定义工具工作流输入输出',
+    height: 728.375,
     nodeData: {
       input_field_list: [],
       output_field_list: [],
@@ -1051,6 +1100,7 @@ export const nodeTemplates: NodeTemplate[] = [
       fields: [],
       globalFields: [],
     },
+    width: 500,
   },
   {
     type: 'function-node',
@@ -1076,8 +1126,9 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'tool',
     description: '调用应用',
+    height: 260,
     nodeData: { applicationId: '', message: '{{input}}' },
-    config: outputConfig([outputField('answer', '应用回复')]),
+    config: outputConfig([outputField('output', '应用输出')]),
   },
   {
     type: 'mcp-node',
@@ -1085,6 +1136,7 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '工具/其他',
     status: 'tool',
     description: 'MCP 调用',
+    height: 252,
     nodeData: {
       mcp_tool: '',
       mcp_tools: [],
@@ -1104,8 +1156,10 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据源',
     status: 'resource',
     description: '本地内容',
+    height: 728.375,
+    kind: 'data-source',
     nodeData: { content: '{{input}}' },
-    config: outputConfig([outputField('content', '内容')]),
+    config: outputConfig([outputField('file_list', '文件列表', 'array')]),
   },
   {
     type: 'data-source-web-node',
@@ -1113,6 +1167,8 @@ export const nodeTemplates: NodeTemplate[] = [
     category: '数据源',
     status: 'resource',
     description: '抓取网页',
+    height: 180,
+    kind: 'data-source',
     nodeData: {
       document_list: ['start-node', 'document'],
       selector: '',
@@ -1128,6 +1184,60 @@ export const nodeTemplates: NodeTemplate[] = [
 
 export function cloneValue<T>(value: T): T {
   return cloneDeep(value);
+}
+
+function textValue(value: unknown) {
+  return `${value ?? ''}`.trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function labelText(label: unknown, fallback = '') {
+  if (typeof label === 'string') return label;
+  if (isRecord(label) && typeof label.label === 'string') return label.label;
+  return fallback;
+}
+
+function normalizeKnowledgeUserFields(fields: unknown) {
+  if (!Array.isArray(fields)) return [];
+  return cloneValue(fields).map((field: Record<string, any>, index: number) => {
+    const fieldName =
+      textValue(field.field || field.name || field.variable) ||
+      `field_${index + 1}`;
+    const inputType = textValue(field.input_type || field.type) || 'TextInput';
+    return {
+      ...field,
+      default_value: field.default_value ?? '',
+      field: fieldName,
+      input_type: inputType,
+      label: labelText(field.label, textValue(field.name) || fieldName),
+      required:
+        field.required === undefined ? !!field.is_required : !!field.required,
+      type: textValue(field.type) || inputType,
+    };
+  });
+}
+
+function knowledgeGlobalFields(fields: Array<Record<string, any>>) {
+  return [
+    ...fields
+      .map((field) => {
+        const fieldName = textValue(
+          field.field || field.name || field.variable,
+        );
+        if (!fieldName) return null;
+        return {
+          label: labelText(field.label, fieldName) || fieldName,
+          value: fieldName,
+          globeLabel: `{{global.${fieldName}}}`,
+          globeValue: `{{context['global'].${fieldName}}}`,
+        };
+      })
+      .filter(Boolean),
+    DEFAULT_KNOWLEDGE_GLOBAL_FIELD,
+  ];
 }
 
 export function isWorkflowSingletonNode(type?: string) {
@@ -1248,6 +1358,8 @@ export function defaultProperties(
       user_input_config: { title: '用户输入' },
       user_input_field_list: [],
       width: 600,
+      ...(meta.height ? { height: meta.height } : {}),
+      ...(meta.kind ? { kind: meta.kind } : {}),
     };
   }
   const properties = {
@@ -1264,7 +1376,18 @@ export function defaultProperties(
     unsupportedTemplate: !!meta.stub,
     width,
     ...(meta.height ? { height: meta.height } : {}),
+    ...(meta.kind ? { kind: meta.kind } : {}),
   };
+  if (type === 'knowledge-base-node') {
+    return {
+      ...properties,
+      config: {
+        ...properties.config,
+        globalFields: [DEFAULT_KNOWLEDGE_GLOBAL_FIELD],
+      },
+      user_input_field_list: [],
+    };
+  }
   return properties;
 }
 
@@ -1299,6 +1422,13 @@ export function normalizeProperties(
     ...cloneValue(defaults.node_data),
     ...sourceNodeData,
   };
+  if (
+    type === 'knowledge-base-node' &&
+    !Array.isArray(sourceNodeData.knowledge_id_list) &&
+    Array.isArray(mergedNodeData.knowledgeIds)
+  ) {
+    mergedNodeData.knowledge_id_list = cloneValue(mergedNodeData.knowledgeIds);
+  }
   const normalized: Record<string, any> = {
     ...defaults,
     ...source,
@@ -1309,6 +1439,20 @@ export function normalizeProperties(
     templateStatus: source.templateStatus || defaults.templateStatus,
     type,
   };
+  if (type === 'knowledge-base-node') {
+    const propertyFields = Array.isArray(source.user_input_field_list)
+      ? source.user_input_field_list
+      : sourceNodeData.user_input_field_list;
+    const legacyFields = Array.isArray(propertyFields)
+      ? propertyFields
+      : sourceNodeData.userInputFields;
+    const userInputFields = normalizeKnowledgeUserFields(legacyFields);
+    normalized.user_input_field_list = userInputFields;
+    normalized.config = {
+      ...normalized.config,
+      globalFields: knowledgeGlobalFields(userInputFields),
+    };
+  }
   return normalized;
 }
 
@@ -1371,7 +1515,7 @@ export function nodeSummary(type: string, properties?: Record<string, any>) {
       `意图 ${compact(data.branch)}`,
       `问题 ${compact(data.content_list)}`,
     ],
-    'knowledge-base-node': [`知识库 ${compact(data.knowledgeIds)}`],
+    'knowledge-base-node': [`知识库 ${compact(data.knowledge_id_list)}`],
     'knowledge-write-node': [`知识库 ${compact(data.knowledgeId)}`],
     'loop-body-node': [`循环 ${compact(data.loop_node_id || data.loopNodeId)}`],
     'loop-node': [

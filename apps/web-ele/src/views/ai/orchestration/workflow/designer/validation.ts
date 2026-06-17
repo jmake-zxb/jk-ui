@@ -50,8 +50,10 @@ export function validateWorkflow(
   const baseNodes = graphData.nodes.filter(
     (node) => node.type === configNodeType || node.id === configNodeType,
   );
-  if (baseNodes.length > 1)
-    warnings.push(`工作流最多建议保留一个 ${configNodeType}`);
+  if (baseNodes.length === 0)
+    errors.push(`工作流必须包含一个 ${configNodeType}`);
+  else if (baseNodes.length > 1)
+    errors.push(`工作流只能包含一个 ${configNodeType}`);
 
   graphData.edges.forEach((edge) => {
     if (!edge.source || !idSet.has(edge.source))
@@ -93,6 +95,13 @@ export function validateWorkflow(
       node.name,
     );
     const isConfigNode = CONFIG_NODE_TYPES.has(node.type);
+    // 节点运行时可用性检查(对齐 MaxKB is_valid_node):raw properties.status
+    // 为数字且非 200 表示节点不可用(如 500 模型已删除)。字符串 status(调色板
+    // 分类如 'ai'/'input')由 normalizeProperties 注入,不参与可用性判断。
+    const rawStatus = (node.properties || {}).status;
+    if (typeof rawStatus === 'number' && rawStatus !== 200) {
+      errors.push(`节点不可用: ${properties.stepName || node.id}`);
+    }
     if (
       node.type !== entryNodeType &&
       !isConfigNode &&

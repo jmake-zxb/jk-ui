@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FormInstance } from 'element-plus';
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { Close, Plus } from '@element-plus/icons-vue';
 import {
@@ -19,6 +19,8 @@ import {
 } from 'element-plus';
 import { cloneDeep, set } from 'lodash-es';
 
+import { listKnowledgeTags } from '#/api/ai/knowledge';
+
 import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
@@ -35,6 +37,8 @@ type SearchCondition = {
   key: string;
   value: string;
 };
+
+type KnowledgeTagRecord = Record<string, unknown>;
 
 type SearchDocumentNodeData = Record<string, unknown> & {
   knowledge_id_list: Array<number | string>;
@@ -74,6 +78,8 @@ const formRef = ref<FormInstance>();
 const scopeCascaderRef = ref<InstanceType<typeof NodeCascader>>();
 const questionCascaderRef = ref<InstanceType<typeof NodeCascader>>();
 const knowledgeDialogRef = ref<InstanceType<typeof KnowledgeSelectDialog>>();
+const knowledgeTagOptions = ref<KnowledgeTagRecord[]>([]);
+const tagLoading = ref(false);
 const formData = ref<SearchDocumentNodeData>(
   normalizeNodeData(nodeModel.properties?.node_data),
 );
@@ -87,6 +93,17 @@ const selectedKnowledgeItems = computed(() => {
     const record = records.find((item) => `${idOf(item)}` === `${id}`);
     return record || { id, name: `${id}` };
   });
+});
+const conditionKeyOptions = computed(() => {
+  const values = new Map<string, string>();
+  knowledgeTagOptions.value.forEach((record) => {
+    const key = tagKeyOf(record);
+    if (key) values.set(key, tagLabelOf(record));
+  });
+  formData.value.search_condition_list.forEach((condition) => {
+    if (condition.key) values.set(condition.key, condition.key);
+  });
+  return [...values.entries()].map(([value, label]) => ({ label, value }));
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -176,6 +193,28 @@ function nameOf(record: KnowledgeRecord) {
   return `${record.name || record.knowledgeName || record.knowledge_name || record.title || idOf(record) || ''}`;
 }
 
+function tagKeyOf(record: KnowledgeTagRecord) {
+  const value = record.key;
+  return `${value ?? ''}`.trim();
+}
+
+function tagLabelOf(record: KnowledgeTagRecord) {
+  const key = tagKeyOf(record);
+  return key || `${record.label ?? ''}`.trim();
+}
+
+function normalizeTagRecords(value: unknown): KnowledgeTagRecord[] {
+  if (Array.isArray(value)) {
+    return value.filter((item) => isRecord(item));
+  }
+  if (!isRecord(value)) return [];
+  for (const key of ['records', 'items', 'list', 'rows', 'data']) {
+    const records = normalizeTagRecords(value[key]);
+    if (records.length > 0) return records;
+  }
+  return [];
+}
+
 function hasReferenceValue(value: unknown) {
   return Array.isArray(value) && value.length >= 2;
 }
@@ -238,6 +277,32 @@ function applyKnowledgeSelection(records: KnowledgeRecord[]) {
   );
   set(formData.value, 'knowledge_list', normalizedRecords);
   syncNodeData();
+}
+
+async function loadKnowledgeTags() {
+  const ids = formData.value.knowledge_id_list.filter((id) => `${id}`);
+  if (ids.length === 0) {
+    knowledgeTagOptions.value = [];
+    return;
+  }
+  tagLoading.value = true;
+  try {
+    const responses = await listKnowledgeTags(ids);
+    const records = responses.flatMap((response) =>
+      normalizeTagRecords(response),
+    );
+    const seen = new Set<string>();
+    knowledgeTagOptions.value = records.filter((record) => {
+      const key = tagKeyOf(record);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  } catch {
+    knowledgeTagOptions.value = [];
+  } finally {
+    tagLoading.value = false;
+  }
 }
 
 function removeKnowledge(id: number | string) {
@@ -331,6 +396,14 @@ onMounted(() => {
   syncNodeData();
   set(nodeModel, 'validate', validate);
 });
+
+watch(
+  () => cloneDeep(formData.value.knowledge_id_list),
+  () => {
+    loadKnowledgeTags();
+  },
+  { immediate: true },
+);
 
 onBeforeUnmount(() => {
   if (nodeModel.validate === validate) {
@@ -499,12 +572,25 @@ onBeforeUnmount(() => {
             :key="index"
             class="workflow-search-document-node__condition-row"
           >
-            <ElInput
+            <ElSelect
               :model-value="condition.key"
+              allow-create
               clearable
+              filterable
+              :loading="tagLoading"
               placeholder="字段"
-              @update:model-value="patchCondition(index, { key: $event })"
-            />
+              :teleported="false"
+              @update:model-value="
+                patchCondition(index, { key: textValue($event) })
+              "
+            >
+              <ElOption
+                v-for="item in conditionKeyOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
             <ElSelect
               :model-value="condition.compare"
               :teleported="false"

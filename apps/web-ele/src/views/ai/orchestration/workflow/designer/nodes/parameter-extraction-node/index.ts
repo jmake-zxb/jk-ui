@@ -7,6 +7,10 @@ class ParameterExtractionNodeView extends AppNode {
   constructor(props: any) {
     super(props, ParameterExtractionNode as Component);
   }
+
+  getConfig(props: any) {
+    return props.model.properties.config;
+  }
 }
 export default {
   model: AppNodeModel,

@@ -46,6 +46,7 @@ import {
   normalizeGraphData,
   toLogicFlowGraph,
 } from './graph-data';
+import { collectNodeValidationErrors } from './node-validation';
 import {
   cloneValue,
   DEFAULT_GRAPH_DATA,
@@ -119,6 +120,13 @@ const defaultGraphData = computed(() =>
 const fallbackNodeType = computed(() =>
   activeFoundationMode.value === 'tool' ? 'tool-base-node' : 'base-node',
 );
+
+function syncWorkflowProvide(lf: any) {
+  if (!lf?.graphModel) return;
+  lf.graphModel.get_provide = () => ({
+    workflowMode: activeFoundationMode.value,
+  });
+}
 
 const nodeMenuTabs = [
   { categories: ['业务逻辑'], label: '基础组件', name: 'base' },
@@ -904,6 +912,7 @@ async function initLogicFlow() {
   });
   registerWorkflowNodes(lf);
   lf.graphModel.paletteMode = activePaletteMode.value;
+  syncWorkflowProvide(lf);
   lfRef.value = lf;
   bindLogicFlowEvents(lf);
   bindCanvasShortcuts(lf);
@@ -1254,13 +1263,38 @@ function runLocalValidation(showMessage = true) {
   return localValidation.value.errors.length === 0;
 }
 
+async function runNodeValidation(): Promise<string[]> {
+  const nodes = lfRef.value?.graphModel?.nodes || [];
+  return collectNodeValidationErrors(nodes);
+}
+
 function toggleAddMenu(open?: boolean) {
   canvasAddMenuOpen.value = open ?? !canvasAddMenuOpen.value;
+}
+
+function applyRuntimeNodeStatus(nodeId: string, status?: string) {
+  const node = lfRef.value?.graphModel?.getNodeModelById?.(nodeId);
+  if (!node) return;
+  node.runtimeStatus = status;
+  node.refreshVueComponent?.();
+}
+
+function clearRuntimeNodeStatuses() {
+  lfRef.value?.graphModel?.nodes?.forEach((node: any) => {
+    node.runtimeStatus = undefined;
+    node.refreshVueComponent?.();
+  });
 }
 
 watch(activePaletteMode, (mode) => {
   if (!lfRef.value?.graphModel) return;
   lfRef.value.graphModel.paletteMode = mode;
+  refreshRenderedNodeComponents();
+});
+
+watch(activeFoundationMode, () => {
+  if (!lfRef.value) return;
+  syncWorkflowProvide(lfRef.value);
   refreshRenderedNodeComponents();
 });
 
@@ -1277,6 +1311,8 @@ onBeforeUnmount(() => {
 });
 
 defineExpose({
+  applyRuntimeNodeStatus,
+  clearRuntimeNodeStatuses,
   fitView,
   getGraphData,
   refreshFromDsl: refreshGraphData,
@@ -1284,6 +1320,7 @@ defineExpose({
   renderGraphData,
   renderGraphFromDsl: (fit = true) => renderGraphData(undefined, fit),
   runLocalValidation,
+  runNodeValidation,
   syncGraphData,
   syncGraphToDsl: syncGraphData,
   toggleAddMenu,

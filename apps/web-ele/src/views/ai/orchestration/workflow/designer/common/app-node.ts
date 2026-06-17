@@ -155,7 +155,17 @@ export class AppNode extends HtmlResize.view {
   }
 
   private bumpVueVersion = () => {
-    if (this.vueState) this.vueState.version += 1;
+    if (!this.vueState) return;
+    const previousModel = this.vueState.model;
+    const liveModel = this.resolveLiveModel(previousModel);
+    if (liveModel !== previousModel) {
+      this.transferModelCallbacks(previousModel, liveModel);
+      this.clearRefreshVueComponent(previousModel);
+      this.vueState.model = liveModel;
+      this.attachRefreshVueComponent(liveModel);
+    }
+    this.vueState.graphModel = this.props.graphModel;
+    this.vueState.version += 1;
   };
 
   private clearRefreshVueComponent(model?: any) {
@@ -180,9 +190,10 @@ export class AppNode extends HtmlResize.view {
     if (!this.root) return;
     this.unmountVueComponent();
     const component = this.component;
+    const model = this.resolveLiveModel();
     const state = shallowReactive<VueMountState>({
       graphModel: this.props.graphModel,
-      model: this.props.model,
+      model,
       version: 0,
     });
     this.vueState = state;
@@ -218,8 +229,13 @@ export class AppNode extends HtmlResize.view {
     return anchorData;
   }
 
+  private resolveLiveModel(model = this.props.model) {
+    if (!model?.id) return model;
+    return this.props.graphModel?.getNodeModelById?.(model.id) || model;
+  }
+
   private syncVueMountState() {
-    const nextModel = this.props.model;
+    const nextModel = this.resolveLiveModel();
     const nextGraphModel = this.props.graphModel;
     nextModel.ensureWorkflowProperties();
     if (!this.vueState) return;

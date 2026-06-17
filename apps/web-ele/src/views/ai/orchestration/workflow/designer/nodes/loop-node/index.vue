@@ -242,8 +242,26 @@ watch(showNode, (visible) => {
   else destroyLoopBodyNode();
 });
 
+/** 对齐 MaxKB isLastNode：当前节点有入边且无出边时为末端节点 */
+function isLastNode(nodeModel: any) {
+  const incoming =
+    nodeModel.graphModel?.getNodeIncomingNode?.(nodeModel.id) || [];
+  const outgoing =
+    nodeModel.graphModel?.getNodeOutgoingNode?.(nodeModel.id) || [];
+  // loop-body-node 是虚拟子节点不算出边
+  const realOutgoing = outgoing.filter(
+    (node: any) => node.type !== 'loop-body-node',
+  );
+  return incoming.length > 0 && realOutgoing.length === 0;
+}
+
 onMounted(() => {
   formData.value = normalizeLoopNodeData(props.nodeModel.properties?.node_data);
+  // 对齐 MaxKB：node_data.is_result 未定义且为末端节点时自动设为 true
+  if (formData.value.is_result === undefined && isLastNode(props.nodeModel)) {
+    set(formData.value, 'is_result', true);
+    syncNodeData(['node_data']);
+  }
   set(props.nodeModel, 'validate', validate);
   if (showNode.value) nextTick(queueMountLoopBodyNode);
 });

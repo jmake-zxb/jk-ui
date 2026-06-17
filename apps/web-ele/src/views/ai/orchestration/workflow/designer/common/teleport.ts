@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file */
 import type { BaseEdgeModel, BaseNodeModel, GraphModel } from '@logicflow/core';
 
 import { defineComponent, Fragment, h, markRaw, reactive, Teleport } from 'vue';

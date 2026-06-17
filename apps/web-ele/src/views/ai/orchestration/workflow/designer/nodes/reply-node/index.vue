@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, inject, onMounted, ref } from 'vue';
 
 import {
   ElForm,
@@ -20,6 +20,8 @@ const props = defineProps<{
   nodeModel: any;
   renderVersion?: number;
 }>();
+type WorkflowMode = 'application' | 'application-loop' | 'tool' | string;
+const workflowMode = inject<WorkflowMode>('workflowMode', 'application');
 
 const defaultNodeData = {
   content: '',
@@ -90,6 +92,10 @@ const formData = computed({
     refreshNode();
   },
 });
+
+const showWorkflowOutputControls = computed(
+  () => !`${workflowMode || 'application'}`.includes('knowledge'),
+);
 
 function patchData(key: string, value: unknown) {
   set(props.nodeModel.properties.node_data, key, cloneDeep(value));
@@ -168,7 +174,10 @@ onMounted(() => {
         </ElFormItem>
       </section>
 
-      <section class="workflow-reply-node__panel">
+      <section
+        v-if="showWorkflowOutputControls"
+        class="workflow-reply-node__panel"
+      >
         <div class="workflow-reply-node__switch-row">
           <div class="workflow-reply-node__label-with-tip">
             <div>

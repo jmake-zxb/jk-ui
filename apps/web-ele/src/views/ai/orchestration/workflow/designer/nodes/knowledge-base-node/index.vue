@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import {
   ElButton,
@@ -11,6 +11,7 @@ import {
   ElSelect,
   ElSwitch,
 } from 'element-plus';
+import { cloneDeep } from 'lodash-es';
 
 import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
@@ -18,6 +19,24 @@ import NodeContainer from '../../common/NodeContainer.vue';
 
 const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
 const nodeRenderVersion = ref(0);
+
+const defaultKnowledgeGlobalField = {
+  label: '知识库',
+  value: 'knowledge',
+  globeLabel: '{{global.knowledge}}',
+  globeValue: "{{context['global'].knowledge}}",
+};
+
+const inputTypeOptions = [
+  { label: '文本', value: 'TextInput' },
+  { label: '多行文本', value: 'TextareaInput' },
+  { label: '密码', value: 'PasswordInput' },
+  { label: 'JSON', value: 'JsonInput' },
+  { label: '数字', value: 'number' },
+  { label: '布尔', value: 'boolean' },
+  { label: '数组', value: 'array' },
+  { label: '字符串', value: 'string' },
+];
 
 const formData = computed({
   get: () => {
@@ -31,11 +50,8 @@ const formData = computed({
 });
 
 const userFields = computed(() => {
-  if (Array.isArray(formData.value.user_input_field_list))
-    return formData.value.user_input_field_list;
-  if (Array.isArray(formData.value.userInputFields))
-    return formData.value.userInputFields;
-  return [];
+  trackRenderVersion(props.renderVersion, nodeRenderVersion.value);
+  return normalizeUserFields(props.nodeModel.properties?.user_input_field_list);
 });
 const outputFields = computed(() =>
   Array.isArray(formData.value.output_field_list)
@@ -66,8 +82,81 @@ function patchIds(key: string, value: string) {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function textValue(value: unknown) {
+  return `${value ?? ''}`.trim();
+}
+
+function labelText(label: unknown, fallback = '') {
+  if (typeof label === 'string') return label;
+  if (isRecord(label)) {
+    const tooltipLabel = label.label;
+    if (typeof tooltipLabel === 'string') return tooltipLabel;
+  }
+  return fallback;
+}
+
+function normalizeUserFields(fields: unknown): Array<Record<string, any>> {
+  if (!Array.isArray(fields)) return [];
+  return fields.map((field, index) => {
+    const source = isRecord(field) ? cloneDeep(field) : {};
+    const fieldName =
+      textValue(source.field || source.name || source.variable) ||
+      `field_${index + 1}`;
+    const fieldLabel =
+      labelText(source.label, textValue(source.name) || fieldName) || fieldName;
+    const inputType =
+      textValue(source.input_type || source.type) || 'TextInput';
+    return {
+      ...source,
+      default_value: source.default_value ?? '',
+      field: fieldName,
+      input_type: inputType,
+      label: fieldLabel,
+      required:
+        source.required === undefined
+          ? !!source.is_required
+          : !!source.required,
+      type: textValue(source.type) || inputType,
+    };
+  });
+}
+
+function globalFieldsFor(fields: Array<Record<string, any>>) {
+  const userGlobalFields = fields
+    .map((field) => {
+      const fieldName = textValue(field.field || field.name || field.variable);
+      if (!fieldName) return null;
+      return {
+        label: labelText(field.label, fieldName) || fieldName,
+        value: fieldName,
+        globeLabel: `{{global.${fieldName}}}`,
+        globeValue: `{{context['global'].${fieldName}}}`,
+      };
+    })
+    .filter(Boolean);
+  return [...userGlobalFields, defaultKnowledgeGlobalField];
+}
+
 function syncUserFields(nextFields: any[]) {
-  patchData('user_input_field_list', nextFields);
+  const normalizedFields = normalizeUserFields(nextFields);
+  const config = {
+    ...props.nodeModel.properties?.config,
+    globalFields: globalFieldsFor(normalizedFields),
+  };
+  syncNodeProperties(
+    props.nodeModel,
+    {
+      config,
+      user_input_field_list: normalizedFields,
+    },
+    ['user_input_field_list', 'config'],
+  );
+  props.nodeModel.clear_next_node_field?.(true);
+  nodeRenderVersion.value += 1;
 }
 
 function addUserField() {
@@ -75,9 +164,11 @@ function addUserField() {
     ...userFields.value,
     {
       field: `field_${userFields.value.length + 1}`,
+      input_type: 'TextInput',
       label: `字段 ${userFields.value.length + 1}`,
+      default_value: '',
       required: false,
-      type: 'string',
+      type: 'TextInput',
       value: [],
     },
   ]);
@@ -129,6 +220,16 @@ function removeOutputField(index: number) {
     ),
   );
 }
+
+function defaultValueText(value: unknown) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return `${value}`;
+}
+
+onMounted(() => {
+  syncUserFields(userFields.value);
+});
 </script>
 
 <template>
@@ -148,9 +249,7 @@ function removeOutputField(index: number) {
         </ElFormItem>
         <ElFormItem label="知识库 ID">
           <ElInput
-            :model-value="
-              idsValue('knowledge_id_list') || idsValue('knowledgeIds')
-            "
+            :model-value="idsValue('knowledge_id_list')"
             placeholder="多个 ID 用逗号分隔"
             @update:model-value="patchIds('knowledge_id_list', $event)"
           />
@@ -208,17 +307,29 @@ function removeOutputField(index: number) {
               "
             />
             <ElSelect
-              :model-value="field.type || 'string'"
+              :model-value="field.input_type || field.type || 'TextInput'"
               :teleported="false"
               @update:model-value="
-                patchUserField(Number(index), { type: $event })
+                patchUserField(Number(index), {
+                  input_type: $event,
+                  type: $event,
+                })
               "
             >
-              <ElOption label="string" value="string" />
-              <ElOption label="number" value="number" />
-              <ElOption label="boolean" value="boolean" />
-              <ElOption label="array" value="array" />
+              <ElOption
+                v-for="option in inputTypeOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
             </ElSelect>
+            <ElInput
+              :model-value="defaultValueText(field.default_value)"
+              placeholder="默认值"
+              @update:model-value="
+                patchUserField(Number(index), { default_value: $event })
+              "
+            />
             <ElSwitch
               :model-value="!!field.required || !!field.is_required"
               size="small"
@@ -326,7 +437,7 @@ function removeOutputField(index: number) {
 }
 
 .workflow-node-field.is-user {
-  grid-template-columns: 1fr 1fr 86px auto auto;
+  grid-template-columns: 1fr 1fr 104px 1fr auto auto;
   align-items: center;
 }
 

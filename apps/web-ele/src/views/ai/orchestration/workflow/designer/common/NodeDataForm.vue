@@ -231,6 +231,13 @@ const configs: Record<string, NodeConfig> = {
       },
       { key: 'prompt', label: '提示词', rows: 4, type: 'textarea' },
       {
+        key: 'negative_prompt',
+        label: '反向提示词',
+        placeholder: '可选，描述不希望出现的内容',
+        rows: 3,
+        type: 'textarea',
+      },
+      {
         key: 'size',
         label: '尺寸',
         options: [

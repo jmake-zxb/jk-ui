@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import {
+  computed,
+  inject,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+} from 'vue';
 
 import {
   CaretRight,
@@ -41,12 +48,14 @@ import TextMagnifyDialog from './component/TextMagnifyDialog.vue';
 
 type ResourceRecord = Record<string, unknown>;
 type ResourceKind = 'application' | 'mcp' | 'skill' | 'tool';
+type WorkflowMode = 'application' | 'application-loop' | 'tool' | string;
 
 const props = defineProps<{
   nodeModel: any;
   renderVersion?: number;
 }>();
 const nodeModel = props.nodeModel;
+const workflowMode = inject<WorkflowMode>('workflowMode', 'application');
 
 const defaultPrompt =
   '请根据用户问题和知识库检索结果回答。\n\n用户问题：{{start-node.question}}\n\n知识库检索结果：\n{{search-knowledge-node.data}}\n\n如果检索结果不足以回答，请说明无法从现有知识中确认。';
@@ -253,6 +262,9 @@ const modelParamsSummary = computed(() => {
 const mcpToolOptions = computed(() => filterTools(['MCP']));
 const toolOptions = computed(() => filterTools(['CUSTOM', 'WORKFLOW']));
 const skillToolOptions = computed(() => filterTools(['SKILL']));
+const showWorkflowOutputControls = computed(
+  () => !`${workflowMode || 'application'}`.includes('knowledge'),
+);
 
 function patchData(key: string, value: unknown) {
   set(nodeModel.properties.node_data, key, cloneDeep(value));
@@ -270,8 +282,14 @@ function patchModelType(value: string) {
 }
 
 function patchModelId(value: number | string | undefined) {
+  const prevId = nodeModel.properties.node_data?.model_id;
   set(nodeModel.properties.node_data, 'model_id', value || '');
-  if (!value) set(nodeModel.properties.node_data, 'model_params_setting', {});
+  if (!value) {
+    set(nodeModel.properties.node_data, 'model_params_setting', {});
+  } else if (prevId !== value) {
+    // Model changed — reset params so the dialog fetches defaults for the new model
+    set(nodeModel.properties.node_data, 'model_params_setting', {});
+  }
   refreshNode();
 }
 
@@ -554,12 +572,22 @@ async function loadResourceOptions() {
   );
 }
 
+function onRefreshLongTermConfig() {
+  // MaxKB triggers re-render so system prompt template picks up
+  // long-term memory variable updates from base-node
+  nodeRenderVersion.value += 1;
+}
+
 onMounted(() => {
   ensureNodeData();
   syncMediaFieldsFromBaseNode();
   nodeModel.graphModel?.eventCenter?.on?.(
     'refreshFileUploadConfig',
     syncMediaFieldsFromBaseNode,
+  );
+  nodeModel.graphModel?.eventCenter?.on?.(
+    'refreshLongTermConfig',
+    onRefreshLongTermConfig,
   );
   set(nodeModel, 'validate', validate);
   loadResourceOptions();
@@ -569,6 +597,10 @@ onBeforeUnmount(() => {
   nodeModel.graphModel?.eventCenter?.off?.(
     'refreshFileUploadConfig',
     syncMediaFieldsFromBaseNode,
+  );
+  nodeModel.graphModel?.eventCenter?.off?.(
+    'refreshLongTermConfig',
+    onRefreshLongTermConfig,
   );
 });
 </script>
@@ -693,7 +725,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="workflow-ai-chat-node__panel">
-        <ElFormItem>
+        <ElFormItem v-if="showWorkflowOutputControls">
           <template #label>
             <div class="workflow-ai-chat-node__form-label">
               <span>历史记录</span>
@@ -1083,7 +1115,10 @@ onBeforeUnmount(() => {
             />
           </div>
         </div>
-        <div class="workflow-ai-chat-node__switch-row">
+        <div
+          v-if="showWorkflowOutputControls"
+          class="workflow-ai-chat-node__switch-row"
+        >
           <div>
             <strong>返回内容</strong>
             <small>将本节点回复作为工作流输出内容</small>

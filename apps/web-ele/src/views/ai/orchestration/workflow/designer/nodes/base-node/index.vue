@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { EditPen, Operation } from '@element-plus/icons-vue';
 import {
@@ -25,38 +25,42 @@ import {
 } from './component/base-node-utils';
 import ChatFieldTable from './component/ChatFieldTable.vue';
 import FileUploadSettingDialog from './component/FileUploadSettingDialog.vue';
-import JsonParamSettingDialog from './component/JsonParamSettingDialog.vue';
 import LocalModelSelect from './component/LocalModelSelect.vue';
 import LongTermSettingDialog from './component/LongTermSettingDialog.vue';
+import ModelParamSettingDialog from './component/ModelParamSettingDialog.vue';
 import PrologueMagnifyDialog from './component/PrologueMagnifyDialog.vue';
 import UserInputFieldTable from './component/UserInputFieldTable.vue';
 
 const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
-const nodeModel = props.nodeModel;
+const nodeModel = computed(
+  () =>
+    props.nodeModel?.graphModel?.getNodeModelById?.(props.nodeModel.id) ||
+    props.nodeModel,
+);
 
 const fileUploadSettingDialogRef =
   ref<InstanceType<typeof FileUploadSettingDialog>>();
 const longTermParamDialogRef =
-  ref<InstanceType<typeof JsonParamSettingDialog>>();
+  ref<InstanceType<typeof ModelParamSettingDialog>>();
 const longTermSettingDialogRef =
   ref<InstanceType<typeof LongTermSettingDialog>>();
 const prologueMagnifyDialogRef =
   ref<InstanceType<typeof PrologueMagnifyDialog>>();
-const ttsParamDialogRef = ref<InstanceType<typeof JsonParamSettingDialog>>();
-ensureBaseNodeProperties(nodeModel);
+const ttsParamDialogRef = ref<InstanceType<typeof ModelParamSettingDialog>>();
+ensureBaseNodeProperties(nodeModel.value);
 
 const formData = ref<Record<string, any>>({
-  ...nodeModel.properties.node_data,
+  ...nodeModel.value.properties.node_data,
 });
 
 function syncFormDataFromModel() {
-  ensureBaseNodeProperties(nodeModel);
-  formData.value = { ...nodeModel.properties.node_data };
+  ensureBaseNodeProperties(nodeModel.value);
+  formData.value = { ...nodeModel.value.properties.node_data };
 }
 
 function saveNodeData(nextData: Record<string, any>) {
   formData.value = nextData;
-  updateProperties(nodeModel, { node_data: nextData }, ['node_data']);
+  updateProperties(nodeModel.value, { node_data: nextData }, ['node_data']);
 }
 
 function patchData(key: string, value: any) {
@@ -75,9 +79,11 @@ function patchData(key: string, value: any) {
   }
   saveNodeData(nextData);
   if (key === 'file_upload_enable')
-    emitGraphEvent(nodeModel, 'refreshFileUploadConfig');
+    emitGraphEvent(nodeModel.value, 'refreshFileUploadConfig');
   if (key === 'long_term_enable')
-    emitGraphEvent(nodeModel, 'refreshLongTermConfig');
+    emitGraphEvent(nodeModel.value, 'refreshLongTermConfig');
+  if (key === 'long_term_enable')
+    emitGraphEvent(nodeModel.value, 'chatFieldList');
 }
 
 function openFileUploadSettingDialog() {
@@ -88,7 +94,7 @@ function openFileUploadSettingDialog() {
 
 function refreshFileUploadForm(data: any) {
   saveNodeData({ ...formData.value, file_upload_setting: data });
-  emitGraphEvent(nodeModel, 'refreshFileUploadConfig');
+  emitGraphEvent(nodeModel.value, 'refreshFileUploadConfig');
 }
 
 function openPrologueDialog() {
@@ -118,9 +124,10 @@ function refreshLongTermSetting(data: {
 }
 
 function openLongTermParamDialog() {
+  if (!formData.value.long_term_model_id) return;
   longTermParamDialogRef.value?.open(
+    formData.value.long_term_model_id,
     formData.value.long_term_model_params_setting,
-    '长期记忆模型参数',
   );
 }
 
@@ -129,9 +136,10 @@ function refreshLongTermParams(data: Record<string, any>) {
 }
 
 function openTtsParamDialog() {
+  if (!formData.value.tts_model_id || formData.value.tts_type !== 'TTS') return;
   ttsParamDialogRef.value?.open(
+    formData.value.tts_model_id,
     formData.value.tts_model_params_setting,
-    '语音播放模型参数',
   );
 }
 
@@ -139,10 +147,28 @@ function refreshTtsParams(data: Record<string, any>) {
   saveNodeData({ ...formData.value, tts_model_params_setting: data });
 }
 
+function onLongTermModelChange(modelId: number | string | undefined) {
+  patchData('long_term_model_id', modelId);
+  if (modelId) {
+    longTermParamDialogRef.value?.reset_default(String(modelId));
+  } else {
+    refreshLongTermParams({});
+  }
+}
+
+function onTtsModelChange(modelId: number | string | undefined) {
+  patchData('tts_model_id', modelId);
+  if (modelId && formData.value.tts_type === 'TTS') {
+    ttsParamDialogRef.value?.reset_default(String(modelId));
+  } else {
+    refreshTtsParams({});
+  }
+}
+
 function validationError(errMessage: string) {
   return Object.assign(new Error(errMessage), {
     errMessage,
-    node: nodeModel,
+    node: nodeModel.value,
   });
 }
 
@@ -163,13 +189,13 @@ function validate() {
   ) {
     return Promise.reject(validationError('请选择语音播放模型'));
   }
-  const fieldList = nodeModel.properties?.user_input_field_list || [];
+  const fieldList = nodeModel.value.properties?.user_input_field_list || [];
   for (const field of fieldList) {
     for (const condition of field.visibility_rules?.conditions || []) {
       if (!Array.isArray(condition.field) || condition.field.length < 2)
         continue;
       const isBaseField =
-        condition.field[0] === nodeModel.id ||
+        condition.field[0] === nodeModel.value.id ||
         condition.field[0] === 'base-node';
       if (
         isBaseField &&
@@ -185,7 +211,7 @@ function validate() {
 }
 
 onMounted(() => {
-  nodeModel.validate = validate;
+  nodeModel.value.validate = validate;
 });
 
 watch(() => props.renderVersion, syncFormDataFromModel);
@@ -251,6 +277,12 @@ watch(() => props.renderVersion, syncFormDataFromModel);
           <div>
             <strong>长期记忆</strong>
             <small>开启后开始节点会输出 memory 字段</small>
+            <ElTooltip
+              content="此处输出的字段为 {{开始节点.memory}}"
+              placement="right"
+            >
+              <span class="workflow-base-node__tip">?</span>
+            </ElTooltip>
           </div>
           <div class="workflow-base-node__switch-actions">
             <ElButton
@@ -277,7 +309,7 @@ watch(() => props.renderVersion, syncFormDataFromModel);
             :model-value="formData.long_term_model_id"
             model-type="CHAT"
             placeholder="请选择长期记忆模型"
-            @update:model-value="patchData('long_term_model_id', $event)"
+            @update:model-value="onLongTermModelChange"
           />
           <ElButton
             size="small"
@@ -343,22 +375,25 @@ watch(() => props.renderVersion, syncFormDataFromModel);
             <strong>语音输入</strong>
             <small>开启语音转文字入口</small>
           </div>
-          <ElSwitch
-            :model-value="!!formData.stt_model_enable"
-            size="small"
-            @update:model-value="patchData('stt_model_enable', $event)"
-          />
+          <div class="workflow-base-node__switch-actions">
+            <ElCheckbox
+              v-if="formData.stt_model_enable"
+              :model-value="!!formData.stt_autosend"
+              @update:model-value="patchData('stt_autosend', $event)"
+            >
+              自动发送
+            </ElCheckbox>
+            <ElSwitch
+              :model-value="!!formData.stt_model_enable"
+              size="small"
+              @update:model-value="patchData('stt_model_enable', $event)"
+            />
+          </div>
         </div>
         <div
           v-if="formData.stt_model_enable"
-          class="workflow-base-node__model-row is-stacked"
+          class="workflow-base-node__model-row"
         >
-          <ElCheckbox
-            :model-value="!!formData.stt_autosend"
-            @update:model-value="patchData('stt_autosend', $event)"
-          >
-            自动发送
-          </ElCheckbox>
           <LocalModelSelect
             :model-value="formData.stt_model_id"
             model-type="STT"
@@ -371,22 +406,25 @@ watch(() => props.renderVersion, syncFormDataFromModel);
             <strong>语音播放</strong>
             <small>开启回复朗读能力</small>
           </div>
-          <ElSwitch
-            :model-value="!!formData.tts_model_enable"
-            size="small"
-            @update:model-value="patchData('tts_model_enable', $event)"
-          />
+          <div class="workflow-base-node__switch-actions">
+            <ElCheckbox
+              v-if="formData.tts_model_enable"
+              :model-value="!!formData.tts_autoplay"
+              @update:model-value="patchData('tts_autoplay', $event)"
+            >
+              自动播放
+            </ElCheckbox>
+            <ElSwitch
+              :model-value="!!formData.tts_model_enable"
+              size="small"
+              @update:model-value="patchData('tts_model_enable', $event)"
+            />
+          </div>
         </div>
         <div
           v-if="formData.tts_model_enable"
           class="workflow-base-node__voice-play"
         >
-          <ElCheckbox
-            :model-value="!!formData.tts_autoplay"
-            @update:model-value="patchData('tts_autoplay', $event)"
-          >
-            自动播放
-          </ElCheckbox>
           <ElRadioGroup
             :model-value="formData.tts_type || 'BROWSER'"
             @update:model-value="patchData('tts_type', $event)"
@@ -402,7 +440,7 @@ watch(() => props.renderVersion, syncFormDataFromModel);
               :model-value="formData.tts_model_id"
               model-type="TTS"
               placeholder="请选择语音播放模型"
-              @update:model-value="patchData('tts_model_id', $event)"
+              @update:model-value="onTtsModelChange"
             />
             <ElButton
               size="small"
@@ -424,11 +462,11 @@ watch(() => props.renderVersion, syncFormDataFromModel);
       ref="prologueMagnifyDialogRef"
       @refresh="refreshPrologue"
     />
-    <JsonParamSettingDialog
+    <ModelParamSettingDialog
       ref="longTermParamDialogRef"
       @refresh="refreshLongTermParams"
     />
-    <JsonParamSettingDialog
+    <ModelParamSettingDialog
       ref="ttsParamDialogRef"
       @refresh="refreshTtsParams"
     />
@@ -500,10 +538,6 @@ watch(() => props.renderVersion, syncFormDataFromModel);
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
-}
-
-.workflow-base-node__model-row.is-stacked {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .workflow-base-node__switch-row strong,

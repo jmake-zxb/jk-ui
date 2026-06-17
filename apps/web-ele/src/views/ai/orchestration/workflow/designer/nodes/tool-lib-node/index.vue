@@ -3,7 +3,7 @@ import type { FormInstance } from 'element-plus';
 
 import type { ResourceRecord } from '../../common/tool-resource-utils';
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import {
   ElButton,
@@ -38,6 +38,7 @@ import {
 } from '../../common/tool-resource-utils';
 
 type FieldSource = 'custom' | 'reference';
+type WorkflowMode = 'application' | 'application-loop' | 'tool' | string;
 
 type ToolInputField = Record<string, unknown> & {
   desc?: string;
@@ -82,6 +83,7 @@ const props = defineProps<{
   renderVersion?: number;
 }>();
 const nodeModel = props.nodeModel;
+const workflowMode = inject<WorkflowMode>('workflowMode', 'application');
 const toolTypes = [
   'CUSTOM',
   'DATA_SOURCE',
@@ -127,6 +129,9 @@ const selectedToolId = computed(
     '',
 );
 const toolOptions = computed(() => filterTools(tools.value, toolTypes));
+const showWorkflowOutputControls = computed(
+  () => !`${workflowMode || 'application'}`.includes('knowledge'),
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -507,7 +512,10 @@ onBeforeUnmount(() => {
         />
       </section>
 
-      <section class="workflow-tool-lib-node__panel">
+      <section
+        v-if="showWorkflowOutputControls"
+        class="workflow-tool-lib-node__panel"
+      >
         <div class="workflow-tool-lib-node__switch-row">
           <div>
             <strong>返回内容</strong>

@@ -1,8 +1,21 @@
 <script setup lang="ts">
+import type { FormInstance } from 'element-plus';
+
 import { computed, onMounted, ref } from 'vue';
 
-import { FullScreen } from '@element-plus/icons-vue';
-import { ElAlert, ElButton, ElCollapseTransition, ElIcon } from 'element-plus';
+import { CopyDocument, FullScreen } from '@element-plus/icons-vue';
+import {
+  ElAlert,
+  ElButton,
+  ElCollapseTransition,
+  ElDialog,
+  ElForm,
+  ElFormItem,
+  ElIcon,
+  ElInput,
+  ElMessage,
+  ElTooltip,
+} from 'element-plus';
 import { set } from 'lodash-es';
 
 import { outputFields } from '../../nodes';
@@ -20,6 +33,12 @@ const GENERIC_NODE_WIDTH = 340;
 const height = ref(DEFAULT_SLOT_HEIGHT);
 const enlarge = ref(false);
 const nodeWidthValue = ref(resolveInitialWidth());
+const hoveredFieldIndex = ref<null | number>(null);
+
+// 节点名称编辑对话框
+const nodeNameDialogVisible = ref(false);
+const nodeNameFormRef = ref<FormInstance>();
+const nodeNameForm = ref({ title: '' });
 
 const nodeWidth = computed(() => `${nodeWidthValue.value}px`);
 const showNode = computed({
@@ -37,6 +56,7 @@ const nodeStatus = computed(() =>
 );
 const nodeFields = computed(() =>
   outputFields(props.nodeModel.properties).map((field) => ({
+    globeLabel: `{{${props.nodeModel.properties?.stepName || ''}.${field.value || field.name || ''}}}`,
     label: field.label || field.name || field.value,
     value: field.value || field.name,
   })),
@@ -89,6 +109,11 @@ function fieldToken(value: string) {
   return `{${value}}`;
 }
 
+/** 复制字段引用到剪贴板 */
+function copyFieldRef(globeLabel: string) {
+  navigator.clipboard?.writeText?.(globeLabel);
+}
+
 function syncInitialModelSize() {
   const width = resolveInitialWidth();
   const modelHeight = resolveInitialHeight();
@@ -139,6 +164,30 @@ function zoom() {
   if (enlarge.value) enlargeHandle();
 }
 
+/** 节点名称编辑（对齐 MaxKB LoopBodyContainer） */
+function openNodeNameDialog() {
+  nodeNameForm.value.title = props.nodeModel.properties?.stepName || '';
+  nodeNameDialogVisible.value = true;
+}
+
+function submitNodeName() {
+  if (!nodeNameFormRef.value) return;
+  nodeNameFormRef.value.validate((valid) => {
+    if (!valid) return;
+    const newTitle = nodeNameForm.value.title.trim();
+    if (!newTitle) return;
+    const duplicate = props.nodeModel.graphModel?.nodes?.some(
+      (node: any) => node.properties?.stepName === newTitle,
+    );
+    if (duplicate) {
+      ElMessage.error('节点名称重复');
+      return;
+    }
+    set(props.nodeModel.properties, 'stepName', newTitle);
+    nodeNameDialogVisible.value = false;
+  });
+}
+
 onMounted(() => {
   syncInitialModelSize();
 });
@@ -163,7 +212,10 @@ defineExpose({ zoom });
         <div class="flex-between">
           <div class="align-center flex">
             <span class="loop-body-icon">循</span>
-            <h4 class="ellipsis-1 break-all">
+            <h4
+              class="ellipsis-1 cursor-pointer break-all"
+              @dblclick.stop="openNodeNameDialog"
+            >
               {{ nodeModel.properties.stepName }}
             </h4>
           </div>
@@ -198,13 +250,28 @@ defineExpose({ zoom });
             <template v-if="nodeFields.length > 0">
               <h5 class="title-decoration-1 mb-8 mt-8">输出字段</h5>
               <div
-                v-for="item in nodeFields"
+                v-for="(item, index) in nodeFields"
                 :key="item.value"
                 class="flex-between p-8-12 layout-bg lighter mb-8 border-r-4"
+                @mouseenter="hoveredFieldIndex = index"
+                @mouseleave="hoveredFieldIndex = null"
               >
                 <span class="break-all">
                   {{ item.label }} {{ fieldToken(item.value) }}
                 </span>
+                <ElTooltip
+                  v-if="hoveredFieldIndex === index"
+                  content="复制参数"
+                  placement="top"
+                >
+                  <ElButton
+                    link
+                    style="padding: 0"
+                    @click.stop="copyFieldRef(item.globeLabel)"
+                  >
+                    <ElIcon><CopyDocument /></ElIcon>
+                  </ElButton>
+                </ElTooltip>
               </div>
             </template>
           </div>
@@ -212,6 +279,35 @@ defineExpose({ zoom });
       </div>
     </div>
   </div>
+
+  <!-- 节点名称编辑对话框（对齐 MaxKB） -->
+  <ElDialog
+    v-model="nodeNameDialogVisible"
+    title="节点名称"
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    append-to-body
+    destroy-on-close
+    @submit.prevent
+  >
+    <ElForm ref="nodeNameFormRef" label-position="top" :model="nodeNameForm">
+      <ElFormItem
+        prop="title"
+        :rules="[
+          { required: true, message: '请输入节点名称', trigger: 'blur' },
+        ]"
+      >
+        <ElInput
+          v-model="nodeNameForm.title"
+          @blur="nodeNameForm.title = nodeNameForm.title.trim()"
+        />
+      </ElFormItem>
+    </ElForm>
+    <template #footer>
+      <ElButton @click.prevent="nodeNameDialogVisible = false">取消</ElButton>
+      <ElButton type="primary" @click="submitNodeName">保存</ElButton>
+    </template>
+  </ElDialog>
 </template>
 
 <style scoped lang="scss">
@@ -321,6 +417,10 @@ h4 {
 
 .mt-8 {
   margin-top: 8px;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 
 .loop-body-slot {

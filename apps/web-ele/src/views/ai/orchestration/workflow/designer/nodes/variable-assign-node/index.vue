@@ -6,6 +6,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElInputNumber,
   ElOption,
   ElSelect,
   ElTag,
@@ -110,6 +111,12 @@ function patchVariable(index: number, patch: Record<string, any>) {
     ),
   );
 }
+function patchVariableType(index: number, type: string) {
+  patchVariable(index, {
+    type,
+    value: type === 'bool' || type === 'boolean' ? true : '',
+  });
+}
 function removeVariable(index: number) {
   syncVariables(
     variables.value.filter((_: any, itemIndex: number) => itemIndex !== index),
@@ -165,13 +172,13 @@ function removeVariable(index: number) {
               :model-value="item.type || 'string'"
               :teleported="false"
               @update:model-value="
-                patchVariable(Number(index), { type: $event })
+                patchVariableType(Number(index), `${$event}`)
               "
             >
               <ElOption label="string" value="string" />
-              <ElOption label="num" value="num" />
+              <ElOption label="number" value="num" />
               <ElOption label="json" value="json" />
-              <ElOption label="bool" value="bool" />
+              <ElOption label="boolean" value="bool" />
             </ElSelect>
             <NodeCascader
               v-if="item.source === 'referencing'"
@@ -183,13 +190,50 @@ function removeVariable(index: number) {
               "
             />
             <ElInput
-              v-else-if="item.source !== 'null'"
+              v-else-if="
+                item.source !== 'null' && (item.type || 'string') === 'string'
+              "
               :model-value="item.value"
               placeholder="赋值内容"
               @update:model-value="
                 patchVariable(Number(index), { value: $event })
               "
             />
+            <ElInputNumber
+              v-else-if="
+                item.source !== 'null' &&
+                ['num', 'number'].includes(item.type || '')
+              "
+              :model-value="Number(item.value ?? 0)"
+              controls-position="right"
+              @update:model-value="
+                patchVariable(Number(index), { value: $event ?? 0 })
+              "
+            />
+            <ElInput
+              v-else-if="item.source !== 'null' && item.type === 'json'"
+              :model-value="item.value"
+              placeholder="JSON 内容"
+              :rows="3"
+              type="textarea"
+              @update:model-value="
+                patchVariable(Number(index), { value: $event })
+              "
+            />
+            <ElSelect
+              v-else-if="
+                item.source !== 'null' &&
+                ['bool', 'boolean'].includes(item.type || '')
+              "
+              :model-value="item.value === false ? false : true"
+              :teleported="false"
+              @update:model-value="
+                patchVariable(Number(index), { value: $event })
+              "
+            >
+              <ElOption label="true" :value="true" />
+              <ElOption label="false" :value="false" />
+            </ElSelect>
             <ElTag v-else type="info">null</ElTag>
             <ElButton
               link

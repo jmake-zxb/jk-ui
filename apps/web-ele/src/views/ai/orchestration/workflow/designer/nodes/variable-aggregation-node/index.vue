@@ -6,6 +6,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElMessage,
   ElOption,
   ElSelect,
 } from 'element-plus';
@@ -13,8 +14,10 @@ import {
 import { syncNodeProperties } from '../../common/node-inline-update';
 import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
+import GroupFieldDialog from './component/GroupFieldDialog.vue';
 
 const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
+const groupFieldDialogRef = ref<InstanceType<typeof GroupFieldDialog>>();
 const nodeRenderVersion = ref(0);
 const formData = computed({
   get: () => {
@@ -28,10 +31,14 @@ const groups = computed(() =>
     ? formData.value.group_list
     : [
         {
-          field: 'result',
+          field: 'Group1',
           id: 'group_1',
-          label: '结果',
-          variable_list: formData.value.variables || [],
+          label: 'Group1',
+          variable_list:
+            Array.isArray(formData.value.variables) &&
+            formData.value.variables.length > 0
+              ? formData.value.variables
+              : [{ variable: [], v_id: 'v_1' }],
         },
       ],
 );
@@ -65,15 +72,40 @@ function syncGroups(next: any[]) {
   );
 }
 function addGroup() {
-  syncGroups([
-    ...groups.value,
-    {
-      field: `group_${groups.value.length + 1}`,
-      id: `group_${Date.now()}`,
-      label: `分组 ${groups.value.length + 1}`,
-      variable_list: [{ variable: [], v_id: `v_${Date.now()}` }],
-    },
-  ]);
+  openGroupDialog();
+}
+function openGroupDialog(group?: any, index?: number) {
+  groupFieldDialogRef.value?.open(
+    group ? { field: group.field, label: group.label } : undefined,
+    index,
+  );
+}
+function refreshGroupField(
+  data: { field: string; label: string },
+  index?: number,
+) {
+  const exists = groups.value.some(
+    (item: any, itemIndex: number) =>
+      item.field === data.field && itemIndex !== index,
+  );
+  if (exists) {
+    ElMessage.error(`输出字段重复: ${data.field}`);
+    return;
+  }
+  if (index === undefined) {
+    syncGroups([
+      ...groups.value,
+      {
+        field: data.field,
+        id: `group_${Date.now()}`,
+        label: data.label,
+        variable_list: [{ variable: [], v_id: `v_${Date.now()}` }],
+      },
+    ]);
+  } else {
+    patchGroup(index, data);
+  }
+  groupFieldDialogRef.value?.close();
 }
 function patchGroup(index: number, patch: Record<string, any>) {
   syncGroups(
@@ -86,6 +118,13 @@ function removeGroup(index: number) {
   syncGroups(
     groups.value.filter((_: any, itemIndex: number) => itemIndex !== index),
   );
+}
+function moveGroup(index: number, direction: -1 | 1) {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= groups.value.length) return;
+  const next = [...groups.value];
+  [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+  syncGroups(next);
 }
 function addVariable(groupIndex: number) {
   const group = groups.value[groupIndex];
@@ -117,6 +156,21 @@ function removeVariable(groupIndex: number, variableIndex: number) {
     ),
   });
 }
+function moveVariable(
+  groupIndex: number,
+  variableIndex: number,
+  direction: -1 | 1,
+) {
+  const group = groups.value[groupIndex];
+  const nextVariables = [...(group.variable_list || [])];
+  const targetIndex = variableIndex + direction;
+  if (targetIndex < 0 || targetIndex >= nextVariables.length) return;
+  [nextVariables[variableIndex], nextVariables[targetIndex]] = [
+    nextVariables[targetIndex],
+    nextVariables[variableIndex],
+  ];
+  patchGroup(groupIndex, { variable_list: nextVariables });
+}
 </script>
 
 <template>
@@ -147,20 +201,33 @@ function removeVariable(groupIndex: number, variableIndex: number) {
           class="workflow-node-card"
         >
           <div class="workflow-node-row">
-            <ElInput
-              :model-value="group.field"
-              placeholder="输出字段"
-              @update:model-value="
-                patchGroup(Number(groupIndex), { field: $event })
-              "
-            />
-            <ElInput
-              :model-value="group.label"
-              placeholder="显示名"
-              @update:model-value="
-                patchGroup(Number(groupIndex), { label: $event })
-              "
-            />
+            <span class="workflow-node-group-title" :title="group.label">
+              {{ group.label || group.field }}
+            </span>
+            <span class="workflow-node-group-field" :title="group.field">
+              {{ group.field }}
+            </span>
+            <ElButton
+              link
+              type="primary"
+              @click="openGroupDialog(group, Number(groupIndex))"
+            >
+              编辑
+            </ElButton>
+            <ElButton
+              link
+              :disabled="Number(groupIndex) === 0"
+              @click="moveGroup(Number(groupIndex), -1)"
+            >
+              上移
+            </ElButton>
+            <ElButton
+              link
+              :disabled="Number(groupIndex) === groups.length - 1"
+              @click="moveGroup(Number(groupIndex), 1)"
+            >
+              下移
+            </ElButton>
             <ElButton
               link
               type="danger"
@@ -197,6 +264,26 @@ function removeVariable(groupIndex: number, variableIndex: number) {
             />
             <ElButton
               link
+              :disabled="Number(variableIndex) === 0"
+              @click="
+                moveVariable(Number(groupIndex), Number(variableIndex), -1)
+              "
+            >
+              上
+            </ElButton>
+            <ElButton
+              link
+              :disabled="
+                Number(variableIndex) === (group.variable_list || []).length - 1
+              "
+              @click="
+                moveVariable(Number(groupIndex), Number(variableIndex), 1)
+              "
+            >
+              下
+            </ElButton>
+            <ElButton
+              link
               type="danger"
               :disabled="(group.variable_list || []).length <= 1"
               @click="removeVariable(Number(groupIndex), Number(variableIndex))"
@@ -214,6 +301,7 @@ function removeVariable(groupIndex: number, variableIndex: number) {
         </div>
       </div>
     </ElForm>
+    <GroupFieldDialog ref="groupFieldDialogRef" @refresh="refreshGroupField" />
   </NodeContainer>
 </template>
 
@@ -249,8 +337,30 @@ function removeVariable(groupIndex: number, variableIndex: number) {
 .workflow-node-row,
 .workflow-node-ref {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto auto auto;
   gap: 6px;
   align-items: center;
+}
+
+.workflow-node-ref {
+  grid-template-columns: minmax(0, 96px) minmax(0, 1fr) auto auto auto;
+}
+
+.workflow-node-group-title,
+.workflow-node-group-field {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.workflow-node-group-title {
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.workflow-node-group-field {
+  color: var(--el-text-color-secondary);
 }
 </style>

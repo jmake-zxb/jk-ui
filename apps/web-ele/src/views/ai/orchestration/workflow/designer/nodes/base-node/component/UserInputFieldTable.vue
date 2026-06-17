@@ -65,6 +65,7 @@ function deleteField(index: any) {
   inputFieldList.value.splice(index, 1);
   syncToProperties();
   emitGraphEvent(nodeModel, 'refreshFieldList');
+  emitGraphEvent(nodeModel, 'chatFieldList');
   nextTick(onDragHandle);
 }
 
@@ -94,6 +95,7 @@ function refreshFieldList(data: any, index: any) {
     removeFromExposed(data.field);
   syncToProperties();
   emitGraphEvent(nodeModel, 'refreshFieldList');
+  emitGraphEvent(nodeModel, 'chatFieldList');
   nextTick(onDragHandle);
 }
 
@@ -110,6 +112,7 @@ function refreshFieldTitle(setting: any) {
   }
   syncToProperties();
   emitGraphEvent(nodeModel, 'refreshFieldList');
+  emitGraphEvent(nodeModel, 'chatFieldList');
 }
 
 function openChangeTitleDialog() {

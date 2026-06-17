@@ -1,20 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-import {
-  ElButton,
-  ElEmpty,
-  ElForm,
-  ElFormItem,
-  ElInput,
-  ElOption,
-  ElSelect,
-  ElSwitch,
-} from 'element-plus';
+import { ElForm, ElFormItem, ElInput } from 'element-plus';
+import { cloneDeep } from 'lodash-es';
 
 import { syncNodeProperties } from '../../common/node-inline-update';
-import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
+import ToolFieldTable from './component/ToolFieldTable.vue';
 
 const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
 const nodeRenderVersion = ref(0);
@@ -54,76 +46,26 @@ function normalizeOutputFields() {
 }
 
 function patchData(key: string, value: any) {
-  formData.value = { ...formData.value, [key]: value };
+  formData.value = { ...formData.value, [key]: cloneDeep(value) };
 }
 
 function trackRenderVersion(..._versions: unknown[]) {}
 
+function refreshToolStartNode() {
+  props.nodeModel.graphModel?.eventCenter?.emit?.('refreshFieldList');
+  props.nodeModel.graphModel
+    ?.getNodeModelById?.('tool-start-node')
+    ?.clear_next_node_field?.(true);
+}
+
 function syncInputFields(nextFields: any[]) {
   patchData('input_field_list', nextFields);
-}
-
-function addInputField() {
-  syncInputFields([
-    ...inputFields.value,
-    {
-      desc: '',
-      field: `input_${inputFields.value.length + 1}`,
-      is_required: false,
-      label: `输入 ${inputFields.value.length + 1}`,
-      source: 'reference',
-      type: 'string',
-      value: [],
-    },
-  ]);
-}
-
-function patchInputField(index: number, patch: Record<string, any>) {
-  syncInputFields(
-    inputFields.value.map((field: any, fieldIndex: number) =>
-      fieldIndex === index ? { ...field, ...patch } : field,
-    ),
-  );
-}
-
-function removeInputField(index: number) {
-  syncInputFields(
-    inputFields.value.filter(
-      (_: any, fieldIndex: number) => fieldIndex !== index,
-    ),
-  );
+  refreshToolStartNode();
 }
 
 function syncOutputFields(nextFields: any[]) {
   patchData('output_field_list', nextFields);
-}
-
-function addOutputField() {
-  syncOutputFields([
-    ...outputFields.value,
-    {
-      desc: '',
-      field: `output_${outputFields.value.length + 1}`,
-      label: `输出 ${outputFields.value.length + 1}`,
-      type: 'string',
-    },
-  ]);
-}
-
-function patchOutputField(index: number, patch: Record<string, any>) {
-  syncOutputFields(
-    outputFields.value.map((field: any, fieldIndex: number) =>
-      fieldIndex === index ? { ...field, ...patch } : field,
-    ),
-  );
-}
-
-function removeOutputField(index: number) {
-  syncOutputFields(
-    outputFields.value.filter(
-      (_: any, fieldIndex: number) => fieldIndex !== index,
-    ),
-  );
+  refreshToolStartNode();
 }
 </script>
 
@@ -135,7 +77,7 @@ function removeOutputField(index: number) {
     <ElForm :model="formData" label-position="top" @submit.prevent>
       <div class="workflow-node-panel">
         <div class="workflow-node-panel__head">工具元数据</div>
-        <ElFormItem label="工具名称">
+        <ElFormItem label="工具名称" required>
           <ElInput
             :model-value="formData.tool_name || formData.name"
             placeholder="工具名称"
@@ -153,156 +95,29 @@ function removeOutputField(index: number) {
         </ElFormItem>
       </div>
       <div class="workflow-node-panel">
-        <div class="workflow-node-panel__head">
-          <span>输入字段</span>
-          <ElButton link type="primary" @click="addInputField">添加</ElButton>
-        </div>
-        <div v-if="inputFields.length > 0" class="workflow-node-list">
-          <div
-            v-for="(field, index) in inputFields"
-            :key="index"
-            class="workflow-node-field is-input"
-          >
-            <div class="workflow-node-field__meta">
-              <ElInput
-                :model-value="field.field || field.name"
-                placeholder="字段名"
-                @update:model-value="
-                  patchInputField(Number(index), { field: $event })
-                "
-              />
-              <ElInput
-                :model-value="field.label"
-                placeholder="显示名"
-                @update:model-value="
-                  patchInputField(Number(index), { label: $event })
-                "
-              />
-              <ElSelect
-                :model-value="field.type || 'string'"
-                :teleported="false"
-                @update:model-value="
-                  patchInputField(Number(index), { type: $event })
-                "
-              >
-                <ElOption label="string" value="string" />
-                <ElOption label="number" value="number" />
-                <ElOption label="boolean" value="boolean" />
-                <ElOption label="json" value="json" />
-              </ElSelect>
-              <ElSwitch
-                :model-value="!!field.is_required"
-                size="small"
-                active-text="必填"
-                @update:model-value="
-                  patchInputField(Number(index), { is_required: $event })
-                "
-              />
-              <ElButton
-                link
-                type="danger"
-                @click="removeInputField(Number(index))"
-              >
-                删
-              </ElButton>
-            </div>
-            <div class="workflow-node-field__value">
-              <ElSelect
-                :model-value="field.source || 'reference'"
-                :teleported="false"
-                @update:model-value="
-                  patchInputField(Number(index), {
-                    source: $event,
-                    value: $event === 'reference' ? [] : '',
-                  })
-                "
-              >
-                <ElOption label="引用" value="reference" />
-                <ElOption label="固定" value="custom" />
-              </ElSelect>
-              <NodeCascader
-                v-if="(field.source || 'reference') === 'reference'"
-                :node-model="nodeModel"
-                :model-value="field.value || []"
-                placeholder="选择变量"
-                @update:model-value="
-                  patchInputField(Number(index), { value: $event })
-                "
-              />
-              <ElInput
-                v-else
-                :model-value="field.value"
-                placeholder="固定值"
-                @update:model-value="
-                  patchInputField(Number(index), { value: $event })
-                "
-              />
-            </div>
-          </div>
-        </div>
-        <ElEmpty v-else description="暂无输入字段" :image-size="42" />
+        <ToolFieldTable
+          :fields="inputFields"
+          kind="input"
+          :node-model="nodeModel"
+          @update="syncInputFields"
+        />
       </div>
       <div class="workflow-node-panel">
-        <div class="workflow-node-panel__head">
-          <span>输出字段</span>
-          <ElButton link type="primary" @click="addOutputField">添加</ElButton>
-        </div>
-        <div v-if="outputFields.length > 0" class="workflow-node-list">
-          <div
-            v-for="(field, index) in outputFields"
-            :key="index"
-            class="workflow-node-field__output"
-          >
-            <ElInput
-              :model-value="field.field || field.name"
-              placeholder="字段名"
-              @update:model-value="
-                patchOutputField(Number(index), { field: $event })
-              "
-            />
-            <ElInput
-              :model-value="field.label"
-              placeholder="显示名"
-              @update:model-value="
-                patchOutputField(Number(index), { label: $event })
-              "
-            />
-            <ElSelect
-              :model-value="field.type || 'string'"
-              :teleported="false"
-              @update:model-value="
-                patchOutputField(Number(index), { type: $event })
-              "
-            >
-              <ElOption label="string" value="string" />
-              <ElOption label="number" value="number" />
-              <ElOption label="boolean" value="boolean" />
-              <ElOption label="object" value="object" />
-            </ElSelect>
-            <ElButton
-              link
-              type="danger"
-              @click="removeOutputField(Number(index))"
-            >
-              删
-            </ElButton>
-          </div>
-        </div>
-        <ElEmpty v-else description="暂无输出字段" :image-size="42" />
+        <ToolFieldTable
+          :fields="outputFields"
+          kind="output"
+          :node-model="nodeModel"
+          @update="syncOutputFields"
+        />
       </div>
     </ElForm>
   </NodeContainer>
 </template>
 
 <style scoped lang="scss">
-.workflow-node-panel,
-.workflow-node-list,
-.workflow-node-field {
+.workflow-node-panel {
   display: grid;
   gap: 8px;
-}
-
-.workflow-node-panel {
   padding: 8px;
   background: var(--el-fill-color-extra-light);
   border: 1px solid var(--el-border-color-lighter);
@@ -316,31 +131,5 @@ function removeOutputField(index: number) {
   font-size: 12px;
   font-weight: 700;
   color: var(--el-text-color-secondary);
-}
-
-.workflow-node-field,
-.workflow-node-field__output {
-  padding: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-}
-
-.workflow-node-field__meta,
-.workflow-node-field__output {
-  display: grid;
-  grid-template-columns: 1fr 1fr 86px auto auto;
-  gap: 6px;
-  align-items: center;
-}
-
-.workflow-node-field__value {
-  display: grid;
-  grid-template-columns: 86px 1fr;
-  gap: 6px;
-}
-
-.workflow-node-field__output {
-  grid-template-columns: 1fr 1fr 86px auto;
 }
 </style>

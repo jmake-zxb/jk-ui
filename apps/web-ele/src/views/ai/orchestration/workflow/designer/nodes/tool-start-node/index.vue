@@ -1,19 +1,27 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import {
-  ElButton,
   ElEmpty,
   ElForm,
-  ElInput,
-  ElOption,
-  ElSelect,
   ElSwitch,
+  ElTable,
+  ElTableColumn,
+  ElTag,
 } from 'element-plus';
+import { cloneDeep, set } from 'lodash-es';
 
 import { syncNodeProperties } from '../../common/node-inline-update';
-import NodeCascader from '../../common/NodeCascader.vue';
 import NodeContainer from '../../common/NodeContainer.vue';
+
+type ToolInputField = {
+  field?: string;
+  is_required?: boolean;
+  label?: string;
+  name?: string;
+  type?: string;
+  value?: unknown;
+};
 
 const props = defineProps<{ nodeModel: any; renderVersion?: number }>();
 const nodeRenderVersion = ref(0);
@@ -29,57 +37,86 @@ const formData = computed({
   },
 });
 
-const inputFields = computed(() => normalizeInputFields());
+const inputFields = computed(() => reflectedInputFields());
 
-function normalizeInputFields() {
-  if (Array.isArray(formData.value.input_field_list)) {
-    return formData.value.input_field_list;
+function normalizeInputFields(source: any): ToolInputField[] {
+  if (Array.isArray(source?.input_field_list)) {
+    return source.input_field_list;
   }
-  if (Array.isArray(formData.value.inputFields)) {
-    return formData.value.inputFields;
+  if (Array.isArray(source?.inputFields)) {
+    return source.inputFields;
   }
   return [];
 }
 
-function patchData(key: string, value: any) {
-  formData.value = { ...formData.value, [key]: value };
+function toolBaseNodeData() {
+  const toolBaseNode =
+    props.nodeModel.graphModel?.getNodeModelById?.('tool-base-node');
+  return toolBaseNode?.properties?.node_data || {};
+}
+
+function reflectedInputFields() {
+  trackRenderVersion(nodeRenderVersion.value);
+  const baseInputFields = normalizeInputFields(toolBaseNodeData());
+  if (baseInputFields.length > 0) return baseInputFields;
+  return normalizeInputFields(formData.value);
+}
+
+function fieldValue(field: ToolInputField) {
+  return `${field.field || field.name || field.value || ''}`.trim();
+}
+
+function fieldLabel(field: ToolInputField) {
+  return `${field.label || field.name || fieldValue(field)}`;
+}
+
+function globalFieldList() {
+  return reflectedInputFields()
+    .map((field) => ({
+      label: fieldLabel(field),
+      type: field.type || 'string',
+      value: fieldValue(field),
+    }))
+    .filter((field) => field.value);
+}
+
+function ensureConfig() {
+  if (!props.nodeModel.properties.config) {
+    set(props.nodeModel.properties, 'config', {
+      chatFields: [],
+      fields: [],
+      globalFields: [],
+    });
+  }
+}
+
+function refreshFieldList() {
+  ensureConfig();
+  set(
+    props.nodeModel.properties.config,
+    'globalFields',
+    cloneDeep(globalFieldList()),
+  );
+  nodeRenderVersion.value += 1;
+  props.nodeModel.refreshVueComponent?.();
+  nextTick(() => props.nodeModel.queueNodeResize?.());
 }
 
 function trackRenderVersion(..._versions: unknown[]) {}
 
-function syncInputFields(nextFields: any[]) {
-  patchData('input_field_list', nextFields);
-}
+props.nodeModel.graphModel?.eventCenter?.on?.(
+  'refreshFieldList',
+  refreshFieldList,
+);
 
-function addInputField() {
-  syncInputFields([
-    ...inputFields.value,
-    {
-      field: `input_${inputFields.value.length + 1}`,
-      is_required: false,
-      label: `输入 ${inputFields.value.length + 1}`,
-      source: 'reference',
-      type: 'string',
-      value: [],
-    },
-  ]);
-}
+onMounted(refreshFieldList);
 
-function patchInputField(index: number, patch: Record<string, any>) {
-  syncInputFields(
-    inputFields.value.map((field: any, fieldIndex: number) =>
-      fieldIndex === index ? { ...field, ...patch } : field,
-    ),
+onBeforeUnmount(() => {
+  props.nodeModel.graphModel?.eventCenter?.off?.(
+    'refreshFieldList',
+    refreshFieldList,
   );
-}
-
-function removeInputField(index: number) {
-  syncInputFields(
-    inputFields.value.filter(
-      (_: any, fieldIndex: number) => fieldIndex !== index,
-    ),
-  );
-}
+});
 </script>
 
 <template>
@@ -91,106 +128,60 @@ function removeInputField(index: number) {
       <div class="workflow-node-panel">
         <div class="workflow-node-panel__head">
           <span>工具输入字段</span>
-          <ElButton link type="primary" @click="addInputField">添加</ElButton>
+          <span class="workflow-node-panel__hint">由工具基础节点定义</span>
         </div>
-        <div v-if="inputFields.length > 0" class="workflow-node-list">
-          <div
-            v-for="(field, index) in inputFields"
-            :key="index"
-            class="workflow-node-field"
-          >
-            <div class="workflow-node-field__meta">
-              <ElInput
-                :model-value="field.field || field.name"
-                placeholder="字段名"
-                @update:model-value="
-                  patchInputField(Number(index), { field: $event })
-                "
-              />
-              <ElInput
-                :model-value="field.label"
-                placeholder="显示名"
-                @update:model-value="
-                  patchInputField(Number(index), { label: $event })
-                "
-              />
-              <ElSelect
-                :model-value="field.type || 'string'"
-                :teleported="false"
-                @update:model-value="
-                  patchInputField(Number(index), { type: $event })
-                "
+        <ElTable
+          v-if="inputFields.length > 0"
+          :data="inputFields"
+          class="workflow-tool-start-table"
+          row-key="field"
+          size="small"
+        >
+          <ElTableColumn label="字段" min-width="110">
+            <template #default="{ row }">
+              <span
+                class="workflow-tool-start-table__cell"
+                :title="fieldValue(row)"
               >
-                <ElOption label="string" value="string" />
-                <ElOption label="number" value="number" />
-                <ElOption label="boolean" value="boolean" />
-                <ElOption label="json" value="json" />
-              </ElSelect>
+                {{ fieldValue(row) }}
+              </span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="名称" min-width="110">
+            <template #default="{ row }">
+              <span
+                class="workflow-tool-start-table__cell"
+                :title="fieldLabel(row)"
+              >
+                {{ fieldLabel(row) }}
+              </span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="类型" width="86">
+            <template #default="{ row }">
+              <ElTag size="small" type="info">{{ row.type || 'string' }}</ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="必填" width="64">
+            <template #default="{ row }">
               <ElSwitch
-                :model-value="!!field.is_required"
+                :model-value="!!row.is_required"
+                disabled
                 size="small"
-                active-text="必填"
-                @update:model-value="
-                  patchInputField(Number(index), { is_required: $event })
-                "
               />
-              <ElButton
-                link
-                type="danger"
-                @click="removeInputField(Number(index))"
-              >
-                删
-              </ElButton>
-            </div>
-            <div class="workflow-node-field__value">
-              <ElSelect
-                :model-value="field.source || 'reference'"
-                :teleported="false"
-                @update:model-value="
-                  patchInputField(Number(index), {
-                    source: $event,
-                    value: $event === 'reference' ? [] : '',
-                  })
-                "
-              >
-                <ElOption label="引用" value="reference" />
-                <ElOption label="固定" value="custom" />
-              </ElSelect>
-              <NodeCascader
-                v-if="(field.source || 'reference') === 'reference'"
-                :node-model="nodeModel"
-                :model-value="field.value || []"
-                placeholder="选择变量"
-                @update:model-value="
-                  patchInputField(Number(index), { value: $event })
-                "
-              />
-              <ElInput
-                v-else
-                :model-value="field.value"
-                placeholder="固定值"
-                @update:model-value="
-                  patchInputField(Number(index), { value: $event })
-                "
-              />
-            </div>
-          </div>
-        </div>
-        <ElEmpty v-else description="暂无输入字段" :image-size="42" />
+            </template>
+          </ElTableColumn>
+        </ElTable>
+        <ElEmpty v-else description="暂无工具输入字段" :image-size="42" />
       </div>
     </ElForm>
   </NodeContainer>
 </template>
 
 <style scoped lang="scss">
-.workflow-node-panel,
-.workflow-node-list,
-.workflow-node-field {
+.workflow-node-panel {
   display: grid;
   gap: 8px;
-}
-
-.workflow-node-panel {
   padding: 8px;
   background: var(--el-fill-color-extra-light);
   border: 1px solid var(--el-border-color-lighter);
@@ -206,23 +197,20 @@ function removeInputField(index: number) {
   color: var(--el-text-color-secondary);
 }
 
-.workflow-node-field {
-  padding: 8px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+.workflow-node-panel__hint {
+  font-weight: 400;
+  color: var(--el-text-color-placeholder);
 }
 
-.workflow-node-field__meta {
-  display: grid;
-  grid-template-columns: 1fr 1fr 86px auto auto;
-  gap: 6px;
-  align-items: center;
+.workflow-tool-start-table__cell {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.workflow-node-field__value {
-  display: grid;
-  grid-template-columns: 86px 1fr;
-  gap: 6px;
+.workflow-node-panel :deep(.el-table__cell) {
+  padding: 2px 0;
 }
 </style>

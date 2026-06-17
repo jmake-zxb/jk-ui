@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { Operation } from '@element-plus/icons-vue';
 import {
@@ -22,6 +22,7 @@ import JsonParamSettingDialog from '../base-node/component/JsonParamSettingDialo
 import LocalModelSelect from '../base-node/component/LocalModelSelect.vue';
 
 type ModelSource = 'custom' | 'reference';
+type WorkflowMode = 'application' | 'application-loop' | 'tool' | string;
 type NodeData = Record<string, unknown> & {
   audio_list: unknown[];
   is_result: boolean;
@@ -47,6 +48,7 @@ type WorkflowNodeModel = {
 
 const props = defineProps<{ nodeModel: WorkflowNodeModel }>();
 const nodeModel = props.nodeModel;
+const workflowMode = inject<WorkflowMode>('workflowMode', 'application');
 const modelCascaderRef = ref<InstanceType<typeof NodeCascader>>();
 const audioCascaderRef = ref<InstanceType<typeof NodeCascader>>();
 const paramDialogRef = ref<InstanceType<typeof JsonParamSettingDialog>>();
@@ -58,6 +60,10 @@ const modelParamsSummary = computed(() => {
   const keys = Object.keys(formData.value.model_params_setting || {});
   return keys.length > 0 ? `${keys.length} 项` : '默认参数';
 });
+
+const showWorkflowOutputControls = computed(
+  () => !`${workflowMode || 'application'}`.includes('knowledge'),
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -227,7 +233,10 @@ onBeforeUnmount(() => {
           />
         </ElFormItem>
       </section>
-      <section class="workflow-speech-node__panel">
+      <section
+        v-if="showWorkflowOutputControls"
+        class="workflow-speech-node__panel"
+      >
         <div class="workflow-speech-node__switch-row">
           <div>
             <strong>返回内容</strong><small>将识别文本作为工作流输出内容</small>
