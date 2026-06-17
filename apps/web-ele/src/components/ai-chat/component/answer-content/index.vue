@@ -204,6 +204,7 @@ onBeforeUnmount(() => {
           shadow="always"
           class="progress-card"
           style="
+
             --el-card-padding: 1px 16px;
 
             width: fit-content;
@@ -219,7 +220,9 @@ onBeforeUnmount(() => {
         <ElCard
           shadow="always"
           class="answer-card"
-          style="--el-card-padding: 6px 16px"
+          style="
+
+--el-card-padding: 6px 16px"
         >
           <MdRenderer
             v-if="

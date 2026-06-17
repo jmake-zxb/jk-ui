@@ -69,7 +69,9 @@ const option_list = computed(() => {
             :key="item.value"
             class="item break-all"
             shadow="never"
-            style="--el-card-padding: 12px 16px"
+            style="
+
+--el-card-padding: 12px 16px"
             :class="[
               inputDisabled ? 'is-disabled' : '',
               modelValue === item[valueField] ? 'active' : '',

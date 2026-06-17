@@ -125,7 +125,9 @@ function sendPrologueMessage(
           : '0',
       }"
     >
-      <ElCard shadow="always" style="--el-card-padding: 10px 16px 12px">
+      <ElCard shadow="always" style="
+
+--el-card-padding: 10px 16px 12px">
         <MdRenderer
           :source="prologue"
           :send-message="sendPrologueMessage"

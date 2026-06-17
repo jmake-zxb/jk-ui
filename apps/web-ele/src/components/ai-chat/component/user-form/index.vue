@@ -476,7 +476,9 @@ onMounted(() => {
     "
     class="user-form-container g-mb-16 w-full"
   >
-    <ElCard shadow="always" style="--el-card-padding: 16px 8px">
+    <ElCard shadow="always" style="
+
+--el-card-padding: 16px 8px">
       <div class="align-center cursor flex w-full" style="padding: 0 8px">
         <span
           class="ellipsis-1 g-mr-16 break-all"

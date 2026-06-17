@@ -232,7 +232,9 @@ onMounted(() => {});
               <template v-for="(item, index) in document_list" :key="index">
                 <ElCard
                   shadow="never"
-                  style="--el-card-padding: 8px"
+                  style="
+
+--el-card-padding: 8px"
                   class="download-file"
                 >
                   <div class="download-button" @click="downloadFile(item)">
@@ -304,7 +306,9 @@ onMounted(() => {});
               <template v-for="(item, index) in other_list" :key="index">
                 <ElCard
                   shadow="never"
-                  style="--el-card-padding: 8px"
+                  style="
+
+--el-card-padding: 8px"
                   class="download-file"
                 >
                   <div class="download-button" @click="downloadFile(item)">

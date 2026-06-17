@@ -942,6 +942,7 @@ onBeforeUnmount(() => {
               <ElCard
                 shadow="never"
                 style="
+
                   --el-card-padding: 8px;
 
                   max-width: 100%;
@@ -988,6 +989,7 @@ onBeforeUnmount(() => {
               <ElCard
                 shadow="never"
                 style="
+
                   --el-card-padding: 8px;
 
                   max-width: 100%;
@@ -1033,7 +1035,9 @@ onBeforeUnmount(() => {
             >
               <ElCard
                 shadow="never"
-                style="--el-card-padding: 8px"
+                style="
+
+--el-card-padding: 8px"
                 class="file cursor"
               >
                 <div
@@ -1338,7 +1342,9 @@ onBeforeUnmount(() => {
       <ElCard
         v-if="props.applicationDetails.file_upload_setting?.url_upload"
         shadow="always"
-        style="--el-card-padding: 16px"
+        style="
+
+--el-card-padding: 16px"
       >
         <ElForm :model="urlForm" label-position="top">
           <ElFormItem>
