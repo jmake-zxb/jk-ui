@@ -15,11 +15,7 @@ import {
   ElSelect,
 } from 'element-plus';
 
-import {
-  deleteModel,
-  listProviderMetadata,
-  pageModels,
-} from '#/api/ai/models';
+import { deleteModel, listProviderMetadata, pageModels } from '#/api/ai/models';
 
 import CreateModelDialog from './component/CreateModelDialog.vue';
 import EditModelDialog from './component/EditModelDialog.vue';

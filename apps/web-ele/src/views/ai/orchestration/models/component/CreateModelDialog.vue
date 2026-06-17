@@ -297,7 +297,9 @@ defineExpose({ open, close });
           <template #default>
             <ElFormItem
               prop="name"
-              :rules="[{ required: true, message: '请输入模型名称', trigger: 'blur' }]"
+              :rules="[
+                { required: true, message: '请输入模型名称', trigger: 'blur' },
+              ]"
             >
               <template #label>模型名称</template>
               <ElInput
@@ -309,7 +311,13 @@ defineExpose({ open, close });
             </ElFormItem>
             <ElFormItem
               prop="model_type"
-              :rules="[{ required: true, message: '请选择模型类型', trigger: 'change' }]"
+              :rules="[
+                {
+                  required: true,
+                  message: '请选择模型类型',
+                  trigger: 'change',
+                },
+              ]"
             >
               <template #label>模型类型</template>
               <ElSelect
@@ -329,7 +337,13 @@ defineExpose({ open, close });
             </ElFormItem>
             <ElFormItem
               prop="model_name"
-              :rules="[{ required: true, message: '请选择基础模型', trigger: 'change' }]"
+              :rules="[
+                {
+                  required: true,
+                  message: '请选择基础模型',
+                  trigger: 'change',
+                },
+              ]"
             >
               <template #label>基础模型</template>
               <ElSelect

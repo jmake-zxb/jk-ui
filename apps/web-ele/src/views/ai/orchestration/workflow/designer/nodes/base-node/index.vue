@@ -307,7 +307,7 @@ watch(() => props.renderVersion, syncFormDataFromModel);
         >
           <LocalModelSelect
             :model-value="formData.long_term_model_id"
-            model-type='LLM'
+            model-type="LLM"
             placeholder="请选择长期记忆模型"
             @update:model-value="onLongTermModelChange"
           />

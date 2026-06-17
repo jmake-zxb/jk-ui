@@ -74,7 +74,8 @@ function getProviderIcon(providerCode: string): string {
   if (fromData?.icon) return fromData.icon;
   // 兜底：后端返回的 icon 若是 SVG（以 < 开头），直接使用
   const fromProp = props.providerList.find((p) => p.provider === providerCode);
-  if (fromProp?.icon && fromProp.icon.trim().startsWith('<')) return fromProp.icon;
+  if (fromProp?.icon && fromProp.icon.trim().startsWith('<'))
+    return fromProp.icon;
   return '';
 }
 

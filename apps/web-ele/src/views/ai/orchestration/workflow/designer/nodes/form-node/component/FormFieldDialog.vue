@@ -1698,7 +1698,7 @@ defineExpose({ close, open });
             filterable
             default-first-option
           >
-            <ElOption label="聊天模型" value='LLM' />
+            <ElOption label="聊天模型" value="LLM" />
             <ElOption label="向量模型" value="EMBEDDING" />
             <ElOption label="重排模型" value="RERANKER" />
             <ElOption label="语音识别" value="STT" />

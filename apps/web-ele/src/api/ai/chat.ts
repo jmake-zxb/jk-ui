@@ -202,8 +202,8 @@ export function postUploadFile(
   sourceId: string,
   sourceType:
     | 'APPLICATION'
-    | 'LLM'
     | 'KNOWLEDGE'
+    | 'LLM'
     | 'TEMPORARY_1_DAY'
     | 'TEMPORARY_30_MINUTE'
     | 'TEMPORARY_120_MINUTE',
