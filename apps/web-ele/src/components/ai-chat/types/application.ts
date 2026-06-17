@@ -193,6 +193,41 @@ export class ChatRecordManage {
     this.is_close = true;
   }
 
+  /**
+   * Given a complete answer (e.g. from a `done` event), return the
+   * new suffix that hasn't yet been queued for typewriter display.
+   *
+   * The composited text is answer_text (already flushed by the interval)
+   * plus all characters remaining in node buffers. If the complete answer
+   * starts with that composited text, we return only the trailing
+   * portion. Otherwise we return the full answer — it is entirely
+   * new content. If the answer is already fully present, returns ''.
+   */
+  getMissingSuffix(answer: string): string {
+    const bufferedText = this.node_list
+      .map((node) => node.buffer.join(''))
+      .join('');
+    const composited = this.chat.answer_text + bufferedText;
+    if (composited.includes(answer)) {
+      return '';
+    }
+    if (answer.startsWith(composited) && composited.length > 0) {
+      return answer.slice(composited.length);
+    }
+    return answer;
+  }
+
+  /**
+   * 标记数据已全部到达，让打字机自然消耗完缓冲区后关闭。
+   * 与 close() 的区别：close() 立即生效，打字机下次间隔会清空缓冲区；
+   * markDone() 仅设置 is_close 标志，打字机等到缓冲区空后才调用 closeInterval()。
+   * 对齐 MaxKB：所有内容通过 appendChunk 流入，打字机逐字输出，
+   * is_end 标志触发自然关闭，不强制清空。
+   */
+  markDone() {
+    this.is_close = true;
+  }
+
   open() {
     this.is_close = false;
     this.is_stop = false;
@@ -212,7 +247,7 @@ export class ChatRecordManage {
   write() {
     this.chat.is_stop = false;
     this.is_stop = false;
-    if (!this.is_close) this.is_close = false;
+    this.is_close = false;
     this.write_ed = false;
     this.chat.write_ed = false;
     if (this.loading) this.loading.value = true;
@@ -226,6 +261,7 @@ export class ChatRecordManage {
       }
 
       const { answer_text_list_index, current_node } = nodeInfo;
+      // 正常打字机处理：逐字输出缓冲区内容
       if (current_node.buffer.length > 20) {
         const context = current_node.is_end
           ? current_node.buffer.splice(0)
@@ -242,26 +278,6 @@ export class ChatRecordManage {
           answer_text_list_index,
           current_node,
         );
-      } else if (this.is_close) {
-        while (true) {
-          const activeNodeInfo = this.getRunNode();
-          if (activeNodeInfo === undefined) break;
-          this.appendAnswer(
-            activeNodeInfo.current_node.buffer.splice(0).join(''),
-            activeNodeInfo.current_node.reasoning_content_buffer
-              .splice(0)
-              .join(''),
-            activeNodeInfo.answer_text_list_index,
-            activeNodeInfo.current_node,
-          );
-          if (
-            activeNodeInfo.current_node.buffer.length === 0 &&
-            activeNodeInfo.current_node.reasoning_content_buffer.length === 0
-          ) {
-            activeNodeInfo.current_node.is_end = true;
-          }
-        }
-        this.closeInterval();
       } else {
         const content = current_node.buffer.shift();
         const reasoningContent = current_node.reasoning_content_buffer.shift();
@@ -413,6 +429,17 @@ export const ChatManagement = {
 
   close(chatRecordId: string) {
     this.chatMessageContainer[chatRecordId]?.close();
+  },
+
+  markDone(chatRecordId: string) {
+    this.chatMessageContainer[chatRecordId]?.markDone();
+  },
+
+  getMissingSuffix(chatRecordId: string, answer: string): string {
+    return (
+      this.chatMessageContainer[chatRecordId]?.getMissingSuffix(answer) ??
+      answer
+    );
   },
 
   isClose(chatRecordId: string) {

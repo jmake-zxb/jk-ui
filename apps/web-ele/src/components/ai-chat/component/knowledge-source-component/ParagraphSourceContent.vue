@@ -19,12 +19,25 @@ const props = defineProps<{
         :index="index"
       />
     </div>
-    <span v-else>暂无知识来源</span>
+    <div v-else class="empty-message">暂无知识来源</div>
   </div>
 </template>
 
 <style scoped>
+.paragraph-source-height {
+  min-height: 100px;
+}
+
 .paragraph-list {
   width: 100%;
+}
+
+.empty-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { ElCard, ElScrollbar, ElText } from 'element-plus';
+import { ElCard, ElMessage, ElScrollbar, ElText } from 'element-plus';
+import { MdPreview } from 'md-editor-v3';
 
-import MarkdownBlock from '#/components/markdown/MarkdownBlock.vue';
 import { getImgUrl } from '#/utils/file-util';
 
 import CardBox from './CardBox.vue';
 import KnowledgeIcon from './KnowledgeIcon.vue';
+
+import 'md-editor-v3/lib/preview.css';
 
 const props = withDefaults(
   defineProps<{
@@ -44,9 +46,23 @@ const scoreText = computed(() =>
   (props.score ?? props.data.similarity ?? props.data.score)?.toFixed?.(3),
 );
 
+const hasLink = computed(
+  () => !!meta.value.source_file_id || !!meta.value.source_url,
+);
+
 function getFileUrl(fileId?: number | string) {
   if (!fileId) return '';
   return `/admin/sys-file/details?id=${encodeURIComponent(`${fileId}`)}`;
+}
+
+function handleDocClick() {
+  if (!hasLink.value) {
+    if (meta.value.allow_download === false) {
+      ElMessage.info('暂无权限下载该文档');
+    } else {
+      ElMessage.info('暂无可预览文档');
+    }
+  }
 }
 </script>
 
@@ -61,7 +77,13 @@ function getFileUrl(fileId?: number | string) {
     </template>
 
     <ElScrollbar height="150">
-      <MarkdownBlock :source="content" />
+      <MdPreview
+        :editor-id="`paragraph-${index}`"
+        :model-value="content"
+        no-iconfont
+        no-prettier
+        :code-foldable="false"
+      />
     </ElScrollbar>
 
     <template #footer>
@@ -69,7 +91,7 @@ function getFileUrl(fileId?: number | string) {
         <ElText class="doc-row">
           <img :src="getImgUrl(documentName.trim())" alt="" width="20" />
           <a
-            v-if="meta.source_file_id || meta.source_url"
+            v-if="hasLink"
             :href="getFileUrl(meta.source_file_id) || meta.source_url"
             target="_blank"
             rel="noopener noreferrer"
@@ -77,9 +99,13 @@ function getFileUrl(fileId?: number | string) {
           >
             {{ documentName.trim() }}
           </a>
-          <span v-else :title="documentName.trim()">{{
-            documentName.trim()
-          }}</span>
+          <span
+            v-else
+            :title="documentName.trim()"
+            class="doc-link-disabled"
+            @click="handleDocClick"
+            >{{ documentName.trim() }}</span
+          >
         </ElText>
       </ElCard>
       <div class="knowledge-row">
@@ -139,8 +165,20 @@ function getFileUrl(fileId?: number | string) {
   text-decoration: none;
 }
 
+.doc-link-disabled {
+  cursor: pointer;
+}
+
+.doc-link-disabled:hover {
+  color: var(--el-color-primary);
+}
+
 .knowledge-row {
   padding-top: 10px;
   border-top: 1px solid var(--el-border-color-lighter);
+}
+
+:deep(.md-editor-preview) {
+  background: transparent;
 }
 </style>

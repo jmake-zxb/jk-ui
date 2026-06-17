@@ -61,12 +61,6 @@
   }
 }
 
-@media only screen and (max-width: 768px) {
-  .ai-chat {
-    height: calc(100% - 116px) !important;
-  }
-}
-
 .chat-mobile {
   .el-button.is-text:not(.is-disabled):hover {
     background: none;

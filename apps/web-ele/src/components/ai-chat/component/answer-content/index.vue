@@ -26,13 +26,14 @@ const props = defineProps<{
     otherParamsData?: unknown,
     chat?: ChatRecord,
   ) => Promise<boolean>;
+  shareAvailable?: boolean;
   type: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
 }>();
 
 const emit = defineEmits<{
-  openExecutionDetail: [];
-  openParagraph: [];
-  openParagraphDocument: [value: string];
+  openExecutionDetail: [value: unknown];
+  openParagraph: [value: Record<string, any>];
+  openParagraphDocument: [value: Record<string, any>];
   'update:chatRecord': [value: ChatRecord];
 }>();
 
@@ -62,11 +63,7 @@ const progressIcon = computed(() =>
 const answerTextList = computed(() =>
   props.chatRecord.answer_text_list.map((item) => {
     if (typeof item === 'string') {
-      return [
-        {
-          content: item,
-        },
-      ] as ChatAnswerBlock[];
+      return [{ content: item }] as ChatAnswerBlock[];
     }
     if (Array.isArray(item)) return item;
     return [item] as ChatAnswerBlock[];
@@ -84,10 +81,16 @@ function chatMessage(
 ) {
   if (type === 'old') {
     addAnswerTextList(props.chatRecord.answer_text_list);
-    props.sendMessage(question, otherParamsData, props.chatRecord).then(() => {
-      props.chatManagement.open(props.chatRecord.id);
-      props.chatManagement.write(props.chatRecord.id);
-    });
+    props
+      .sendMessage(question, otherParamsData, props.chatRecord)
+      .then(() => {
+        props.chatManagement.open(props.chatRecord.id);
+        props.chatManagement.write(props.chatRecord.id);
+      })
+      .catch(() => {
+        // sendMessage rejected (loading guard, validation failure, etc.)
+        // — silently handled to avoid unhandled rejection
+      });
   } else {
     props.sendMessage(question, otherParamsData);
   }
@@ -104,7 +107,16 @@ function showSource(row: ChatRecord) {
 }
 
 function regenerationChart(chat: ChatRecord) {
-  const container = chat.upload_meta;
+  let container = chat.upload_meta;
+  if (!container && Array.isArray(chat.execution_details)) {
+    const startNode = chat.execution_details.find(
+      (item: any) =>
+        item.type === 'start-node' || item.step_type === 'start_step',
+    ) as Record<string, any> | undefined;
+    if (startNode?.upload_meta) {
+      container = startNode.upload_meta;
+    }
+  }
   props.sendMessage(chat.problem_text, {
     audio_list: container?.audio_list || [],
     document_list: container?.document_list || [],
@@ -145,7 +157,40 @@ onBeforeUnmount(() => {
     >
       <div v-if="showAvatar" class="avatar">
         <img v-if="application.avatar" :src="application.avatar" alt="" />
-        <span v-else>AI</span>
+        <svg
+          v-else
+          class="avatar-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect
+            x="3"
+            y="5"
+            width="18"
+            height="14"
+            rx="3"
+            fill="currentColor"
+            opacity="0.2"
+          />
+          <rect
+            x="3"
+            y="5"
+            width="18"
+            height="14"
+            rx="3"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+          <path
+            d="M8 18v2M16 18v2"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </svg>
       </div>
       <div
         class="content"
@@ -159,7 +204,6 @@ onBeforeUnmount(() => {
           shadow="always"
           class="progress-card"
           style="
-
             --el-card-padding: 1px 16px;
 
             width: fit-content;
@@ -175,9 +219,7 @@ onBeforeUnmount(() => {
         <ElCard
           shadow="always"
           class="answer-card"
-          style="
-
---el-card-padding: 6px 16px"
+          style="--el-card-padding: 6px 16px"
         >
           <MdRenderer
             v-if="
@@ -195,11 +237,11 @@ onBeforeUnmount(() => {
             <MdRenderer
               v-for="(answer, answerIndex) in answerText"
               :key="answerIndex"
-              :chat_record_id="answer.chat_record_id"
-              :child_node="answer.child_node"
+              :chat-record-id="answer.chat_record_id"
+              :child-node="answer.child_node"
               :disabled="loading || type === 'log'"
-              :reasoning_content="answer.reasoning_content"
-              :runtime_node_id="answer.runtime_node_id"
+              :reasoning-content="answer.reasoning_content"
+              :runtime-node-id="answer.runtime_node_id"
               :send-message="chatMessage"
               :source="answer.content"
               :type="type"
@@ -220,8 +262,10 @@ onBeforeUnmount(() => {
             :data="chatRecord"
             :execution-is-right-panel="props.executionIsRightPanel"
             :type="type"
-            @open-execution-detail="emit('openExecutionDetail')"
-            @open-paragraph="emit('openParagraph')"
+            @open-execution-detail="
+              (value) => emit('openExecutionDetail', value)
+            "
+            @open-paragraph="(value) => emit('openParagraph', value)"
             @open-paragraph-document="
               (value) => emit('openParagraphDocument', value)
             "
@@ -243,6 +287,7 @@ onBeforeUnmount(() => {
         :chat-record="chatRecord"
         :loading="loading"
         :regeneration-chart="regenerationChart"
+        :share-available="shareAvailable"
         :start-chat="startChat"
         :stop-chat="stopChat"
         :type="type"
@@ -282,6 +327,11 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 28px;
   object-fit: cover;
+}
+
+.avatar-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .content {

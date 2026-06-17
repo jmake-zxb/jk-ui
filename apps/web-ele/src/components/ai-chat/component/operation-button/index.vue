@@ -12,6 +12,7 @@ const props = defineProps<{
   chatRecord: ChatRecord;
   loading: boolean;
   regenerationChart: (chatRecord: ChatRecord) => void;
+  shareAvailable?: boolean;
   startChat: (chatRecord: ChatRecord) => void;
   stopChat: (chatRecord: ChatRecord) => void;
   type: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
@@ -52,6 +53,7 @@ const emit = defineEmits<{
       :chat-id="chatRecord.chat_id"
       :chat_loading="loading"
       :data="chatRecord"
+      :share-available="shareAvailable"
       :tts="application.tts_model_enable"
       :tts_autoplay="application.tts_autoplay"
       :tts_type="application.tts_type"

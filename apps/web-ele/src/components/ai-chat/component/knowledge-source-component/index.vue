@@ -39,9 +39,9 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  openExecutionDetail: [];
-  openParagraph: [];
-  openParagraphDocument: [value: string];
+  openExecutionDetail: [value: unknown];
+  openParagraph: [value: Record<string, any>];
+  openParagraphDocument: [value: Record<string, any>];
 }>();
 
 const dialogVisible = ref(false);
@@ -100,6 +100,7 @@ function getFileUrl(fileId?: number | string) {
 }
 
 function showPDF(item: Record<string, any>) {
+  if (!props.executionIsRightPanel) return false;
   return (
     documentName(item).toLowerCase().endsWith('.pdf') &&
     !!metaOf(item).source_file_id
@@ -124,7 +125,7 @@ function openParagraph(row: Record<string, any>, id?: string) {
       Number(a.similarity ?? a.score ?? 0),
   );
   if (props.executionIsRightPanel) {
-    emit('openParagraph');
+    emit('openParagraph', obj);
     return;
   }
   currentComponent.value = ParagraphSourceContent;
@@ -135,7 +136,7 @@ function openParagraph(row: Record<string, any>, id?: string) {
 function openExecutionDetail(row: unknown) {
   dialogTitle.value = '执行详情';
   if (props.executionIsRightPanel) {
-    emit('openExecutionDetail');
+    emit('openExecutionDetail', row);
     return;
   }
   currentComponent.value = ExecutionDetailContent;
@@ -145,7 +146,7 @@ function openExecutionDetail(row: unknown) {
 
 function openParagraphDocument(row: Record<string, any>) {
   if (props.executionIsRightPanel) {
-    emit('openParagraphDocument', documentName(row));
+    emit('openParagraphDocument', row);
     return;
   }
   currentComponent.value = ParagraphDocumentContent;
@@ -167,12 +168,23 @@ const uniqueParagraphList = computed(() => {
   });
 });
 
+function toFiniteNumber(value: unknown) {
+  const numberValue = Number(value ?? 0);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
 const totalTokens = computed(
   () =>
-    Number(props.data?.message_tokens ?? 0) +
-    Number(props.data?.answer_tokens ?? 0),
+    toFiniteNumber(props.data?.message_tokens) +
+    toFiniteNumber(props.data?.answer_tokens),
 );
-const runTime = computed(() => Number(props.data?.run_time ?? 0).toFixed(2));
+const runTime = computed(() => {
+  const seconds = toFiniteNumber(props.data?.run_time);
+  if (seconds < 0.01) {
+    return `${Math.round(seconds * 1000)} ms`;
+  }
+  return `${seconds.toFixed(2)} s`;
+});
 </script>
 
 <template>
@@ -181,7 +193,7 @@ const runTime = computed(() => Number(props.data?.run_time ?? 0).toFixed(2));
       <span class="secondary-text">知识来源</span>
       <ElDivider direction="vertical" />
       <ElButton type="primary" link @click="openParagraph(data)">
-        <ElIcon class="mr-4"><Tickets /></ElIcon>
+        <ElIcon class="g-mr-4"><Tickets /></ElIcon>
         引用分段 {{ data.paragraph_list?.length || 0 }}
       </ElButton>
     </div>
@@ -192,7 +204,7 @@ const runTime = computed(() => Number(props.data?.run_time ?? 0).toFixed(2));
           v-for="(item, index) in uniqueParagraphList"
           :key="index"
           :span="12"
-          class="mb-8"
+          class="g-mb-8"
         >
           <ElCard shadow="never" class="source-card">
             <div class="source-card-inner">
@@ -243,16 +255,17 @@ const runTime = computed(() => Number(props.data?.run_time ?? 0).toFixed(2));
     </div>
 
     <div v-if="showExecBlock" class="execution-details">
-      <div>
-        <span class="mr-8">消耗: {{ totalTokens }}</span>
-        <span>耗时: {{ runTime }} s</span>
+      <div class="execution-summary">
+        <span class="g-mr-8">消耗 tokens: {{ totalTokens }}</span>
+        <span>耗时: {{ runTime }}</span>
       </div>
       <ElButton
+        class="execution-detail-button"
         type="primary"
         link
-        @click="openExecutionDetail(data.execution_details)"
+        @click="openExecutionDetail(data)"
       >
-        <ElIcon class="mr-4"><Document /></ElIcon>
+        <ElIcon class="g-mr-4"><Document /></ElIcon>
         执行详情
       </ElButton>
     </div>
@@ -329,20 +342,31 @@ const runTime = computed(() => Number(props.data?.run_time ?? 0).toFixed(2));
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
+.execution-summary {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  min-width: 0;
+}
+
+.execution-detail-button {
+  padding: 0;
+}
+
 .dialog-content {
   max-height: calc(100vh - 260px);
   padding: 8px;
 }
 
-.mr-4 {
+.g-mr-4 {
   margin-right: 4px;
 }
 
-.mr-8 {
+.g-mr-8 {
   margin-right: 8px;
 }
 
-.mb-8 {
+.g-mb-8 {
   margin-bottom: 8px;
 }
 
