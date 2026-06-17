@@ -5,7 +5,18 @@ import type WorkflowHostChrome from './WorkflowHostChrome.vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { ElDrawer, ElDropdownItem, ElInput, ElMessage } from 'element-plus';
+import { useAccessStore } from '@vben/stores';
+
+import { Close, FullScreen, Minus } from '@element-plus/icons-vue';
+import {
+  ElButton,
+  ElDrawer,
+  ElDropdownItem,
+  ElIcon,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+} from 'element-plus';
 
 import {
   getWorkflowDraft,
@@ -16,21 +27,35 @@ import {
   validateWorkflowDraft,
 } from '#/api/ai/application-workflow';
 import { getApplication, listApplications } from '#/api/ai/applications';
+import AiChat from '#/components/ai-chat/index.vue';
+import {
+  createDebugChatRecord,
+  resetDebugChatRecord,
+} from '#/components/ai-chat/utils/chat';
 
 import {
-  APPLICATION_CHAT_PATH,
+  APPLICATION_DETAIL_PATH,
   isWorkflowApplication,
 } from '../../applications/application-entry';
 import { prettyJson, recordsOf, safeParseJson } from '../../utils';
 import { normalizeGraphData } from '../designer/graph-data';
 import { DEFAULT_GRAPH_DATA } from '../designer/nodes';
-import DebugChatPanel from './workflow-debug/DebugChatPanel.vue';
+import { normalizeBaseNodeApplicationInfo } from './base-node-application-info';
+import { buildDebugApplicationDetails } from './debug-application-details';
+import { isGraphDirty } from './dirty-state';
 import { showApiError, useAutoSave } from './workflow-host-shared';
+import { computeWorkflowToolbarPermissions } from './workflow-permissions';
 import WorkflowHostChromeComponent from './WorkflowHostChrome.vue';
 
 const props = defineProps<{ applicationId: number | string }>();
 
 const router = useRouter();
+const accessStore = useAccessStore();
+
+/** 工具栏操作权限（对齐后端 @HasPermission：edit/debug/view 三档）。 */
+const toolbarPermissions = computed(() =>
+  computeWorkflowToolbarPermissions(accessStore.accessCodes),
+);
 
 const chromeRef = ref<InstanceType<typeof WorkflowHostChrome>>();
 const applications = ref<any[]>([]);
@@ -44,11 +69,25 @@ const loading = ref(false);
 const applicationConfigOpen = ref(false);
 const versions = ref<any[]>([]);
 const versionsLoading = ref(false);
+/** 最近一次保存/加载时的图快照，用于返回前检测未保存改动。 */
+const savedSnapshot = ref('');
 
 const { autoSaveEnabled, lastSavedAt, markSaved, startAutoSave } = useAutoSave(
   () => autoSaveDraft(),
 );
 const debugPanelVisible = ref(false);
+const debugPanelEnlarged = ref(false);
+
+/** AiChat 需要的 applicationDetails：合并应用实体 + 图中 base-node 的 prologue / work_flow.nodes。 */
+const debugApplicationDetails = computed(() =>
+  buildDebugApplicationDetails(
+    currentApplication.value || {},
+    workflowGraphJson.value,
+  ),
+);
+
+/** AiChat 需要的 chatRecord prop（新建空记录即可）。 */
+const debugChatRecord = ref(createDebugChatRecord());
 
 const currentApplication = computed(() =>
   `${applicationDetail.value?.id || ''}` === `${applicationId.value}`
@@ -70,26 +109,10 @@ const publicAccessAvailable = computed(
 );
 
 function syncBaseNodeApplicationInfo(graphData: any) {
-  const application = currentApplication.value;
-  if (!application || !Array.isArray(graphData?.nodes)) return graphData;
-  const baseNode = graphData.nodes.find(
-    (node: any) => node?.id === 'base-node' || node?.type === 'base-node',
+  return normalizeBaseNodeApplicationInfo(
+    graphData,
+    currentApplication.value || {},
   );
-  if (!baseNode) return graphData;
-  if (!baseNode.properties) baseNode.properties = {};
-  if (!baseNode.properties.node_data) baseNode.properties.node_data = {};
-  const nodeData = baseNode.properties.node_data;
-  const applicationName =
-    `${application.name || application.title || ''}`.trim();
-  const applicationDesc =
-    `${application.description || application.desc || ''}`.trim();
-  if (applicationName && !`${nodeData.name || ''}`.trim()) {
-    nodeData.name = applicationName;
-  }
-  if (applicationDesc && !`${nodeData.desc || ''}`.trim()) {
-    nodeData.desc = applicationDesc;
-  }
-  return graphData;
 }
 
 async function loadApplicationDetail() {
@@ -102,8 +125,8 @@ async function loadApplicationDetail() {
   if (detail?.id && !isWorkflowApplication(detail.type)) {
     ElMessage.info('智能体应用使用对话调试');
     await router.replace({
-      path: APPLICATION_CHAT_PATH,
-      query: { applicationId: detail.id, mode: 'debug' },
+      path: APPLICATION_DETAIL_PATH,
+      query: { applicationId: detail.id, tab: 'overview' },
     });
     return false;
   }
@@ -130,15 +153,37 @@ function runLocalValidation(showMessage = true) {
   return chromeRef.value?.runLocalValidation(showMessage) ?? true;
 }
 
-function backToApplications() {
+async function backToApplications() {
+  syncGraphData();
+  if (isGraphDirty(savedSnapshot.value, workflowGraphJson.value)) {
+    // 三态确认：保存并离开 / 直接离开 / 取消(对齐 MaxKB 离开前确认未保存改动)。
+    let action: 'cancel' | 'close' | 'confirm';
+    try {
+      await ElMessageBox.confirm(
+        '当前工作流有未保存的改动，是否在离开前保存？',
+        '未保存的改动',
+        {
+          cancelButtonText: '不保存',
+          confirmButtonText: '保存并离开',
+          distinguishCancelAndClose: true,
+          type: 'warning',
+        },
+      );
+      action = 'confirm';
+    } catch (error) {
+      action = error === 'cancel' ? 'cancel' : 'close';
+    }
+    if (action === 'close') return; // 关闭弹窗 / 取消按钮：留在编辑器。
+    if (action === 'confirm' && !(await saveDraft(false))) return; // 保存失败则不离开。
+  }
   router.push('/ai/orchestration/applications/index');
 }
 
 function openPublicChat() {
   if (!applicationId.value) return;
   router.push({
-    path: '/ai/orchestration/public-chat/index',
-    query: { applicationId: applicationId.value },
+    path: APPLICATION_DETAIL_PATH,
+    query: { applicationId: applicationId.value, tab: 'overview' },
   });
 }
 
@@ -180,6 +225,7 @@ async function loadDraft() {
     applicationConfig.value = nextApplicationConfig;
     localValidation.value = { errors: [], warnings: [] };
     validation.value = undefined;
+    savedSnapshot.value = workflowGraphJson.value;
     await nextTick();
     await renderGraphData(true);
     await loadVersions(false);
@@ -201,11 +247,13 @@ async function saveDraft(showMessage = true) {
   }
   syncGraphData();
   workflowGraphJson.value = prettyJson(
-    normalizeGraphData(
-      safeParseJson(workflowGraphJson.value, {}),
-      true,
-      true,
-      'application',
+    syncBaseNodeApplicationInfo(
+      normalizeGraphData(
+        safeParseJson(workflowGraphJson.value, {}),
+        true,
+        true,
+        'application',
+      ),
     ),
     DEFAULT_GRAPH_DATA,
   );
@@ -214,6 +262,7 @@ async function saveDraft(showMessage = true) {
     applicationConfig: applicationConfig.value,
   });
   markSaved();
+  savedSnapshot.value = workflowGraphJson.value;
   if (showMessage) ElMessage.success('草稿已保存');
   return true;
 }
@@ -229,7 +278,23 @@ async function validateDraft() {
   ElMessage.success('校验完成');
 }
 
+async function runNodeValidation(): Promise<string[]> {
+  const result = await chromeRef.value?.runNodeValidation?.();
+  return Array.isArray(result) ? result : [];
+}
+
 async function publishDraft() {
+  if (!runLocalValidation(false)) {
+    ElMessage.error(
+      `本地校验未通过：${localValidation.value.errors.length || 1} 个错误，请查看画布提示`,
+    );
+    return;
+  }
+  const nodeErrors = await runNodeValidation();
+  if (nodeErrors.length > 0) {
+    ElMessage.error(`节点校验未通过：${nodeErrors[0]}`);
+    return;
+  }
   if (!(await saveDraft(false))) return;
   await publishWorkflow(applicationId.value, { description: '前端工作流发布' });
   ElMessage.success('发布成功');
@@ -259,8 +324,25 @@ async function restoreVersion(row: any) {
   await loadDraft();
 }
 
-function toggleDebugPanel() {
+async function toggleDebugPanel() {
   if (!runLocalValidation(true)) return;
+  const graphData = chromeRef.value?.getGraphData?.();
+  if (typeof graphData === 'string') {
+    workflowGraphJson.value = prettyJson(
+      syncBaseNodeApplicationInfo(
+        normalizeGraphData(
+          safeParseJson(graphData, {}),
+          true,
+          true,
+          'application',
+        ),
+      ),
+      DEFAULT_GRAPH_DATA,
+    );
+    await nextTick();
+    await renderGraphData(false);
+  }
+  resetDebugChatRecord(debugChatRecord.value);
   debugPanelVisible.value = true;
 }
 
@@ -293,7 +375,13 @@ onMounted(async () => {
     v-model:graph-data="workflowGraphJson"
     :auto-save-enabled="autoSaveEnabled"
     back-list-label="应用管理"
-    :can-restore-version="true"
+    :can-add-component="toolbarPermissions.canAddComponent"
+    :can-debug="toolbarPermissions.canDebug"
+    :can-publish="toolbarPermissions.canPublish"
+    :can-restore-version="toolbarPermissions.canRestoreVersion"
+    :can-save="toolbarPermissions.canSave"
+    :can-validate="toolbarPermissions.canValidate"
+    :can-view-versions="toolbarPermissions.canViewVersions"
     debug-drawer-title="工作流调试"
     debug-mode="panel"
     foundation-mode="application"
@@ -347,18 +435,149 @@ onMounted(async () => {
       </ElDrawer>
     </template>
     <template #debug-panel>
-      <DebugChatPanel
-        v-model:visible="debugPanelVisible"
-        :app-icon="currentApplication?.icon"
-        :app-name="currentApplicationName"
-        :application-id="applicationId"
-        :run-local-validation="runLocalValidation"
-      />
+      <Transition name="debug-panel-transition">
+        <div
+          v-if="debugPanelVisible"
+          class="debug-panel-ai-chat"
+          :class="{ 'debug-panel-ai-chat--enlarged': debugPanelEnlarged }"
+        >
+          <div class="dp-header">
+            <div class="dp-title">
+              <div class="dp-avatar">
+                <img
+                  v-if="currentApplication?.icon"
+                  :src="currentApplication.icon"
+                  alt=""
+                />
+                <span v-else>{{
+                  (currentApplicationName || 'AI').slice(0, 1)
+                }}</span>
+              </div>
+              <span class="dp-name" :title="currentApplicationName">{{
+                currentApplicationName || '工作流调试'
+              }}</span>
+            </div>
+            <div class="dp-actions">
+              <ElButton link @click="debugPanelEnlarged = !debugPanelEnlarged">
+                <ElIcon :size="18">
+                  <FullScreen v-if="!debugPanelEnlarged" />
+                  <Minus v-else />
+                </ElIcon>
+              </ElButton>
+              <ElButton link @click="debugPanelVisible = false">
+                <ElIcon :size="18"><Close /></ElIcon>
+              </ElButton>
+            </div>
+          </div>
+          <AiChat
+            :app-id="`${applicationId}`"
+            :application-details="debugApplicationDetails"
+            :chat-record="debugChatRecord"
+            type="debug-ai-chat"
+          />
+        </div>
+      </Transition>
     </template>
   </WorkflowHostChromeComponent>
 </template>
 
 <style scoped lang="scss">
+.debug-panel-transition-enter-active,
+.debug-panel-transition-leave-active {
+  transition: all 0.3s ease;
+}
+
+.debug-panel-transition-enter-from,
+.debug-panel-transition-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.debug-panel-ai-chat {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 460px;
+  height: 680px;
+  max-height: calc(100% - 32px);
+  overflow: hidden;
+  background: hsl(var(--card));
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  box-shadow: var(--el-box-shadow-light);
+  transition: all 0.25s ease;
+}
+
+.debug-panel-ai-chat--enlarged {
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.debug-panel-ai-chat :deep(.ai-chat) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dp-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.dp-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.dp-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 6px;
+}
+
+.dp-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+
+.dp-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+}
+
 .drawer-grid {
   display: grid;
   gap: 12px;

@@ -73,7 +73,7 @@ export function parseDebugChunk(chunk: string): DebugRunEvent[] {
 }
 
 /**
- * 解析单行 SSE（保留 runId/content/payload/message/isEnd），供 useDebugChat 消费。
+ * 解析单行 SSE（保留 runId/content/payload/message/isEnd）。
  * 与旧 parseDebugChunk 不同：不丢字段、按行返回 DebugSseEvent | null。
  */
 export function parseDebugSseLine(line: string): DebugSseEvent | null {

@@ -5,7 +5,7 @@ import type WorkflowHostChrome from './WorkflowHostChrome.vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
   getToolWorkflow,
@@ -24,6 +24,7 @@ import {
   toBackendToolWorkflowGraphData,
   toEditorToolWorkflowGraphData,
 } from '../tool-workflow-utils';
+import { isGraphDirty } from './dirty-state';
 import { isRecord, showApiError, useAutoSave } from './workflow-host-shared';
 import WorkflowHostChromeComponent from './WorkflowHostChrome.vue';
 
@@ -42,6 +43,8 @@ const localValidation = ref<ValidationState>({ errors: [], warnings: [] });
 const loading = ref(false);
 const versions = ref<any[]>([]);
 const versionsLoading = ref(false);
+/** 最近一次保存/加载时的图快照，用于返回前检测未保存改动。 */
+const savedSnapshot = ref('');
 
 const { autoSaveEnabled, lastSavedAt, markSaved, startAutoSave } = useAutoSave(
   () => autoSaveDraft(),
@@ -186,7 +189,28 @@ function runLocalValidation(showMessage = true) {
   return chromeRef.value?.runLocalValidation(showMessage) ?? true;
 }
 
-function backToTools() {
+async function backToTools() {
+  syncGraphData();
+  if (isGraphDirty(savedSnapshot.value, workflowGraphJson.value)) {
+    let action: 'cancel' | 'close' | 'confirm';
+    try {
+      await ElMessageBox.confirm(
+        '当前工作流有未保存的改动，是否在离开前保存？',
+        '未保存的改动',
+        {
+          cancelButtonText: '不保存',
+          confirmButtonText: '保存并离开',
+          distinguishCancelAndClose: true,
+          type: 'warning',
+        },
+      );
+      action = 'confirm';
+    } catch (error) {
+      action = error === 'cancel' ? 'cancel' : 'close';
+    }
+    if (action === 'close') return;
+    if (action === 'confirm' && !(await saveDraft(false))) return;
+  }
   router.push('/ai/orchestration/tools/index');
 }
 
@@ -214,6 +238,7 @@ async function loadDraft() {
     );
     localValidation.value = { errors: [], warnings: [] };
     validation.value = undefined;
+    savedSnapshot.value = workflowGraphJson.value;
     await nextTick();
     await renderGraphData(true);
     await loadVersions(false);
@@ -245,6 +270,7 @@ async function saveDraft(showMessage = true) {
   );
   await saveToolWorkflow(toolId.value, toolWorkflowPayload());
   markSaved();
+  savedSnapshot.value = workflowGraphJson.value;
   if (showMessage) ElMessage.success('草稿已保存');
   return true;
 }
@@ -284,7 +310,12 @@ function restoreVersion() {
 async function openDebug() {
   if (!runLocalValidation(true)) return;
   if (!(await saveDraft(false))) return;
+  chromeRef.value?.clearRuntimeNodeStatuses?.();
   debugDrawerRef.value?.open(toolId.value);
+}
+
+function applyRuntimeNodeStatus(nodeId: string, status?: string) {
+  chromeRef.value?.applyRuntimeNodeStatus?.(nodeId, status);
 }
 
 watch(
@@ -313,7 +344,7 @@ onMounted(async () => {
       :auto-save-enabled="autoSaveEnabled"
       back-list-label="工具管理"
       :can-restore-version="false"
-      debug-drawer-title="工具工作流调试"
+      debug-drawer-title="调试"
       foundation-mode="tool"
       :loading="loading"
       :local-validation="localValidation"
@@ -333,6 +364,9 @@ onMounted(async () => {
       @save="saveDraft(true)"
     />
 
-    <WorkflowDebugDrawer ref="debugDrawerRef" />
+    <WorkflowDebugDrawer
+      ref="debugDrawerRef"
+      :on-node-status="applyRuntimeNodeStatus"
+    />
   </div>
 </template>

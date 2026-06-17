@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { PaletteMode, WorkflowFoundationMode } from '../designer/nodes';
 import type { ValidationState } from '../designer/validation';
-import type WorkflowDesigner from '../designer/WorkflowDesigner.vue';
-import type { DebugRunEvent } from './workflow-host-shared';
 
 import { ref } from 'vue';
 
@@ -16,25 +14,26 @@ import {
 } from '@element-plus/icons-vue';
 import {
   ElButton,
-  ElDrawer,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
-  ElInput,
-  ElTable,
-  ElTableColumn,
-  ElTabPane,
-  ElTabs,
   ElTag,
 } from 'element-plus';
 
 import WorkflowDesignerComponent from '../designer/WorkflowDesigner.vue';
+import PublishHistorySidebar from './PublishHistorySidebar.vue';
 
 const props = withDefaults(
   defineProps<{
     autoSaveEnabled: boolean;
     backListLabel: string;
+    canAddComponent?: boolean;
+    canDebug?: boolean;
+    canPublish?: boolean;
     canRestoreVersion: boolean;
+    canSave?: boolean;
+    canValidate?: boolean;
+    canViewVersions?: boolean;
     debugDrawerTitle: string;
     /** 'drawer' = 内置事件抽屉（工具工作流）；'panel' = 外部浮动对话面板（高级智能体）。 */
     debugMode?: 'drawer' | 'panel';
@@ -49,7 +48,16 @@ const props = withDefaults(
     versionsDrawerTitle: string;
     versionsLoading: boolean;
   }>(),
-  { debugMode: 'drawer', validation: undefined },
+  {
+    canAddComponent: true,
+    canDebug: true,
+    canPublish: true,
+    canSave: true,
+    canValidate: true,
+    canViewVersions: true,
+    debugMode: 'drawer',
+    validation: undefined,
+  },
 );
 
 const emit = defineEmits<{
@@ -66,15 +74,9 @@ const emit = defineEmits<{
 }>();
 
 const graphData = defineModel<string>('graphData', { default: '{}' });
-const debugMessage = defineModel<string>('debugMessage', { default: '' });
-const debugInput = defineModel<string>('debugInput', { default: '{}' });
 
-const debugRows = defineModel<DebugRunEvent[]>('debugRows', {
-  default: () => [],
-});
-const debugEvents = defineModel<string[]>('debugEvents', { default: () => [] });
-
-const workflowDesignerRef = ref<InstanceType<typeof WorkflowDesigner>>();
+const workflowDesignerRef =
+  ref<InstanceType<typeof WorkflowDesignerComponent>>();
 const debugDrawerOpen = ref(false);
 const versionsOpen = ref(false);
 const rawDebugOpen = ref(false);
@@ -94,18 +96,22 @@ function openVersions() {
 }
 
 defineExpose({
-  fitView: (...args: any[]) =>
-    (workflowDesignerRef.value as any)?.fitView?.(...args),
-  getGraphData: () => (workflowDesignerRef.value as any)?.getGraphData?.(),
+  applyRuntimeNodeStatus: (nodeId: string, status?: string) =>
+    workflowDesignerRef.value?.applyRuntimeNodeStatus?.(nodeId, status),
+  clearRuntimeNodeStatuses: () =>
+    workflowDesignerRef.value?.clearRuntimeNodeStatuses?.(),
+  fitView: () => workflowDesignerRef.value?.fitView?.(),
+  getGraphData: () => workflowDesignerRef.value?.getGraphData?.(),
   openRawDebug: () => {
     rawDebugOpen.value = true;
   },
-  refreshGraphData: (...args: any[]) =>
-    (workflowDesignerRef.value as any)?.refreshGraphData?.(...args),
-  renderGraphData: (...args: any[]) =>
-    workflowDesignerRef.value?.renderGraphData?.(...args),
+  refreshGraphData: () => workflowDesignerRef.value?.refreshGraphData?.(),
+  renderGraphData: (data?: string, fit = true) =>
+    workflowDesignerRef.value?.renderGraphData?.(data, fit),
   runLocalValidation: (showMessage = true) =>
     workflowDesignerRef.value?.runLocalValidation?.(showMessage) ?? true,
+  runNodeValidation: (): Promise<string[]> =>
+    workflowDesignerRef.value?.runNodeValidation?.() ?? Promise.resolve([]),
   syncGraphData: () => workflowDesignerRef.value?.syncGraphData?.(),
 });
 </script>
@@ -134,21 +140,32 @@ defineExpose({
         </div>
         <div class="header-actions">
           <ElButton
+            v-if="canAddComponent"
             type="primary"
             @click="workflowDesignerRef?.toggleAddMenu()"
           >
             添加组件
           </ElButton>
-          <ElButton :icon="VideoPlay" @click="runDebug"> 调试 </ElButton>
-          <ElButton @click="emit('save')">保存</ElButton>
-          <ElButton :icon="Connection" @click="emit('publish')">发布</ElButton>
+          <ElButton v-if="canDebug" :icon="VideoPlay" @click="runDebug">
+            调试
+          </ElButton>
+          <ElButton v-if="canSave" @click="emit('save')">保存</ElButton>
+          <ElButton
+            v-if="canPublish"
+            :icon="Connection"
+            @click="emit('publish')"
+          >
+            发布
+          </ElButton>
           <ElDropdown trigger="click">
             <ElButton :icon="MoreFilled" />
             <template #dropdown>
               <ElDropdownMenu>
                 <slot name="menu-before"></slot>
-                <ElDropdownItem @click="emit('validate')">校验</ElDropdownItem>
-                <ElDropdownItem @click="openVersions">
+                <ElDropdownItem v-if="canValidate" @click="emit('validate')">
+                  校验
+                </ElDropdownItem>
+                <ElDropdownItem v-if="canViewVersions" @click="openVersions">
                   版本 / 历史
                 </ElDropdownItem>
                 <ElDropdownItem @click="emit('toggleAutoSave')">
@@ -182,104 +199,27 @@ defineExpose({
         @raw-debug="rawDebugOpen = true"
       />
 
+      <PublishHistorySidebar
+        v-if="versionsOpen"
+        :can-restore="canRestoreVersion"
+        :loading="versionsLoading"
+        :title="versionsDrawerTitle"
+        :versions="versions"
+        @close="versionsOpen = false"
+        @restore="(row: any) => emit('restoreVersion', row)"
+      />
+
       <slot name="drawers"></slot>
 
       <!-- panel 模式：外部注入浮动对话面板（高级智能体工作流调试） -->
       <slot v-if="debugMode === 'panel'" name="debug-panel"></slot>
-
-      <ElDrawer
-        v-if="debugMode === 'drawer'"
-        v-model="debugDrawerOpen"
-        :title="debugDrawerTitle"
-        size="520px"
-      >
-        <div class="debug-drawer">
-          <ElInput v-model="debugMessage" placeholder="消息" />
-          <ElInput v-model="debugInput" type="textarea" :rows="6" class="mt8" />
-          <ElButton
-            type="primary"
-            class="full-action"
-            :icon="VideoPlay"
-            @click="runDebug"
-          >
-            运行调试
-          </ElButton>
-          <div class="run-events drawer-events">
-            <div
-              v-for="(event, index) in debugRows"
-              :key="`${event.event}-${index}`"
-              class="run-event"
-              :class="`is-${event.status.toLowerCase()}`"
-            >
-              <span>{{ event.event }}</span>
-              <strong>{{
-                event.nodeName || event.nodeType || event.title
-              }}</strong>
-              <small>{{ event.nodeType || event.status }}</small>
-            </div>
-            <div v-if="debugRows.length === 0" class="empty-state">
-              暂无调试事件
-            </div>
-          </div>
-        </div>
-      </ElDrawer>
-
-      <ElDrawer
-        v-model="versionsOpen"
-        :title="versionsDrawerTitle"
-        size="680px"
-      >
-        <ElTabs model-value="versions">
-          <ElTabPane label="版本" name="versions">
-            <ElTable
-              v-loading="versionsLoading"
-              :data="versions"
-              size="small"
-              height="calc(100vh - 160px)"
-            >
-              <ElTableColumn prop="versionNo" label="版本" width="110" />
-              <ElTableColumn prop="status" label="状态" width="110" />
-              <ElTableColumn
-                prop="createTime"
-                label="发布时间"
-                min-width="180"
-              />
-              <ElTableColumn label="操作" width="110">
-                <template #default="{ row }">
-                  <ElButton
-                    v-if="canRestoreVersion"
-                    link
-                    type="primary"
-                    @click="emit('restoreVersion', row)"
-                  >
-                    恢复
-                  </ElButton>
-                  <ElTag v-else size="small" type="info">仅查看</ElTag>
-                </template>
-              </ElTableColumn>
-            </ElTable>
-          </ElTabPane>
-        </ElTabs>
-      </ElDrawer>
-
-      <ElDrawer
-        v-if="debugMode === 'drawer'"
-        v-model="rawDebugOpen"
-        title="调试原始流"
-        size="520px"
-      >
-        <div class="stream-box raw-stream">
-          <pre v-for="(event, index) in debugEvents" :key="index">{{
-            event
-          }}</pre>
-        </div>
-      </ElDrawer>
     </div>
   </Page>
 </template>
 
 <style scoped lang="scss">
 .workflow-host {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
