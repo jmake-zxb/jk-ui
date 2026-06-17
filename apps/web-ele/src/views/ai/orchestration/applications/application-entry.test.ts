@@ -24,7 +24,7 @@ describe('application primary entry', () => {
   });
 
   it('routes agent applications to the MaxKB-style detail overview', () => {
-    for (const type of ['CHAT', 'SIMPLE']) {
+    for (const type of ['LLM', 'SIMPLE']) {
       expect(isWorkflowApplication(type)).toBe(false);
       expect(applicationPrimaryEntry({ id: 'app-1', type })).toMatchObject({
         kind: 'detail',

@@ -18,7 +18,6 @@ import {
 import {
   deleteModel,
   listProviderMetadata,
-  listProviders,
   pageModels,
 } from '#/api/ai/models';
 
@@ -143,7 +142,8 @@ function handleModelChange() {
 async function loadProviders() {
   providerLoading.value = true;
   try {
-    const res: any = await listProviders();
+    // 对齐 MaxKB：供应商列表完全来自静态元数据注册表，不读 DB
+    const res: any = await listProviderMetadata();
     const data = Array.isArray(res) ? res : (res?.data ?? []);
     providerList.value = data.filter((p: Provider) => p.provider);
   } catch {
@@ -153,22 +153,9 @@ async function loadProviders() {
   }
 }
 
+// loadProviderMetadata 已合并到 loadProviders，保留空函数避免调用方报错
 async function loadProviderMetadata() {
-  try {
-    const res: any = await listProviderMetadata();
-    const data = Array.isArray(res) ? res : (res?.data ?? []);
-    // 合并元数据和已配置供应商
-    const existing = new Map(providerList.value.map((p) => [p.provider, p]));
-    const merged: Provider[] = [];
-    data.forEach((item: Provider) => {
-      if (item.provider && !existing.has(item.provider)) {
-        merged.push(item);
-      }
-    });
-    providerList.value = [...providerList.value, ...merged];
-  } catch {
-    // 忽略元数据加载失败
-  }
+  // no-op: 元数据已在 loadProviders 中加载
 }
 
 async function loadModels() {
@@ -186,7 +173,10 @@ async function loadModels() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadProviders(), loadProviderMetadata()]);
+  // 顺序执行：loadProviders 赋值覆盖，loadProviderMetadata 追加。
+  // 并行时若 loadProviders 后 resolve 会清空 metadata 追加结果。
+  await loadProviders();
+  await loadProviderMetadata();
   await loadModels();
 }
 

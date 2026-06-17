@@ -29,12 +29,10 @@ export const modelTypeLabelMap: Record<string, string> = {
   [ModelType.TTV]: '文生视频',
 };
 
-/** 兼容历史非标准类型（CHAT/VIDEO/MULTIMODAL）映射到标准类型 */
+/** 兼容历史非标准类型（VIDEO/MULTIMODAL）映射到标准类型 */
 export const modelTypeAliasMap: Record<string, string> = {
-  CHAT: ModelType.LLM,
   VIDEO: ModelType.TTV,
   MULTIMODAL: ModelType.IMAGE,
-  RERANK: ModelType.RERANKER,
 };
 
 /** 模型类型下拉选项 */
