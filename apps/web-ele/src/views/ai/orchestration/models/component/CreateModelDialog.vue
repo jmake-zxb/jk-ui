@@ -55,7 +55,8 @@ interface BaseModel {
 }
 
 interface KeyValue {
-  key: string;
+  key?: string;
+  label?: string;
   value: string;
 }
 
@@ -286,6 +287,7 @@ defineExpose({ open, close });
       <ElTabPane label="基础信息" name="base-info">
         <DynamicsForm
           v-model="formData"
+          :model="formData"
           :render-fields="modelFormField"
           ref="dynamicsFormRef"
           label-position="top"
@@ -293,7 +295,10 @@ defineExpose({ open, close });
           label-width="auto"
         >
           <template #default>
-            <ElFormItem prop="name" required>
+            <ElFormItem
+              prop="name"
+              :rules="[{ required: true, message: '请输入模型名称', trigger: 'blur' }]"
+            >
               <template #label>模型名称</template>
               <ElInput
                 v-model="baseFormData.name"
@@ -302,7 +307,10 @@ defineExpose({ open, close });
                 placeholder="请输入模型名称"
               />
             </ElFormItem>
-            <ElFormItem prop="model_type" required>
+            <ElFormItem
+              prop="model_type"
+              :rules="[{ required: true, message: '请选择模型类型', trigger: 'change' }]"
+            >
               <template #label>模型类型</template>
               <ElSelect
                 v-loading="modelTypeLoading"
@@ -314,12 +322,15 @@ defineExpose({ open, close });
                 <ElOption
                   v-for="item in modelTypeList"
                   :key="item.value"
-                  :label="item.key"
+                  :label="item.label || item.key"
                   :value="item.value"
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem prop="model_name" required>
+            <ElFormItem
+              prop="model_name"
+              :rules="[{ required: true, message: '请选择基础模型', trigger: 'change' }]"
+            >
               <template #label>基础模型</template>
               <ElSelect
                 v-loading="baseModelLoading"
