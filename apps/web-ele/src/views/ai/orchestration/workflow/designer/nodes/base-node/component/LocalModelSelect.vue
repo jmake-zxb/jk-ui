@@ -13,7 +13,7 @@ const props = withDefaults(
     showFooter?: boolean;
   }>(),
   {
-    modelType: 'CHAT',
+    modelType: 'LLM',
     modelValue: undefined,
     placeholder: '请选择模型',
     showFooter: false,
@@ -65,7 +65,7 @@ function groupedModels() {
 }
 
 function apiModelType() {
-  return props.modelType === 'LLM' ? 'CHAT' : props.modelType;
+  return props.modelType === 'LLM' ? 'LLM' : props.modelType;
 }
 
 async function loadModels() {

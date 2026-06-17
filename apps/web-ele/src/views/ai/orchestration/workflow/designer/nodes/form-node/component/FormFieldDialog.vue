@@ -508,7 +508,7 @@ function mergeModelRecords(records: ApiRecord[]) {
 }
 
 function apiModelType(value: string) {
-  return value === 'LLM' ? 'CHAT' : value;
+  return value === 'LLM' ? 'LLM' : value;
 }
 
 async function loadModelsByType(type = modelType.value) {
@@ -516,7 +516,7 @@ async function loadModelsByType(type = modelType.value) {
   modelLoading.value = true;
   try {
     mergeModelRecords(
-      recordsOf(await listActiveModels(apiModelType(type || 'CHAT'))),
+      recordsOf(await listActiveModels(apiModelType(type || 'LLM'))),
     );
   } catch {
     mergeModelRecords([]);
@@ -667,7 +667,7 @@ const uploadAcceptText = computed({
   set: (value: string) => writeAttr('accept', normalizeAccept(value)),
 });
 const modelType = computed({
-  get: () => readStringAttr('model_type', `${form.value.model_type || 'CHAT'}`),
+  get: () => readStringAttr('model_type', `${form.value.model_type || 'LLM'}`),
   set: (value: string) => {
     writeAttr('model_type', value);
     form.value.model_type = value;
@@ -1077,7 +1077,7 @@ function normalizeUploadAttrs() {
 }
 
 function normalizeModelAttrs() {
-  if (!modelType.value) modelType.value = 'CHAT';
+  if (!modelType.value) modelType.value = 'LLM';
   const providers = modelProviderList()
     .map((item) => ({
       model_id: `${item.model_id || ''}`,
@@ -1698,9 +1698,9 @@ defineExpose({ close, open });
             filterable
             default-first-option
           >
-            <ElOption label="聊天模型" value="CHAT" />
+            <ElOption label="聊天模型" value='LLM' />
             <ElOption label="向量模型" value="EMBEDDING" />
-            <ElOption label="重排模型" value="RERANK" />
+            <ElOption label="重排模型" value="RERANKER" />
             <ElOption label="语音识别" value="STT" />
             <ElOption label="语音合成" value="TTS" />
           </ElSelect>

@@ -301,9 +301,9 @@ defineExpose({ close, open });
             :teleported="false"
             placeholder="请选择模型类型"
           >
-            <ElOption label="CHAT" value="CHAT" />
+            <ElOption label='LLM' value='LLM' />
             <ElOption label="EMBEDDING" value="EMBEDDING" />
-            <ElOption label="RERANK" value="RERANK" />
+            <ElOption label="重排模型" value="RERANKER" />
             <ElOption label="STT" value="STT" />
             <ElOption label="TTS" value="TTS" />
           </ElSelect>
