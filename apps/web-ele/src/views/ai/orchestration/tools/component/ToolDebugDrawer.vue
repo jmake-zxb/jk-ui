@@ -241,9 +241,7 @@ defineExpose({
         <ElCard
           shadow="never"
           class="card-never"
-          style="
-
---el-card-padding: 12px"
+          style="--el-card-padding: 12px"
         >
           <DynamicInitForm
             v-model="form.init_params"
@@ -257,9 +255,7 @@ defineExpose({
         <ElCard
           shadow="never"
           class="card-never"
-          style="
-
---el-card-padding: 12px"
+          style="--el-card-padding: 12px"
         >
           <ElForm
             ref="formRef"

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import type { FormInstance } from 'element-plus';
 
+import type { ToolNodeStep } from './ExecutionDetailCard.vue';
+
 import { computed, ref } from 'vue';
 
 import { Back, VideoPause } from '@element-plus/icons-vue';
 import {
   ElAlert,
   ElButton,
+  ElCard,
   ElDrawer,
   ElForm,
   ElFormItem,
@@ -21,11 +24,15 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { getToolRun, listToolRunNodes } from '#/api/ai/tool-workflow';
 import { getTool } from '#/api/ai/tools';
 import AnswerContent from '#/components/ai-chat/component/answer-content/index.vue';
 import { ChatManagement } from '#/components/ai-chat/types/application';
 import { createDebugChatRecord } from '#/components/ai-chat/utils/chat';
+import JsonInput from '#/components/dynamics-form/items/JsonInput.vue';
 
+import { safeParseJson } from '../../utils';
+import { workflowToolShape } from '../../workflow/designer/common/tool-resource-utils';
 import { useToolDebugChat } from '../composables/useToolDebugChat';
 import ExecutionDetailCard from './ExecutionDetailCard.vue';
 
@@ -35,6 +42,15 @@ interface InputField {
   type: string;
   is_required?: boolean;
 }
+
+type JsonRecord = Record<string, unknown>;
+
+const props = defineProps<{
+  onNodeStatus?: (
+    nodeId: string,
+    status: ToolNodeStep['status'] | undefined,
+  ) => void;
+}>();
 
 const inputDrawerVisible = ref(false);
 const resultDrawerVisible = ref(false);
@@ -49,7 +65,11 @@ const currentChat = ref(createDebugChatRecord());
 const { debug, result, resume, running, stop } = useToolDebugChat({
   getChatRecord: () => currentChat.value,
   getToolId: () => toolId.value!,
+  onNodeStatus: (nodeId, status) => props.onNodeStatus?.(nodeId, status),
 });
+
+const toolRun = ref<any>();
+const toolRunNodes = ref<ToolNodeStep[]>([]);
 
 const answerApplication = computed(() => ({
   id: toolId.value,
@@ -65,28 +85,84 @@ const answerLoading = computed(
 );
 
 const isSuccess = computed(() => {
+  if (toolRun.value) {
+    return toolRun.value.status !== 'FAILURE';
+  }
   if (result.value.error) return false;
-  if (result.value.nodeSteps.some((s) => s.status === 'FAILED')) return false;
-  return result.value.nodeSteps.length > 0;
+  return undefined;
 });
 
 const output = computed(() => {
-  if (result.value.finalOutput) {
+  const value = toolRun.value?.outputJson ?? result.value.finalOutput;
+  if (value) {
     try {
-      const parsed = JSON.parse(result.value.finalOutput);
-      return JSON.stringify(parsed, null, 2);
+      const parsed = safeParseJson(value, undefined);
+      if (parsed !== undefined && parsed !== null) {
+        return JSON.stringify(parsed, null, 2);
+      }
+      return value;
     } catch {
-      return result.value.finalOutput;
+      return value;
     }
   }
-  const lastStep = result.value.nodeSteps.at(-1);
+  const lastStep = toolRunNodes.value.at(-1) ?? result.value.nodeSteps.at(-1);
   if (lastStep?.outputJson) return lastStep.outputJson;
   if (lastStep?.content) return lastStep.content;
-  return '无输出';
+  return undefined;
 });
 
+const executionDetails = computed(() =>
+  toolRunNodes.value.length > 0 ? toolRunNodes.value : result.value.nodeSteps,
+);
+
+function resetToolRun() {
+  toolRun.value = undefined;
+  toolRunNodes.value = [];
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function textValue(value: unknown) {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return `${value}`.trim();
+  }
+  return '';
+}
+
+function labelValue(value: unknown) {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return textValue(value);
+  }
+  if (isRecord(value)) {
+    return textValue(value.label ?? value.value ?? value.name);
+  }
+  return '';
+}
+
+function normalizeInputFields(fields: JsonRecord[]): InputField[] {
+  return fields.map((field, index) => {
+    const key =
+      textValue(field.field ?? field.name ?? field.value ?? field.key) ||
+      `param_${index + 1}`;
+    return {
+      field: key,
+      is_required: field.is_required === true || field.required === true,
+      label: labelValue(field.label) || key,
+      type: textValue(field.type ?? field.input_type) || 'string',
+    };
+  });
+}
+
+function resumeFormDataFrom(params: JsonRecord): JsonRecord | undefined {
+  const formData = params.node_data ?? params.form_data;
+  return isRecord(formData) ? formData : undefined;
+}
+
 function toggleStep(index: number) {
-  const step = result.value.nodeSteps[index];
+  const steps = executionDetails.value;
+  const step = steps[index];
   if (step) step.expanded = !step.expanded;
 }
 
@@ -99,6 +175,7 @@ function closeResultDrawer() {
   if (running.value) stop();
   ChatManagement.close(currentChat.value.id);
   resultDrawerVisible.value = false;
+  resetToolRun();
 }
 
 async function runDebug() {
@@ -115,6 +192,7 @@ async function executeDebug() {
   if (!toolId.value) return;
 
   try {
+    resetToolRun();
     currentChat.value = createDebugChatRecord(
       JSON.stringify(inputForm.value, null, 2),
     );
@@ -122,22 +200,93 @@ async function executeDebug() {
     resultDrawerVisible.value = true;
     activeTab.value = 'output';
     await debug(inputForm.value);
+    await fetchToolRunRecord();
   } catch (error: any) {
     ElMessage.error(error?.message || '工作流调试失败');
   }
 }
 
-async function sendMessage(question: string, otherParamsData?: unknown) {
-  const params =
-    otherParamsData && typeof otherParamsData === 'object'
-      ? (otherParamsData as Record<string, any>)
-      : {};
+async function fetchToolRunRecord() {
+  const runId = result.value.runId;
+  if (!toolId.value || !runId) return;
+  try {
+    const [runData, nodesData] = await Promise.all([
+      getToolRun(toolId.value, runId),
+      listToolRunNodes(toolId.value, runId),
+    ]);
+    toolRun.value = runData;
+    toolRunNodes.value = normalizeNodeSteps(nodesData);
+  } catch {
+    // 服务端补齐记录失败时仍展示 SSE 已收集的数据。
+  }
+}
 
-  // 表单提交：FormRander 通过 sendMessage('', 'old', { form_data, ... }) 触发。
+function normalizeNodeSteps(data: any): ToolNodeStep[] {
+  let nodes: any[] = [];
+  if (Array.isArray(data)) {
+    nodes = data;
+  } else if (Array.isArray(data?.data)) {
+    nodes = data.data;
+  } else if (Array.isArray(data?.records)) {
+    nodes = data.records;
+  }
+
+  return nodes.map((node: any) => ({
+    completionTokens: node.completion_tokens ?? node.completionTokens,
+    content: node.content ?? node.answer ?? '',
+    errorMessage: node.error_message ?? node.errorMessage ?? node.error,
+    expanded: false,
+    inputJson: normalizeJson(node.input_json ?? node.inputJson ?? node.input),
+    nodeName: node.node_name ?? node.nodeName ?? node.name ?? '未命名节点',
+    nodeType: node.node_type ?? node.nodeType ?? node.type ?? 'unknown',
+    output: normalizeOutput(node.output ?? node.result),
+    outputJson: normalizeJson(
+      node.output_json ?? node.outputJson ?? node.output,
+    ),
+    promptTokens: node.prompt_tokens ?? node.promptTokens,
+    runTime: node.run_time ?? node.runTime ?? node.duration,
+    status: normalizeStatus(node.state ?? node.status),
+  }));
+}
+
+function normalizeJson(value: any): string | undefined {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return JSON.stringify(value, null, 2);
+  return undefined;
+}
+
+function normalizeOutput(value: any): Record<string, any> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value === 'string') return safeParseJson(value, undefined);
+  return undefined;
+}
+
+function normalizeStatus(
+  state?: string,
+): 'FAILED' | 'RUNNING' | 'SUCCESS' | 'WARNING' {
+  const normalized = (state || '').toUpperCase();
+  if (normalized === 'SUCCESS') return 'SUCCESS';
+  if (normalized === 'FAILURE' || normalized === 'FAILED') return 'FAILED';
+  if (normalized === 'RUNNING' || normalized === 'STARTED') return 'RUNNING';
+  if (normalized === 'WARNING') return 'WARNING';
+  return 'FAILED';
+}
+
+async function sendMessage(
+  question: string,
+  otherParamsData?: unknown,
+  _chatRecord?: unknown,
+) {
+  const params = isRecord(otherParamsData) ? otherParamsData : {};
+
+  // 表单提交：FormRander 通过 sendMessage('', 'old', { node_data/form_data, ... }) 触发。
   // 此时应 resume 续跑（在当前 run 上提交表单数据），而非从头重跑 debug。
-  if (params.form_data !== undefined && result.value.runId !== undefined) {
+  const formData = resumeFormDataFrom(params);
+  if (formData !== undefined && result.value.runId !== undefined) {
     try {
-      await resume(result.value.runId, JSON.stringify(params.form_data));
+      resetToolRun();
+      await resume(result.value.runId, formData);
+      await fetchToolRunRecord();
     } catch (error: any) {
       ElMessage.error(error?.message || '表单提交失败');
     }
@@ -147,26 +296,26 @@ async function sendMessage(question: string, otherParamsData?: unknown) {
   // 其余场景（如重新发起对话）：从头重跑。
   const rerunParams = { ...inputForm.value, ...params };
   if (question?.trim()) rerunParams.message = question;
+  resetToolRun();
   currentChat.value = createDebugChatRecord(
     question || JSON.stringify(rerunParams, null, 2),
   );
   await debug(rerunParams);
+  await fetchToolRunRecord();
   return true;
 }
 
 async function open(id: number | string) {
   toolId.value = id;
   inputForm.value = {};
+  resetToolRun();
   currentChat.value = createDebugChatRecord();
 
   try {
-    const detail: any = await getTool(id);
-    // Extract user_input_field_list from work_flow.nodes.tool-base-node
-    const toolBaseNode = detail?.work_flow?.nodes?.find(
-      (n: any) => n.id === 'tool-base-node',
-    );
-    inputFieldList.value =
-      toolBaseNode?.properties?.user_input_field_list || [];
+    const detail: unknown = await getTool(id);
+    inputFieldList.value = isRecord(detail)
+      ? normalizeInputFields(workflowToolShape(detail).inputFields)
+      : [];
     inputDrawerVisible.value = true;
   } catch (error: any) {
     ElMessage.error(error?.message || '获取工具详情失败');
@@ -177,33 +326,22 @@ defineExpose({ open });
 </script>
 
 <template>
-  <!-- Input Params Drawer -->
+  <!-- 输入参数抽屉 -->
   <ElDrawer
     v-model="inputDrawerVisible"
-    append-to-body
     title="调试"
     size="800px"
     :before-close="closeInputDrawer"
-    :show-close="false"
   >
-    <template #header>
-      <div class="flex items-center" style="margin-left: -8px">
-        <ElButton class="mr-4" link @click.prevent="closeInputDrawer">
-          <ElIcon :size="20">
-            <Back />
-          </ElIcon>
-        </ElButton>
-        <h4>调试</h4>
-      </div>
-    </template>
-
-    <h4 class="mb-4 font-medium" v-if="inputFieldList.length > 0">输入参数</h4>
+    <h4 v-if="inputFieldList.length > 0" class="mb-4 font-medium">输入参数</h4>
 
     <ElForm
       v-if="inputFieldList.length > 0"
       ref="formRef"
       :model="inputForm"
       label-position="top"
+      require-asterisk-position="right"
+      hide-required-asterisk
       @submit.prevent
     >
       <template v-for="(field, index) in inputFieldList" :key="index">
@@ -218,9 +356,9 @@ defineExpose({ open });
         >
           <template #label>
             <div class="flex items-center">
-              <span
-                >{{ field.label || field.field }}
-                <span class="text-red-500" v-if="field.is_required">*</span>
+              <span>
+                {{ field.label || field.field }}
+                <span v-if="field.is_required" class="text-red-500">*</span>
               </span>
               <ElTag type="info" size="small" class="ml-2">
                 {{ field.type }}
@@ -233,6 +371,10 @@ defineExpose({ open });
             v-model="inputForm[field.field]"
             placeholder="请输入"
           />
+          <JsonInput
+            v-else-if="['array', 'dict'].includes(field.type)"
+            v-model="inputForm[field.field]"
+          />
           <ElInputNumber
             v-else-if="['int', 'float'].includes(field.type)"
             v-model="inputForm[field.field]"
@@ -242,49 +384,41 @@ defineExpose({ open });
             v-else-if="['boolean'].includes(field.type)"
             v-model="inputForm[field.field]"
           />
-          <ElInput
-            v-else-if="['array', 'dict'].includes(field.type)"
-            v-model="inputForm[field.field]"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入JSON格式"
-          />
-          <ElInput
-            v-else
-            v-model="inputForm[field.field]"
-            placeholder="请输入"
-          />
         </ElFormItem>
       </template>
     </ElForm>
 
     <template #footer>
-      <ElButton @click="closeInputDrawer" :disabled="running">取消</ElButton>
-      <ElButton type="primary" @click="runDebug" :loading="running">
+      <ElButton :disabled="running" @click="closeInputDrawer">取消</ElButton>
+      <ElButton type="primary" :loading="running" @click="runDebug">
         运行
       </ElButton>
     </template>
   </ElDrawer>
 
-  <!-- Result Drawer -->
+  <!-- 调试结果抽屉 -->
   <ElDrawer
     v-model="resultDrawerVisible"
     append-to-body
-    title="调试结果"
+    direction="rtl"
     size="800px"
     :modal="false"
     :before-close="closeResultDrawer"
-    :show-close="false"
+    class="tool-debug-result-drawer"
   >
     <template #header>
       <div class="flex items-center justify-between" style="width: 100%">
         <div class="flex items-center" style="margin-left: -8px">
-          <ElButton class="mr-4" link @click.prevent="closeResultDrawer">
+          <ElButton
+            class="mr-4 cursor-pointer"
+            link
+            @click.prevent="closeResultDrawer"
+          >
             <ElIcon :size="20">
               <Back />
             </ElIcon>
           </ElButton>
-          <h4>工作流调试结果</h4>
+          <h4>调试结果</h4>
         </div>
         <ElButton
           v-if="running"
@@ -298,10 +432,10 @@ defineExpose({ open });
       </div>
     </template>
 
-    <ElTabs v-model="activeTab">
+    <ElTabs v-model="activeTab" style="margin-top: -10px">
       <ElTabPane label="输出" name="output">
-        <div class="mb-4">
-          <h4 class="mb-4 font-medium">回复内容</h4>
+        <div class="scrollbar-height">
+          <h4 class="mb-4 mt-2 font-medium">回复内容</h4>
           <AnswerContent
             v-model:chat-record="currentChat"
             :application="answerApplication"
@@ -315,65 +449,80 @@ defineExpose({ open });
             @open-paragraph="() => {}"
             @open-paragraph-document="() => {}"
           />
-        </div>
 
-        <div v-if="!running">
-          <h4 class="mb-4 font-medium">输出参数</h4>
-          <ElAlert
-            v-if="result.errorMessage"
-            :title="result.errorMessage"
-            type="error"
-            show-icon
-            :closable="false"
-            class="mb-4"
-          />
-          <ElAlert
-            v-else-if="isSuccess"
-            title="运行成功"
-            type="success"
-            show-icon
-            :closable="false"
-            class="mb-4"
-          />
-          <ElCard shadow="never" :class="{ 'text-red-500': !isSuccess }">
-            <pre class="output-pre whitespace-pre-wrap break-words">{{
-              output || '{}'
-            }}</pre>
-          </ElCard>
+          <div
+            v-if="
+              !running &&
+              (toolRun || result.finalOutput !== undefined || result.error)
+            "
+          >
+            <h4 class="mb-4 mt-6 font-medium">输出参数</h4>
+            <div v-if="isSuccess !== undefined" class="mb-4">
+              <ElAlert
+                v-if="isSuccess"
+                title="运行成功"
+                type="success"
+                show-icon
+                :closable="false"
+              />
+              <ElAlert
+                v-else
+                :title="result.errorMessage || '运行失败'"
+                type="error"
+                show-icon
+                :closable="false"
+              />
+            </div>
+            <ElCard shadow="never">
+              <pre
+                class="output-pre whitespace-pre-wrap break-words"
+                v-text="output || '{}'"
+              ></pre>
+            </ElCard>
+          </div>
         </div>
       </ElTabPane>
 
       <ElTabPane label="执行详情" name="details">
-        <ElScrollbar height="600px">
-          <div
-            v-if="result.nodeSteps.length === 0 && !running"
-            class="py-8 text-center text-gray-400"
-          >
-            无执行详情
+        <ElScrollbar>
+          <div class="scrollbar-height">
+            <div
+              v-if="executionDetails.length === 0 && !running"
+              class="py-8 text-center text-gray-400"
+            >
+              无执行详情
+            </div>
+            <ExecutionDetailCard
+              v-for="(step, index) in executionDetails"
+              :key="index"
+              :data="step"
+              @toggle="toggleStep(index)"
+            />
           </div>
-          <ExecutionDetailCard
-            v-for="(step, index) in result.nodeSteps"
-            :key="index"
-            :data="step"
-            @toggle="toggleStep(index)"
-          />
         </ElScrollbar>
       </ElTabPane>
     </ElTabs>
-
-    <template #footer>
-      <ElButton @click="closeResultDrawer">关闭</ElButton>
-    </template>
   </ElDrawer>
 </template>
 
 <style scoped lang="scss">
-.output-pre {
-  padding: 12px;
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 14px;
-  background: var(--el-fill-color-light);
-  border-radius: 6px;
+.tool-debug-result-drawer {
+  :deep(.el-drawer__body) {
+    padding: 16px !important;
+  }
+
+  .scrollbar-height {
+    max-height: calc(100vh - 134px);
+    overflow: auto;
+  }
+
+  .output-pre {
+    padding: 12px;
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+  }
 }
 </style>

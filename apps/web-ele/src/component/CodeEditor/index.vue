@@ -40,7 +40,7 @@ const props = withDefaults(defineProps<CodeEditorProps>(), {
   mode: 'java',
   height: '300px',
   width: '100%',
-  theme: 'idea',
+  theme: 'one-dark',
   readOnly: false,
 });
 

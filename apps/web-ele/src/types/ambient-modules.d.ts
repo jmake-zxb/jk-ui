@@ -1,3 +1,5 @@
+import 'vue';
+
 declare module 'element-plus/es/components/*/style/css';
 
 declare module 'sortablejs' {
@@ -37,4 +39,11 @@ declare module '#/component/FormTable/index.vue' {
 
   const component: DefineComponent<object, object, any>;
   export default component;
+}
+
+// Vue 类型扩展：v-safe-html 自定义指令
+declare module 'vue' {
+  interface HTMLAttributes {
+    'v-safe-html'?: string;
+  }
 }

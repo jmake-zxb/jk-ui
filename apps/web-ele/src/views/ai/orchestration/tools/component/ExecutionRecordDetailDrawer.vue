@@ -190,7 +190,6 @@ defineExpose({ open, close });
       <ElCard
         shadow="never"
         style="
-
           --el-card-padding: 12px 16px;
 
           margin-bottom: 24px;

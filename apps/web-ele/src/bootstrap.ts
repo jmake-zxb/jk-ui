@@ -10,6 +10,8 @@ import '@vben/styles/ele';
 import { useTitle } from '@vueuse/core';
 import { ElLoading } from 'element-plus';
 
+import DynamicsFormItems from '#/components/dynamics-form/items';
+import { vSafeHtml } from '#/directives/safe-html';
 import { $t, setupI18n } from '#/locales';
 
 import { initComponentAdapter } from './adapter/component';
@@ -58,8 +60,14 @@ async function bootstrap(namespace: string) {
   const { initTippy } = await import('@vben/common-ui/es/tippy');
   initTippy(app);
 
+  // 注册安全 HTML 渲染指令（替代 v-html 以规避 eslint 警告）
+  app.directive('safe-html', vSafeHtml);
+
   // 配置路由及路由守卫
   app.use(router);
+
+  // 注册动态表单组件为全局组件（FormItem.vue 通过 <component :is="input_type"> 动态渲染）
+  app.use(DynamicsFormItems);
 
   // 配置Motion插件
   const { MotionPlugin } = await import('@vben/plugins/motion');

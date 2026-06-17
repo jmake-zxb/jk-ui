@@ -42,7 +42,29 @@ const routes: RouteRecordRaw[] = [
           title: '应用详情',
         },
         name: 'AiOrchestrationApplicationDetail',
+        path: '/ai/orchestration/applications/detail/:id/:tab?',
+        props: (route) => ({
+          applicationId: route.params.id,
+          tab: route.params.tab || 'overview',
+        }),
+      },
+      // Legacy detail route with query params
+      {
+        component: () =>
+          import('#/views/ai/orchestration/applications/detail/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '应用详情',
+        },
+        name: 'AiOrchestrationApplicationDetailLegacy',
         path: '/ai/orchestration/applications/detail',
+        redirect: (to) => ({
+          name: 'AiOrchestrationApplicationDetail',
+          params: {
+            id: queryString(to.query.applicationId),
+            tab: queryString(to.query.tab) || 'overview',
+          },
+        }),
       },
       {
         component: () => import('#/views/ai/orchestration/knowledge/index.vue'),
@@ -170,16 +192,6 @@ const routes: RouteRecordRaw[] = [
                 name: 'AiOrchestrationAgentWorkflow',
                 query: { applicationId: to.query.applicationId },
               },
-      },
-      {
-        component: () =>
-          import('#/views/ai/orchestration/public-chat/index.vue'),
-        meta: {
-          hideInMenu: true,
-          title: '公开聊天',
-        },
-        name: 'AiOrchestrationPublicChat',
-        path: '/ai/orchestration/public-chat/index',
       },
     ],
   },

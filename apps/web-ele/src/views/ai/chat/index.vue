@@ -35,7 +35,7 @@ import {
   speechToText,
   textToSpeech,
 } from '#/api/ai/applications';
-import { fetchList } from '#/api/ai/chat';
+import { getChatHistory } from '#/api/ai/chat';
 import { adaptationUrl } from '#/utils/other';
 import { parseSimpleApplicationSettings } from '#/views/ai/orchestration/applications/simple-application-settings';
 
@@ -60,6 +60,40 @@ interface ChatItem {
   loading: boolean;
   sources?: Array<SourceItem>;
   error?: boolean;
+}
+
+function isRecordObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getHistoryItems(response: unknown): Array<Record<string, unknown>> {
+  const candidates: unknown[] = [response];
+  if (isRecordObject(response)) {
+    candidates.push(
+      response.records,
+      response.rows,
+      response.list,
+      response.data,
+    );
+    if (isRecordObject(response.data)) {
+      candidates.push(
+        response.data.records,
+        response.data.rows,
+        response.data.list,
+      );
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter((item) => isRecordObject(item));
+    }
+  }
+  return [];
+}
+
+function toText(value: unknown) {
+  return value === undefined || value === null ? '' : String(value);
 }
 
 // --- 状态 ---
@@ -662,11 +696,21 @@ const scrollToBottom = () => {
 const getMessageList = async () => {
   try {
     loading.value = true;
-    const resData = await fetchList({ sessionId: '1234567890' });
-    messageList.value = resData.map((item: any) => ({
-      id: item.id,
-      content: item.messageContent,
-      placement: item.messageType === 'USER' ? 'end' : 'start',
+    const resData = getHistoryItems(await getChatHistory('1234567890'));
+    messageList.value = resData.map((item, index) => ({
+      id: toText(item.id) || `history_${index}`,
+      content: toText(
+        item.messageContent ??
+          item.message_content ??
+          item.content ??
+          item.message,
+      ),
+      placement:
+        toText(
+          item.messageType ?? item.message_type ?? item.role,
+        ).toUpperCase() === 'USER'
+          ? 'end'
+          : 'start',
       variant: 'filled',
       isMarkdown: true,
       typing: false,

@@ -92,6 +92,18 @@ const coreRoutes: RouteRecordRaw[] = [
       },
     ],
   },
+  {
+    component: () => import('#/views/ai/orchestration/public-chat/index.vue'),
+    meta: {
+      hideInBreadcrumb: true,
+      hideInMenu: true,
+      hideInTab: true,
+      ignoreAccess: true,
+      title: '公开聊天',
+    },
+    name: 'AiPublicTokenChat',
+    path: '/ui/chat/:token',
+  },
 ];
 
 export { coreRoutes, fallbackNotFoundRoute };

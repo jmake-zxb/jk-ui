@@ -30,6 +30,27 @@ import { adaptationUrl } from '#/utils/other';
 import { safeParseJson } from '../../utils';
 import { parseDebugSseLine } from '../../workflow/host/workflow-host-shared';
 
+type JsonRecord = Record<string, unknown>;
+
+type NodeRunRecord = JsonRecord & {
+  completion_tokens?: unknown;
+  completionTokens?: unknown;
+  error_message?: unknown;
+  errorMessage?: unknown;
+  input_json?: unknown;
+  inputJson?: unknown;
+  node_id?: unknown;
+  nodeId?: unknown;
+  output_json?: unknown;
+  outputJson?: unknown;
+  prompt_tokens?: unknown;
+  promptTokens?: unknown;
+  run_time?: unknown;
+  runTime?: unknown;
+  runtime_node_id?: unknown;
+  runtimeNodeId?: unknown;
+};
+
 export interface ToolDebugResult {
   error: boolean;
   errorMessage?: string;
@@ -41,6 +62,10 @@ export interface ToolDebugResult {
 export interface UseToolDebugChatOptions {
   getChatRecord?: () => ChatRecord | undefined;
   getToolId: () => number | string;
+  onNodeStatus?: (
+    nodeId: string,
+    status: ToolNodeStep['status'] | undefined,
+  ) => void;
 }
 
 function nodeStepFromStart(
@@ -95,25 +120,94 @@ function applyNodeOutput(step: ToolNodeStep, payload?: string) {
   if (answer && !step.content) step.content = answer;
 }
 
-function mergeNodeRuns(result: ToolDebugResult, runs: any[]) {
+function notifyNodeStatus(
+  options: UseToolDebugChatOptions,
+  nodeId: unknown,
+  status: ToolNodeStep['status'] | undefined,
+) {
+  const id = idText(nodeId);
+  if (id) options.onNodeStatus?.(id, status);
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nodeRunsFrom(data: unknown): NodeRunRecord[] {
+  let rows: unknown[] = [];
+  if (Array.isArray(data)) {
+    rows = data;
+  } else if (isRecord(data) && Array.isArray(data.records)) {
+    rows = data.records;
+  } else if (isRecord(data) && Array.isArray(data.data)) {
+    rows = data.data;
+  }
+  return rows.filter((item) => isRecord(item));
+}
+
+function idText(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const text = `${value}`.trim();
+  return text || undefined;
+}
+
+function textPayload(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return `${value}`;
+  if (isRecord(value) || Array.isArray(value)) {
+    return JSON.stringify(value, null, 2);
+  }
+  return undefined;
+}
+
+function numericPayload(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function runMatchesStep(run: NodeRunRecord, step: ToolNodeStep) {
+  const stepId = idText(step.nodeId);
+  if (!stepId) return false;
+  const runIds = [
+    idText(run.nodeId ?? run.node_id),
+    idText(run.runtimeNodeId ?? run.runtime_node_id),
+  ];
+  return runIds.includes(stepId);
+}
+
+function mergeNodeRuns(result: ToolDebugResult, runs: NodeRunRecord[]) {
   const consumed = new Set<number>();
   for (const step of result.nodeSteps) {
     const matchIndex = runs.findIndex(
-      (run, index) => !consumed.has(index) && run.nodeId === step.nodeType,
+      (run, index) => !consumed.has(index) && runMatchesStep(run, step),
     );
     if (matchIndex === -1) continue;
     consumed.add(matchIndex);
     const run = runs[matchIndex];
     if (!run) continue;
-    step.inputJson = run.inputJson ?? step.inputJson;
-    step.promptTokens = run.promptTokens ?? step.promptTokens;
-    step.completionTokens = run.completionTokens ?? step.completionTokens;
-    step.runTime = run.runTime ?? step.runTime;
-    if (run.errorMessage) step.errorMessage = run.errorMessage;
-    if (!step.outputJson && run.outputJson) {
-      applyNodeOutput(step, run.outputJson);
+    step.inputJson =
+      textPayload(run.inputJson ?? run.input_json) ?? step.inputJson;
+    step.promptTokens =
+      numericPayload(run.promptTokens ?? run.prompt_tokens) ??
+      step.promptTokens;
+    step.completionTokens =
+      numericPayload(run.completionTokens ?? run.completion_tokens) ??
+      step.completionTokens;
+    step.runTime = numericPayload(run.runTime ?? run.run_time) ?? step.runTime;
+    const errorMessage = textPayload(run.errorMessage ?? run.error_message);
+    if (errorMessage) step.errorMessage = errorMessage;
+    const outputJson = textPayload(run.outputJson ?? run.output_json);
+    if (!step.outputJson && outputJson) {
+      applyNodeOutput(step, outputJson);
     }
   }
+}
+
+function debugRequestBody(inputParams?: JsonRecord): JsonRecord {
+  const inputJson = JSON.stringify(inputParams ?? {});
+  return {
+    inputJson,
+    input_json: inputJson,
+  };
 }
 
 export function useToolDebugChat(options: UseToolDebugChatOptions) {
@@ -180,6 +274,7 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
           step.status = 'SUCCESS';
           step.expanded = false;
           applyNodeOutput(step, event.payload);
+          notifyNodeStatus(options, step.nodeId ?? event.nodeId, 'SUCCESS');
         }
         break;
       }
@@ -189,10 +284,12 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
           step.status = 'WARNING';
           step.expanded = true;
           applyNodeOutput(step, event.payload);
+          notifyNodeStatus(options, step.nodeId ?? event.nodeId, 'WARNING');
         }
         break;
       }
       case 'node_start': {
+        notifyNodeStatus(options, event.nodeId, 'RUNNING');
         result.value.nodeSteps.push(
           nodeStepFromStart(
             `${event.nodeId ?? ''}`,
@@ -219,7 +316,7 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
         options.getToolId(),
         result.value.runId,
       );
-      const runs = Array.isArray(data) ? data : (data?.records ?? []);
+      const runs = nodeRunsFrom(data);
       if (runs.length > 0) mergeNodeRuns(result.value, runs);
     } catch {
       // 补数据失败不影响已展示的 SSE 态。
@@ -230,7 +327,7 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
    * 共享 SSE 流核心：发起 POST、逐行解析事件、收尾补数据。
    * debug 与 resume 复用同一处理循环，区别仅在 URL / body / 是否 reset。
    */
-  async function streamSse(path: string, body: Record<string, any>) {
+  async function streamSse(path: string, body: JsonRecord) {
     running.value = true;
     abortController = new AbortController();
 
@@ -278,16 +375,20 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
     }
   }
 
-  async function debug(inputParams: Record<string, any>) {
+  async function debug(inputParams?: JsonRecord) {
     if (running.value) return;
 
+    const submittedInput = inputParams ?? {};
     reset();
     const chatRecord = options.getChatRecord?.();
     if (chatRecord) {
-      resetDebugChatRecord(chatRecord, JSON.stringify(inputParams, null, 2));
+      resetDebugChatRecord(chatRecord, JSON.stringify(submittedInput, null, 2));
       bindChatManagement(chatRecord, 50, running);
     }
-    await streamSse(debugToolWorkflowStream(options.getToolId()), inputParams);
+    await streamSse(
+      debugToolWorkflowStream(options.getToolId()),
+      debugRequestBody(submittedInput),
+    );
   }
 
   /**
@@ -295,9 +396,9 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
    *
    * 与 debug 不同：不 reset nodeSteps（续跑表单节点之后的节点），
    * 复用当前 runId 与同一 chatRecord（在原对话上追加），
-   * 仅向后端提交 formDataJson。
+   * 向后端提交 formDataJson 与 formData。
    */
-  async function resume(runId: number | string, formDataJson: string) {
+  async function resume(runId: number | string, formData: JsonRecord) {
     if (running.value) return;
     // 续跑前清除上一轮的中断态，避免误判为失败。
     result.value.error = false;
@@ -309,7 +410,9 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
       chatRecord.status = undefined;
       bindChatManagement(chatRecord, 50, running);
     }
+    const formDataJson = JSON.stringify(formData);
     await streamSse(resumeToolWorkflowStream(options.getToolId(), runId), {
+      formData,
       formDataJson,
     });
   }
