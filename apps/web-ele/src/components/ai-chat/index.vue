@@ -128,7 +128,7 @@ provide('upload', (file: File) => {
   return postUploadFile(
     file,
     props.chatId || props.appId || 'TEMPORARY',
-    'CHAT',
+    'LLM',
   );
 });
 
@@ -165,7 +165,7 @@ provide('stt', (audioBlob: Blob) => {
 });
 
 provide('getSelectModelList', (params: any) => {
-  return listActiveModels(params?.model_type || 'CHAT').then((res: any) => {
+  return listActiveModels(params?.model_type || 'LLM').then((res: any) => {
     // 统一返回格式，兼容 MaxKB 子组件期望的数据结构
     return {
       data: Array.isArray(res) ? res : res?.data || res?.records || [],
