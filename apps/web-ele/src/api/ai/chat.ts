@@ -202,7 +202,7 @@ export function postUploadFile(
   sourceId: string,
   sourceType:
     | 'APPLICATION'
-    | 'CHAT'
+    | 'LLM'
     | 'KNOWLEDGE'
     | 'TEMPORARY_1_DAY'
     | 'TEMPORARY_30_MINUTE'

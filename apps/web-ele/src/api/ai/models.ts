@@ -16,16 +16,6 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
-export interface ProviderConfigPayload {
-  apiKey?: string;
-  apiUrl?: string;
-  isActive?: boolean;
-  providerCode?: string;
-  providerName?: string;
-  providerType?: string;
-  sortOrder?: number;
-}
-
 export interface ModelFormField extends Record<string, unknown> {
   defaultValue?: unknown;
   default_value?: unknown;
@@ -51,38 +41,10 @@ export interface ModelConfigPayload {
   modelParamsForm?: ModelFormField[];
   modelType?: string;
   providerCode?: string;
-  providerId?: AiModelId;
   providerName?: string;
   providerType?: string;
   sortOrder?: number;
   status?: string;
-}
-
-export function listProviders() {
-  return requestClient.get('/ai/api/providers');
-}
-
-export function pageProviders(query?: AiQuery) {
-  return requestClient.get('/ai/api/providers/page', { params: query });
-}
-
-export function getProvider(id: number | string) {
-  return requestClient.get(`/ai/api/providers/${id}`);
-}
-
-export function createProvider(data: ProviderConfigPayload) {
-  return requestClient.post('/ai/api/providers', data);
-}
-
-export function updateProvider(
-  id: number | string,
-  data: ProviderConfigPayload,
-) {
-  return requestClient.put(`/ai/api/providers/${id}`, data);
-}
-
-export function deleteProvider(id: number | string) {
-  return requestClient.delete(`/ai/api/providers/${id}`);
 }
 
 export function listModels() {
@@ -109,11 +71,11 @@ export function deleteModel(id: number | string) {
   return requestClient.delete(`/ai/api/models/${id}`);
 }
 
-export function listActiveModels(modelType = 'CHAT') {
+export function listActiveModels(modelType = 'LLM') {
   return requestClient.get('/ai/api/models/active', { params: { modelType } });
 }
 
-export function getDefaultModel(modelType = 'CHAT') {
+export function getDefaultModel(modelType = 'LLM') {
   return requestClient.get('/ai/api/models/default', { params: { modelType } });
 }
 
@@ -198,15 +160,6 @@ export async function getSelectModelList(data?: {
     type: 'workspace',
   }));
   return [...shared, ...own];
-}
-
-/**
- * 按模型类型过滤供应商列表
- */
-export function getProviderByModelType(modelType?: string) {
-  return requestClient.get('/ai/api/providers', {
-    params: modelType ? { modelType } : undefined,
-  });
 }
 
 /**
