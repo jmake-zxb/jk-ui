@@ -257,6 +257,17 @@ export function toggleAccessToken(
   );
 }
 
+export function updateAccessToken(
+  applicationId: number | string,
+  tokenId: number | string,
+  data: Record<string, unknown>,
+) {
+  return requestClient.put(
+    `${base}/${applicationId}/access-tokens/${tokenId}`,
+    data,
+  );
+}
+
 export function deleteAccessToken(
   applicationId: number | string,
   tokenId: number | string,

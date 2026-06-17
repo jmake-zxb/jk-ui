@@ -1,4 +1,8 @@
+import { useAppConfig } from '@vben/hooks';
+import { useAccessStore } from '@vben/stores';
+
 import { requestClient } from '#/api/request';
+import { adaptationUrl } from '#/utils/other';
 
 const base = '/ai/api';
 
@@ -9,18 +13,92 @@ const base = '/ai/api';
  * @param data 消息数据 (message, conversationId, inputJson, form_data 等)
  */
 export function chatSSE(applicationId: string, data: Record<string, any>) {
-  return requestClient.requestSSE(
-    `${base}/applications/${applicationId}/chat/message/stream`,
-    data,
-    { method: 'POST' },
-  );
+  const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+  const accessToken = useAccessStore().accessToken;
+  const url = `${apiURL}${adaptationUrl(`${base}/applications/${applicationId}/chat/message/stream`)}`;
+  return fetch(url, {
+    body: JSON.stringify(data),
+    headers: {
+      Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
+}
+
+/**
+ * 工作流调试 SSE（跑草稿、无 chatId）。
+ * 后端: POST /api/applications/{id}/workflow/debug/stream
+ *
+ * 与 chatSSE 不同：返回原始 fetch Response（含 body.getReader()），
+ * 供 AiChat debug-ai-chat 模式通过 getWriteDebug 消费。
+ * 事件格式：node_start / node_chunk / node_end / node_reasoning_chunk /
+ *           node_interrupt / done / error / canceled。
+ */
+export function workflowDebugSSE(
+  applicationId: number | string,
+  data: {
+    chatId?: number | string;
+    chatRecordId?: number | string;
+    childNode?: Record<string, any>;
+    formData?: Record<string, any>;
+    formDataJson?: string;
+    inputJson?: string;
+    message: string;
+    nodeData?: Record<string, any>;
+    runtimeNodeId?: string;
+  },
+) {
+  const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+  const accessToken = useAccessStore().accessToken;
+  const url = `${apiURL}${adaptationUrl(`${base}/applications/${applicationId}/workflow/debug/stream`)}`;
+  return fetch(url, {
+    body: JSON.stringify(data),
+    headers: {
+      Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
+}
+
+/**
+ * 工作流恢复 SSE（表单提交后恢复中断的工作流运行）。
+ * 后端: POST /api/applications/{id}/workflow/runs/{runId}/resume/stream
+ *
+ * 与 workflowDebugSSE 不同：传入 runId 定位已中断的工作流运行，
+ * 后端从中断节点之后恢复执行，不会从头重跑。
+ * 事件格式同 workflowDebugSSE。
+ *
+ * @deprecated 表单恢复已统一到 workflowDebugSSE（传入 chatId + runtimeNodeId + formDataJson），
+ * 后端在 workflowDebugSSE 端点内自动判断是否为恢复请求。
+ * 此函数保留以备兼容，新代码请勿使用。
+ */
+export function workflowResumeSSE(
+  applicationId: number | string,
+  runId: number | string,
+  data: { formDataJson: string; message?: string },
+) {
+  const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+  const accessToken = useAccessStore().accessToken;
+  const url = `${apiURL}${adaptationUrl(`${base}/applications/${applicationId}/workflow/runs/${runId}/resume/stream`)}`;
+  return fetch(url, {
+    body: JSON.stringify(data),
+    headers: {
+      Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
 }
 
 /**
  * 开启会话
  * 后端: POST /api/applications/{id}/chats/open
  * @param applicationId 应用ID
- * @param data 可选 { title, source }
+ * @param data 可选参数
+ * @param data.title 会话标题
+ * @param data.source 来源
  */
 export function openChat(
   applicationId: string,
@@ -38,6 +116,8 @@ export function openChat(
  * @param applicationId 应用ID
  * @param chatId 对话ID
  * @param query 分页参数
+ * @param query.current 当前页码
+ * @param query.size 每页条数
  */
 export function pageChatRecords(
   applicationId: string,
@@ -81,11 +161,20 @@ export function vote(
  * @param applicationId 应用ID
  * @param chatId 对话ID
  * @param data 分享配置
+ * @param data.chat_record_ids 聊天记录ID列表
+ * @param data.enabled 是否启用
+ * @param data.is_current_all 是否当前全部
+ * @param data.secret 密钥
  */
 export function postShareChat(
   applicationId: string,
   chatId: string,
-  data?: { enabled?: boolean; secret?: string },
+  data?: {
+    chat_record_ids?: string[];
+    enabled?: boolean;
+    is_current_all?: boolean;
+    secret?: string;
+  },
 ) {
   return requestClient.post<{ shareToken: string }>(
     `${base}/public/applications/${applicationId}/chats/${chatId}/share`,
@@ -131,7 +220,8 @@ export function postUploadFile(
 /**
  * 获取文件URL
  * @param applicationId 应用ID
- * @param params 查询参数 { url }
+ * @param params 查询参数
+ * @param params.url 文件URL
  */
 export function getFileUrl(applicationId: string, params: { url: string }) {
   return requestClient.get(`${base}/oss/get_url/${applicationId}`, {
@@ -157,7 +247,8 @@ export function speechToText(applicationId: string, formData: FormData) {
  * 文本转语音
  * 后端: POST /api/applications/{id}/text_to_speech
  * @param applicationId 应用ID
- * @param data { text }
+ * @param data 请求参数
+ * @param data.text 文本内容
  */
 export function textToSpeech(applicationId: string, data: { text: string }) {
   return requestClient.download<Blob>(
@@ -271,7 +362,9 @@ export function getChatUserProfile() {
 
 /**
  * 重置密码
- * @param data { old_password, new_password }
+ * @param data 密码数据
+ * @param data.old_password 旧密码
+ * @param data.new_password 新密码
  */
 export function resetPassword(data: {
   new_password: string;

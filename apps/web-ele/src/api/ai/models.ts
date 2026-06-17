@@ -172,6 +172,59 @@ export function getModelMeta(id: AiModelId) {
   return requestClient.get(`/ai/api/models/${id}/meta`);
 }
 
+/**
+ * 暂停模型下载，更新状态为 PAUSE_DOWNLOAD
+ */
+export function pauseDownload(id: AiModelId) {
+  return requestClient.put(`/ai/api/models/${id}/pause-download`);
+}
+
+/**
+ * 下拉选择模型列表（含共享模型）
+ * 返回 { shared_model: [], model: [] } 结构并打 type 标签
+ */
+export async function getSelectModelList(data?: {
+  modelType?: string;
+  name?: string;
+}) {
+  const res: any = await requestClient.get('/ai/api/models/select-list', {
+    params: data,
+  });
+  const shared = (res?.shared_model ?? res?.sharedModel ?? []).map(
+    (m: any) => ({ ...m, type: 'share' }),
+  );
+  const own = (res?.model ?? []).map((m: any) => ({
+    ...m,
+    type: 'workspace',
+  }));
+  return [...shared, ...own];
+}
+
+/**
+ * 按模型类型过滤供应商列表
+ */
+export function getProviderByModelType(modelType?: string) {
+  return requestClient.get('/ai/api/providers', {
+    params: modelType ? { modelType } : undefined,
+  });
+}
+
+/**
+ * 按供应商+模型类型+基础模型名获取凭证表单字段
+ */
+export function getModelCreateForm(
+  providerCode: string,
+  modelType: string,
+  modelName: string,
+) {
+  return requestClient.get(
+    `/ai/api/providers/metadata/${providerCode}/model-form`,
+    {
+      params: { modelType, modelName },
+    },
+  );
+}
+
 export interface PromptGenerateMessage {
   content?: string;
   role?: string;

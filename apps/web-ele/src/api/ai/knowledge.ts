@@ -54,6 +54,15 @@ export interface DocumentRequest extends OrchestrationRequest {
   is_active?: boolean;
 }
 
+export interface KnowledgeTagRecord {
+  id?: Id;
+  key?: string;
+  name?: string;
+  title?: string;
+  value?: string;
+  [key: string]: unknown;
+}
+
 function withFolderPayload<T extends KnowledgeFolderRequest>(data: T) {
   const parentId = data.parentId ?? data.parent_id;
   const workspaceId = data.workspaceId ?? data.workspace_id;
@@ -361,6 +370,16 @@ export function pageTags(knowledgeId: number | string, query?: AiQuery) {
   return requestClient.get(`${base}/${knowledgeId}/tags/page`, {
     params: query,
   });
+}
+
+export function listKnowledgeTags(
+  knowledgeIds: Id[],
+  query: AiQuery = {} as AiQuery,
+) {
+  const fullQuery = { page: 1, size: 1000, ...query };
+  return Promise.all(
+    knowledgeIds.map((knowledgeId) => pageTags(knowledgeId, fullQuery)),
+  );
 }
 
 export function createTag(
