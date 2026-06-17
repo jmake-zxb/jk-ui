@@ -34,9 +34,9 @@ const localProviderList = ref<Array<Provider>>([]);
  */
 function getProviderIcon(item: Provider): string {
   // 优先使用 provider-data.ts 中的真实 SVG 图标
-  const found = providerList.find((p) => p.provider === item.provider);
-  if (found?.icon) return found.icon;
-  // 如果 item.icon 本身就是 SVG（以 < 开头），直接使用
+  const fromData = providerList.find((p) => p.provider === item.provider);
+  if (fromData?.icon) return fromData.icon;
+  // 后端返回的 icon 若是 SVG（以 < 开头），直接使用
   if (item.icon && item.icon.trim().startsWith('<')) return item.icon;
   return '';
 }
@@ -57,8 +57,8 @@ function splitProviders(list: Array<Provider>) {
         online.push(item);
       }
     });
-  online.sort((a, b) => a.provider.localeCompare(b.provider));
-  local.sort((a, b) => a.provider.localeCompare(b.provider));
+  online.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  local.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return { local, online };
 }
 

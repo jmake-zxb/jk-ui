@@ -67,12 +67,15 @@ const downModel = ref<Model | undefined>();
 
 const currentModel = computed(() => downModel.value ?? props.model);
 
-/** Lookup provider icon SVG string from prop list or provider-data.ts */
+/** Lookup provider icon SVG string: provider-data.ts first, then prop list */
 function getProviderIcon(providerCode: string): string {
-  const fromProp = props.providerList.find((p) => p.provider === providerCode);
-  if (fromProp?.icon) return fromProp.icon;
+  // 优先使用 provider-data.ts 中的真实 SVG 图标
   const fromData = allProviderList.find((p) => p.provider === providerCode);
-  return fromData?.icon ?? '';
+  if (fromData?.icon) return fromData.icon;
+  // 兜底：后端返回的 icon 若是 SVG（以 < 开头），直接使用
+  const fromProp = props.providerList.find((p) => p.provider === providerCode);
+  if (fromProp?.icon && fromProp.icon.trim().startsWith('<')) return fromProp.icon;
+  return '';
 }
 
 const icon = computed(() => getProviderIcon(props.model.provider));

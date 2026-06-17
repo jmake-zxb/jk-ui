@@ -13,7 +13,7 @@ import {
   ElRow,
 } from 'element-plus';
 
-import { getProviderByModelType } from '#/api/ai/models';
+import { listProviderMetadata } from '#/api/ai/models';
 import { providerList } from '#/components/dynamics-form/items/model/provider-data';
 
 import { modelTypeList } from '../data';
@@ -69,14 +69,14 @@ function checkModelType(modelType: string) {
   const option = modelTypeOptions.find((item) => item.value === modelType);
   currentModelType.value = option?.label ?? '';
   loading.value = true;
-  getProviderByModelType(modelType || undefined)
+  listProviderMetadata(modelType || undefined)
     .then((res) => {
       const data = Array.isArray(res)
         ? res
         : ((res as { data?: Provider[] })?.data ?? []);
       listProvider.value = data
         .filter((item) => item.provider)
-        .toSorted((a, b) => a.provider.localeCompare(b.provider));
+        .toSorted((a, b) => (a.name || '').localeCompare(b.name || ''));
     })
     .catch(() => {
       listProvider.value = [];
