@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 
-import { renderMarkdown } from '#/components/ai-chat/utils/markdown';
+import { MdPreview } from 'md-editor-v3';
+import mediumZoom from 'medium-zoom';
+
+import 'md-editor-v3/lib/preview.css';
 
 const props = withDefaults(
   defineProps<{
@@ -12,11 +15,40 @@ const props = withDefaults(
   },
 );
 
-const html = computed(() => renderMarkdown(props.source));
+const mdRef = ref<HTMLElement>();
+
+function applyZoom() {
+  nextTick(() => {
+    if (mdRef.value) {
+      mdRef.value
+        .querySelectorAll('img:not(.medium-zoom-image)')
+        .forEach((img) => {
+          mediumZoom(img as HTMLImageElement, {
+            background: 'var(--el-bg-color)',
+          });
+        });
+    }
+  });
+}
+
+watch(
+  () => props.source,
+  () => applyZoom(),
+  { immediate: true },
+);
 </script>
 
 <template>
-  <div class="maxkb-md" v-html="html"></div>
+  <div ref="mdRef" class="maxkb-md">
+    <MdPreview
+      editor-id="chat-preview"
+      :model-value="source"
+      no-iconfont
+      no-prettier
+      :code-foldable="false"
+      preview-theme="default"
+    />
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -24,6 +56,14 @@ const html = computed(() => renderMarkdown(props.source));
   line-height: 1.65;
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
+}
+
+.maxkb-md :deep(.md-editor-preview) {
+  background: transparent;
+}
+
+.maxkb-md :deep(.md-editor-preview .markdown-body) {
+  color: var(--el-text-color-primary);
 }
 
 .maxkb-md :deep(p) {
@@ -41,7 +81,8 @@ const html = computed(() => renderMarkdown(props.source));
   line-height: 1.35;
 }
 
-.maxkb-md :deep(ul) {
+.maxkb-md :deep(ul),
+.maxkb-md :deep(ol) {
   padding-left: 1.25rem;
   margin: 0.35rem 0;
 }
@@ -85,6 +126,16 @@ const html = computed(() => renderMarkdown(props.source));
   padding: 0;
   margin: 0;
   vertical-align: middle;
+  cursor: zoom-in;
+}
+
+.medium-zoom-overlay {
+  z-index: 999;
+}
+
+.medium-zoom-image--opened {
+  z-index: 1000;
+  cursor: zoom-out;
 }
 
 .maxkb-md :deep(blockquote) {
@@ -92,5 +143,32 @@ const html = computed(() => renderMarkdown(props.source));
   margin: 0.5rem 0;
   color: var(--el-text-color-secondary);
   border-left: 3px solid var(--el-border-color);
+}
+
+.maxkb-md :deep(table) {
+  display: block;
+  width: 100%;
+  overflow: auto;
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+.maxkb-md :deep(table th),
+.maxkb-md :deep(table td) {
+  padding: 6px 13px;
+  border: 1px solid var(--el-border-color);
+}
+
+.maxkb-md :deep(table th) {
+  font-weight: 600;
+  background: var(--el-fill-color-light);
+}
+
+.maxkb-md :deep(table tr) {
+  background: transparent;
+}
+
+.maxkb-md :deep(table tr:nth-child(2n)) {
+  background: var(--el-fill-color-lighter);
 }
 </style>

@@ -144,11 +144,11 @@ function getComponentProps(item: RenderNode) {
     }
     case 'form_rander': {
       return {
-        chat_record_id: props.chat_record_id,
-        child_node: props.child_node,
+        chatRecordId: props.chatRecordId,
+        childNode: props.childNode,
         disabled: props.disabled,
-        form_setting: item.content,
-        runtime_node_id: props.runtime_node_id,
+        formSetting: item.content,
+        runtimeNodeId: props.runtimeNodeId,
         sendMessage: props.sendMessage,
       };
     }
@@ -174,8 +174,8 @@ function handleQuestionClick(content: string) {
 <template>
   <div>
     <ReasoningRander
-      v-if="reasoning_content?.trim()"
-      :content="reasoning_content"
+      v-if="reasoningContent?.trim()"
+      :content="reasoningContent"
     />
 
     <template
