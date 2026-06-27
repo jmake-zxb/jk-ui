@@ -437,6 +437,7 @@ defineExpose({ form, validate });
         <ElCard
           shadow="never"
           style="
+
             --el-card-padding: 8px 12px;
 
             line-height: normal;

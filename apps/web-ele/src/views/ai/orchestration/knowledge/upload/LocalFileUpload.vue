@@ -203,6 +203,7 @@ function deleteFile(index: number) {
           <ElCard
             shadow="never"
             style="
+
               --el-card-padding: 8px 12px;
 
               line-height: normal;

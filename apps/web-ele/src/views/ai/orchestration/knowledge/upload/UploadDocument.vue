@@ -193,7 +193,9 @@ onUnmounted(() => {
       </ElButton>
       <h3 style="display: inline-block; margin: 0">上传文档</h3>
     </div>
-    <ElCard style="--el-card-padding: 0">
+    <ElCard style="
+
+--el-card-padding: 0">
       <div class="upload-document__main flex" v-loading="loading">
         <div class="upload-document__component main-calc-height">
           <ElScrollbar>
