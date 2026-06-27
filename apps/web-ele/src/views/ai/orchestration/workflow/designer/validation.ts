@@ -31,10 +31,18 @@ export function validateWorkflow(
   const errors: string[] = [];
   const warnings: string[] = [];
   const idSet = new Set<string>();
-  const entryNodeType =
-    foundationMode === 'tool' ? 'tool-start-node' : 'start-node';
-  const configNodeType =
-    foundationMode === 'tool' ? 'tool-base-node' : 'base-node';
+  let entryNodeType = 'start-node';
+  if (foundationMode === 'tool') {
+    entryNodeType = 'tool-start-node';
+  } else if (foundationMode === 'knowledge') {
+    entryNodeType = 'data-source';
+  }
+  let configNodeType = 'base-node';
+  if (foundationMode === 'tool') {
+    configNodeType = 'tool-base-node';
+  } else if (foundationMode === 'knowledge') {
+    configNodeType = 'knowledge-base-node';
+  }
 
   graphData.nodes.forEach((node) => {
     if (!node.id) errors.push('节点 ID 不能为空');
@@ -42,11 +50,22 @@ export function validateWorkflow(
     idSet.add(node.id);
   });
 
-  const startNodes = graphData.nodes.filter(
-    (node) => node.type === entryNodeType || node.id === entryNodeType,
-  );
-  if (startNodes.length !== 1)
+  const startNodes =
+    foundationMode === 'knowledge'
+      ? graphData.nodes.filter(
+          (node) =>
+            (node.properties as Record<string, any> | undefined)?.kind ===
+            'data-source',
+        )
+      : graphData.nodes.filter(
+          (node) => node.type === entryNodeType || node.id === entryNodeType,
+        );
+  if (foundationMode === 'knowledge') {
+    if (startNodes.length === 0)
+      errors.push('工作流必须至少包含一个 data-source');
+  } else if (startNodes.length !== 1) {
     errors.push(`工作流必须且只能包含一个 ${entryNodeType}`);
+  }
   const baseNodes = graphData.nodes.filter(
     (node) => node.type === configNodeType || node.id === configNodeType,
   );
@@ -76,7 +95,9 @@ export function validateWorkflow(
   });
 
   const reachable = new Set<string>();
-  const queue = startNodes[0]?.id ? [startNodes[0].id] : [];
+  const queue = startNodes
+    .map((node) => node.id)
+    .filter((id): id is string => !!id);
   while (queue.length > 0) {
     const nodeId = queue.shift();
     if (!nodeId) continue;
@@ -102,8 +123,13 @@ export function validateWorkflow(
     if (typeof rawStatus === 'number' && rawStatus !== 200) {
       errors.push(`节点不可用: ${properties.stepName || node.id}`);
     }
+    const isKnowledgeEntryNode =
+      foundationMode === 'knowledge' &&
+      (node.properties as Record<string, any> | undefined)?.kind ===
+        'data-source';
     if (
       node.type !== entryNodeType &&
+      !isKnowledgeEntryNode &&
       !isConfigNode &&
       !reachable.has(node.id)
     ) {

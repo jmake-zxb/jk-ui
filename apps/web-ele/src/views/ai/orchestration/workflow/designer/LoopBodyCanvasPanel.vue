@@ -52,7 +52,14 @@ const syncingInternally = ref(false);
 const deniedNodeTypes = new Set(['loop-body-node', 'loop-node']);
 const protectedNodeTypes = new Set(['loop-start-node']);
 const canvasMeasureFrames = 30;
-const paletteGroups = groupedNodeTemplates('application-loop');
+const nestedPaletteMode = computed(() =>
+  props.parentGraphModel?.paletteMode === 'knowledge'
+    ? 'knowledge-loop'
+    : 'application-loop',
+);
+const paletteGroups = computed(() =>
+  groupedNodeTemplates(nestedPaletteMode.value),
+);
 const selectedBodyElementId = computed(
   () => selectedBodyNodeId.value || selectedBodyEdgeId.value,
 );
@@ -228,7 +235,7 @@ function parentLoopNodeModel() {
 }
 
 function installNestedGraphBridge(lf: any) {
-  lf.graphModel.paletteMode = 'application-loop';
+  lf.graphModel.paletteMode = nestedPaletteMode.value;
   lf.graphModel.get_parent_nodes = () => props.parentGraphModel?.nodes || [];
   lf.graphModel.get_up_node_field_list = (
     containSelf = false,
@@ -328,15 +335,9 @@ function deleteSelectedBodyElement() {
 function fitView() {
   const lf = nestedLfRef.value;
   if (!lf) return;
-  if (typeof lf.fitView === 'function') lf.fitView(40, 40);
-  else lf.resetZoom?.();
-}
-
-function resetView() {
-  const lf = nestedLfRef.value;
-  if (!lf) return;
   lf.resetZoom?.();
-  lf.translateCenter?.();
+  lf.resetTranslate?.();
+  if (typeof lf.fitView === 'function') lf.fitView();
 }
 
 function saveLoopBody() {
@@ -364,7 +365,11 @@ watch(
 );
 
 onBeforeUnmount(() => {
-  nestedLfRef.value?.destroy?.();
+  const lf = nestedLfRef.value;
+  if (lf) {
+    (lf as any).clearThemeMode = () => {};
+    lf.destroy?.();
+  }
   nestedLfRef.value = undefined;
 });
 </script>
@@ -413,7 +418,6 @@ onBeforeUnmount(() => {
           </div>
           <div class="loop-body-panel__actions">
             <ElButton size="small" @click="fitView">适配</ElButton>
-            <ElButton size="small" @click="resetView">复位</ElButton>
             <ElButton
               size="small"
               type="danger"

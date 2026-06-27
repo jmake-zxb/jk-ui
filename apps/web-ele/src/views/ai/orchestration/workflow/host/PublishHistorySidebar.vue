@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-import { Close, MoreFilled, User } from '@element-plus/icons-vue';
+import {
+  Close,
+  EditPen,
+  MoreFilled,
+  RefreshLeft,
+  UserFilled,
+} from '@element-plus/icons-vue';
+import { onClickOutside } from '@vueuse/core';
 import {
   ElAvatar,
   ElButton,
@@ -24,21 +31,19 @@ const emit = defineEmits<{
   restore: [row: any];
 }>();
 
+const sidebarRef = ref<HTMLElement>();
 const hoveredId = ref<null | string>(null);
 const editingId = ref<null | string>(null);
 const editingName = ref('');
+
+onClickOutside(sidebarRef, () => emit('close'));
 
 function formatTime(value: any) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return `${value}`;
-  return date.toLocaleString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    month: '2-digit',
-    second: '2-digit',
-    year: 'numeric',
-  });
+  const pad = (n: number) => `${n}`.padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function startRename(row: any) {
@@ -56,7 +61,7 @@ function finishRename() {
 </script>
 
 <template>
-  <div class="publish-history-sidebar">
+  <div ref="sidebarRef" class="publish-history-sidebar">
     <div class="ph-header">
       <div class="ph-header__title">{{ title || '发布历史' }}</div>
       <ElButton text size="small" :icon="Close" @click="emit('close')" />
@@ -95,7 +100,7 @@ function finishRename() {
               <ElTag
                 v-if="index === 0"
                 size="small"
-                type="primary"
+                effect="plain"
                 class="ph-tag-latest"
               >
                 最新发布
@@ -103,10 +108,10 @@ function finishRename() {
             </div>
             <div class="ph-item__meta">
               <ElAvatar
-                :size="16"
+                :size="20"
                 style="background: var(--el-fill-color-dark)"
               >
-                <ElIcon :size="10"><User /></ElIcon>
+                <ElIcon :size="12"><UserFilled /></ElIcon>
               </ElAvatar>
               <span>{{
                 item.publishUserName || item.publish_user_name || '系统'
@@ -121,12 +126,14 @@ function finishRename() {
               <template #dropdown>
                 <ElDropdownMenu>
                   <ElDropdownItem @click="startRename(item)">
+                    <ElIcon :size="14" class="mr-4"><EditPen /></ElIcon>
                     重命名
                   </ElDropdownItem>
                   <ElDropdownItem
                     v-if="canRestore"
                     @click="emit('restore', item)"
                   >
+                    <ElIcon :size="14" class="mr-4"><RefreshLeft /></ElIcon>
                     恢复此版本
                   </ElDropdownItem>
                 </ElDropdownMenu>
@@ -225,6 +232,7 @@ function finishRename() {
 
 .ph-tag-latest {
   flex-shrink: 0;
+  color: var(--el-color-primary);
 }
 
 .ph-item__meta {

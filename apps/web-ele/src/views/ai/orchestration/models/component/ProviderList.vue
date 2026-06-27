@@ -149,7 +149,7 @@ function isItemActive(item: Provider): boolean {
               >
                 <span
                   class="provider-icon"
-                  v-safe-html="getProviderIcon(item)"
+                  v-html="getProviderIcon(item)"
                 ></span>
                 <span class="provider-name ellipsis">{{ item.name }}</span>
               </li>
@@ -180,7 +180,7 @@ function isItemActive(item: Provider): boolean {
               >
                 <span
                   class="provider-icon"
-                  v-safe-html="getProviderIcon(item)"
+                  v-html="getProviderIcon(item)"
                 ></span>
                 <span class="provider-name ellipsis">{{ item.name }}</span>
               </li>

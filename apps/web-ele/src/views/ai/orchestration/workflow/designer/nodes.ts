@@ -9,9 +9,14 @@ export type NodeStatus =
   | 'resource'
   | 'tool';
 
-export type WorkflowFoundationMode = 'application' | 'tool';
+export type WorkflowFoundationMode = 'application' | 'knowledge' | 'tool';
 
-export type PaletteMode = 'application' | 'application-loop' | 'tool';
+export type PaletteMode =
+  | 'application'
+  | 'application-loop'
+  | 'knowledge'
+  | 'knowledge-loop'
+  | 'tool';
 
 export type BranchConfig = {
   condition?: 'AND' | 'and' | 'OR' | 'or';
@@ -127,6 +132,7 @@ export const DEFAULT_LOOP_START_NODE_POSITION = { x: 480, y: 3340 };
 export const DEFAULT_LOOP_START_NODE_HEIGHT = 364;
 export const WORKFLOW_SINGLETON_NODE_TYPES = new Set([
   'base-node',
+  'knowledge-base-node',
   'start-node',
   'tool-base-node',
   'tool-start-node',
@@ -192,6 +198,59 @@ const APPLICATION_LOOP_PALETTE_NODE_TYPES = [
   'mcp-node',
   'tool-node',
 ] as const;
+const KNOWLEDGE_PALETTE_NODE_TYPES = [
+  'data-source-local-node',
+  'data-source-web-node',
+  'document-split-node',
+  'knowledge-write-node',
+  'document-extract-node',
+  'ai-chat-node',
+  'intent-node',
+  'text-to-speech-node',
+  'speech-to-text-node',
+  'image-generate-node',
+  'image-understand-node',
+  'text-to-video-node',
+  'image-to-video-node',
+  'video-understand-node',
+  'question-node',
+  'condition-node',
+  'reply-node',
+  'loop-node',
+  'variable-assign-node',
+  'variable-aggregation-node',
+  'variable-splitting-node',
+  'parameter-extraction-node',
+  'mcp-node',
+  'tool-node',
+] as const;
+const KNOWLEDGE_LOOP_PALETTE_NODE_TYPES = [
+  'data-source-local-node',
+  'data-source-web-node',
+  'document-split-node',
+  'knowledge-write-node',
+  'document-extract-node',
+  'ai-chat-node',
+  'intent-node',
+  'text-to-speech-node',
+  'speech-to-text-node',
+  'image-generate-node',
+  'image-understand-node',
+  'text-to-video-node',
+  'image-to-video-node',
+  'video-understand-node',
+  'question-node',
+  'condition-node',
+  'reply-node',
+  'loop-continue-node',
+  'loop-break-node',
+  'variable-assign-node',
+  'variable-aggregation-node',
+  'variable-splitting-node',
+  'parameter-extraction-node',
+  'mcp-node',
+  'tool-node',
+] as const;
 const TOOL_PALETTE_NODE_TYPES = [
   'ai-chat-node',
   'intent-node',
@@ -221,6 +280,8 @@ const TOOL_PALETTE_NODE_TYPES = [
 const PALETTE_NODE_TYPES_BY_MODE: Record<PaletteMode, readonly string[]> = {
   application: APPLICATION_PALETTE_NODE_TYPES,
   'application-loop': APPLICATION_LOOP_PALETTE_NODE_TYPES,
+  knowledge: KNOWLEDGE_PALETTE_NODE_TYPES,
+  'knowledge-loop': KNOWLEDGE_LOOP_PALETTE_NODE_TYPES,
   tool: TOOL_PALETTE_NODE_TYPES,
 };
 
@@ -1286,6 +1347,18 @@ export function createDefaultToolWorkflowNodes(): WorkflowNode[] {
   ];
 }
 
+export function createDefaultKnowledgeWorkflowNodes(): WorkflowNode[] {
+  return [
+    {
+      id: 'knowledge-base-node',
+      name: '知识库基础',
+      properties: defaultProperties('knowledge-base-node', '知识库基础'),
+      type: 'knowledge-base-node',
+      ...DEFAULT_BASE_NODE_POSITION,
+    },
+  ];
+}
+
 export const DEFAULT_GRAPH_DATA = JSON.stringify(
   {
     edges: [],
@@ -1304,6 +1377,18 @@ export const DEFAULT_TOOL_GRAPH_DATA = JSON.stringify(
     global: {},
     mode: 'APPLICATION',
     nodes: createDefaultToolWorkflowNodes(),
+    version: '1.0',
+  },
+  null,
+  2,
+);
+
+export const DEFAULT_KNOWLEDGE_GRAPH_DATA = JSON.stringify(
+  {
+    edges: [],
+    global: {},
+    mode: 'APPLICATION',
+    nodes: createDefaultKnowledgeWorkflowNodes(),
     version: '1.0',
   },
   null,

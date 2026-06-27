@@ -1,276 +1,621 @@
 <script setup lang="ts">
+import type { Id, JsonRecord, TriggerRecord } from './trigger-utils';
+
+import type { TriggerRequest } from '#/api/ai/triggers';
+
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { confirm, Page } from '@vben/common-ui';
 
 import {
+  Bell,
+  Clock,
+  CopyDocument,
+  Delete,
+  EditPen,
+  Link,
+  Plus,
+  Refresh,
+  Search,
+  SwitchButton,
+  Tickets,
+  VideoPlay,
+} from '@element-plus/icons-vue';
+import {
   ElButton,
   ElDialog,
-  ElDrawer,
   ElForm,
   ElFormItem,
+  ElIcon,
   ElInput,
   ElMessage,
   ElOption,
+  ElPagination,
+  ElPopover,
   ElSelect,
   ElSwitch,
   ElTable,
   ElTableColumn,
   ElTag,
+  ElTooltip,
 } from 'element-plus';
 
-import { listApplications } from '#/api/ai/applications';
 import {
-  createTrigger,
+  batchActivateTriggers,
+  batchDeleteTriggers,
   deleteTrigger,
-  pageTriggerRecords,
   pageTriggers,
   testRunTrigger,
   toggleTrigger,
-  updateTrigger,
   webhookTriggerUrl,
 } from '#/api/ai/triggers';
 
-import { enabledText, prettyJson, recordsOf, statusType } from '../utils';
+import { prettyJson, recordsOf, totalOf } from '../utils';
+import TriggerTaskRecordDrawer from './execution-record/TriggerTaskRecordDrawer.vue';
+import {
+  normalizeTriggerRecord,
+  scheduleLabel,
+  sourceDisplayType,
+  textValue,
+  triggerTypeLabel,
+} from './trigger-utils';
+import TriggerDrawer from './TriggerDrawer.vue';
+
+type SearchType = 'create_user' | 'is_active' | 'name' | 'task' | 'type';
 
 const route = useRoute();
-const applications = ref<any[]>([]);
-const applicationId = ref<number | string>();
-const triggers = ref<any[]>([]);
-const records = ref<any[]>([]);
-const loading = ref(false);
-const dialogOpen = ref(false);
-const recordsOpen = ref(false);
-const editingId = ref<number | string>();
-const activeTrigger = ref<any>();
-const testInput = ref('{\n  "source": "manual"\n}');
-const testResult = ref<any>();
-const form = reactive<any>({
-  name: '',
-  triggerType: 'MANUAL',
-  enabled: true,
-  configJson: '{\n  "secret": ""\n}',
-});
-const webhookUrl = computed(() =>
-  activeTrigger.value?.id && applicationId.value
-    ? webhookTriggerUrl(applicationId.value, activeTrigger.value.id)
-    : '',
-);
 
-async function loadApplications() {
-  applications.value = recordsOf(await listApplications());
-  if (!applicationId.value && applications.value.length > 0)
-    applicationId.value = applications.value[0].id;
-  await loadTriggers();
+const workspaceId = computed(() => {
+  const raw = route.query.workspaceId || route.query.workspace_id;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value ? String(value) : 'default';
+});
+
+const queryApplicationId = computed(() => {
+  const raw = route.query.applicationId || route.query.application_id;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value ? String(value) : undefined;
+});
+
+const loading = ref(false);
+const selection = ref<TriggerRecord[]>([]);
+const triggerRows = ref<TriggerRecord[]>([]);
+const activeTrigger = ref<TriggerRecord>();
+const testOpen = ref(false);
+const testLoading = ref(false);
+const testInput = ref('{\n  "source": "manual"\n}');
+const testResult = ref<unknown>();
+
+const triggerDrawerRef = ref<InstanceType<typeof TriggerDrawer>>();
+const recordDrawerRef = ref<InstanceType<typeof TriggerTaskRecordDrawer>>();
+
+const pageState = reactive({
+  page: 1,
+  size: 20,
+  total: 0,
+});
+
+const search = reactive<Record<SearchType, any>>({
+  create_user: '',
+  is_active: '',
+  name: '',
+  task: '',
+  type: '',
+});
+const searchType = ref<SearchType>('name');
+
+function currentQuery() {
+  const params: JsonRecord = {
+    page: pageState.page,
+    size: pageState.size,
+    workspaceId: workspaceId.value,
+    workspace_id: workspaceId.value,
+  };
+  if (queryApplicationId.value) {
+    params.applicationId = queryApplicationId.value;
+  }
+  const value = search[searchType.value];
+  if (value !== '' && value !== undefined && value !== null) {
+    params[searchType.value] =
+      searchType.value === 'is_active' ? value === 'true' : value;
+  }
+  return params;
 }
 
-async function loadTriggers() {
-  if (!applicationId.value) return;
+async function loadTriggers(reset = false) {
+  if (reset) pageState.page = 1;
   loading.value = true;
   try {
-    triggers.value = recordsOf(
-      await pageTriggers(applicationId.value, {
-        current: 1,
-        page: 1,
-        size: 20,
-      }),
+    const data = await pageTriggers(currentQuery());
+    triggerRows.value = recordsOf<TriggerRecord>(data).map((item) =>
+      normalizeTriggerRecord(item),
     );
+    pageState.total = totalOf(data);
   } finally {
     loading.value = false;
   }
 }
 
-function openDialog(row?: any) {
-  editingId.value = row?.id;
-  activeTrigger.value = row;
-  Object.assign(form, {
-    name: row?.name || '',
-    triggerType: row?.triggerType || 'MANUAL',
-    enabled: row?.enabled !== false,
-    configJson: prettyJson(row?.configJson, '{\n  "secret": ""\n}'),
+function searchTypeChange() {
+  Object.assign(search, {
+    create_user: '',
+    is_active: '',
+    name: '',
+    task: '',
+    type: '',
   });
-  testResult.value = undefined;
-  dialogOpen.value = true;
 }
 
-async function saveTrigger() {
-  await (editingId.value
-    ? updateTrigger(applicationId.value!, editingId.value, form)
-    : createTrigger(applicationId.value!, form));
-  ElMessage.success('保存成功');
-  dialogOpen.value = false;
+function setSelection(rows: TriggerRecord[]) {
+  selection.value = rows;
+}
+
+function openDrawer(row?: TriggerRecord) {
+  triggerDrawerRef.value?.open(row, {
+    applicationId: queryApplicationId.value,
+    workspaceId: workspaceId.value,
+  });
+}
+
+function openRecords(row: TriggerRecord) {
+  recordDrawerRef.value?.open(row);
+}
+
+async function toggleRow(row: TriggerRecord) {
+  await toggleTrigger(row.id, row.is_active === false);
   await loadTriggers();
 }
 
-async function toggleRow(row: any) {
-  await toggleTrigger(applicationId.value!, row.id, !row.enabled);
-  await loadTriggers();
-}
-
-function removeTrigger(row: any) {
+function removeTrigger(row: TriggerRecord) {
   confirm(`确认删除触发器 ${row.name || row.id}？`).then(async () => {
-    await deleteTrigger(applicationId.value!, row.id);
+    await deleteTrigger(row.id);
+    ElMessage.success('删除成功');
     await loadTriggers();
   });
 }
 
-async function runTest(row?: any) {
-  const target = row || { id: editingId.value };
-  testResult.value = await testRunTrigger(applicationId.value!, target.id, {
-    inputJson: testInput.value,
-    message: '触发器测试',
+async function batchEnable(enabled: boolean) {
+  const ids = selection.value.map((item) => item.id);
+  if (ids.length === 0) return;
+  await batchActivateTriggers({
+    idList: ids,
+    id_list: ids,
+    isActive: enabled,
+    is_active: enabled,
+  });
+  ElMessage.success(enabled ? '已启用' : '已停用');
+  await loadTriggers();
+}
+
+function batchRemove() {
+  const ids = selection.value.map((item) => item.id);
+  if (ids.length === 0) return;
+  confirm(`确认删除选中的 ${ids.length} 个触发器？`).then(async () => {
+    await batchDeleteTriggers(ids);
+    ElMessage.success('删除成功');
+    selection.value = [];
+    await loadTriggers();
   });
 }
 
-async function openRecords(row: any) {
+function openTest(row: TriggerRecord) {
   activeTrigger.value = row;
-  recordsOpen.value = true;
-  records.value = recordsOf(
-    await pageTriggerRecords(applicationId.value!, row.id, {
-      current: 1,
-      page: 1,
-      size: 20,
-    }),
-  );
+  testInput.value = '{\n  "source": "manual"\n}';
+  testResult.value = undefined;
+  testOpen.value = true;
+}
+
+async function runTest() {
+  const trigger = activeTrigger.value;
+  if (!trigger?.id) return;
+  testLoading.value = true;
+  try {
+    const data: TriggerRequest = {
+      inputJson: testInput.value,
+      message: '触发器测试',
+    };
+    testResult.value = await testRunTrigger(trigger.id, data);
+    ElMessage.success('测试执行完成');
+  } finally {
+    testLoading.value = false;
+  }
+}
+
+function absoluteWebhookUrl(id: Id) {
+  return `${window.location.origin}${webhookTriggerUrl(id)}`;
+}
+
+async function copyText(text: string) {
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+  ElMessage.success('已复制');
+}
+
+function taskTypeCount(row: TriggerRecord, type: string) {
+  return (row.trigger_task || []).filter((item) => item.source_type === type)
+    .length;
+}
+
+function taskName(task: JsonRecord) {
+  return textValue(task.name || task.source_name || task.source_id, '-');
 }
 
 onMounted(() => {
-  const queryAppId = route.query.applicationId;
-  if (queryAppId) {
-    const raw = Array.isArray(queryAppId) ? queryAppId[0] : queryAppId;
-    if (raw) applicationId.value = raw;
-  }
-  loadApplications();
+  loadTriggers();
 });
 </script>
 
 <template>
   <Page auto-content-height>
-    <div class="ops-page">
-      <div class="toolbar">
-        <ElSelect
-          v-model="applicationId"
-          filterable
-          placeholder="应用"
-          @change="loadTriggers"
-        >
-          <ElOption
-            v-for="item in applications"
-            :key="item.id"
-            :label="item.name || item.id"
-            :value="item.id"
+    <div class="trigger-page">
+      <header class="trigger-toolbar">
+        <div class="toolbar-left">
+          <ElButton type="primary" :icon="Plus" @click="openDrawer()">
+            新建触发器
+          </ElButton>
+          <ElButton
+            :disabled="selection.length === 0"
+            :icon="SwitchButton"
+            @click="batchEnable(true)"
+          >
+            启用
+          </ElButton>
+          <ElButton
+            :disabled="selection.length === 0"
+            :icon="SwitchButton"
+            @click="batchEnable(false)"
+          >
+            停用
+          </ElButton>
+          <ElButton
+            :disabled="selection.length === 0"
+            :icon="Delete"
+            plain
+            type="danger"
+            @click="batchRemove"
+          >
+            删除
+          </ElButton>
+        </div>
+        <div class="toolbar-right">
+          <ElSelect
+            v-model="searchType"
+            class="search-type"
+            @change="searchTypeChange"
+          >
+            <ElOption label="名称" value="name" />
+            <ElOption label="类型" value="type" />
+            <ElOption label="任务" value="task" />
+            <ElOption label="状态" value="is_active" />
+            <ElOption label="创建人" value="create_user" />
+          </ElSelect>
+          <ElInput
+            v-if="searchType === 'name' || searchType === 'task'"
+            v-model="search[searchType]"
+            class="search-input"
+            clearable
+            placeholder="搜索"
+            @clear="loadTriggers(true)"
+            @keyup.enter="loadTriggers(true)"
+          >
+            <template #prefix><Search /></template>
+          </ElInput>
+          <ElSelect
+            v-else-if="searchType === 'type'"
+            v-model="search.type"
+            class="search-input"
+            clearable
+            @change="loadTriggers(true)"
+          >
+            <ElOption label="定时" value="SCHEDULED" />
+            <ElOption label="事件" value="EVENT" />
+          </ElSelect>
+          <ElSelect
+            v-else-if="searchType === 'is_active'"
+            v-model="search.is_active"
+            class="search-input"
+            clearable
+            @change="loadTriggers(true)"
+          >
+            <ElOption label="启用" value="true" />
+            <ElOption label="停用" value="false" />
+          </ElSelect>
+          <ElInput
+            v-else
+            v-model="search.create_user"
+            class="search-input"
+            clearable
+            placeholder="创建人 ID"
+            @clear="loadTriggers(true)"
+            @keyup.enter="loadTriggers(true)"
           />
-        </ElSelect>
-        <ElButton type="primary" @click="loadTriggers">刷新</ElButton>
-        <ElButton type="primary" @click="openDialog()">新增触发器</ElButton>
-      </div>
-      <ElTable v-loading="loading" :data="triggers" height="100%" size="small">
-        <ElTableColumn prop="name" label="触发器" min-width="160" />
-        <ElTableColumn prop="triggerType" label="类型" width="120" />
-        <ElTableColumn label="Webhook" min-width="260">
+          <ElButton :icon="Search" @click="loadTriggers(true)">查询</ElButton>
+          <ElButton :icon="Refresh" @click="loadTriggers()">刷新</ElButton>
+        </div>
+      </header>
+
+      <ElTable
+        v-loading="loading"
+        :data="triggerRows"
+        class="trigger-table"
+        height="100%"
+        row-key="id"
+        @selection-change="setSelection"
+      >
+        <ElTableColumn type="selection" width="46" />
+        <ElTableColumn label="名称" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="mono-line">{{
-              webhookTriggerUrl(applicationId || '', row.id)
-            }}</span>
+            <div class="name-cell">
+              <ElIcon
+                class="name-icon"
+                :class="row.trigger_type === 'EVENT' ? 'event' : ''"
+              >
+                <Bell v-if="row.trigger_type === 'EVENT'" />
+                <Clock v-else />
+              </ElIcon>
+              <div>
+                <div class="name-title">{{ row.name || '-' }}</div>
+                <div class="name-desc">{{ row.desc || '无描述' }}</div>
+              </div>
+            </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="状态" width="90">
+        <ElTableColumn label="类型" width="110">
           <template #default="{ row }">
-            <ElTag size="small">
-              {{ enabledText(row.enabled) }}
+            <ElTag
+              :type="row.trigger_type === 'EVENT' ? 'warning' : 'primary'"
+              size="small"
+            >
+              {{ triggerTypeLabel(row.trigger_type) }}
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="300">
+        <ElTableColumn label="触发周期" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <ElButton link type="primary" @click="openDialog(row)">
-              编辑
-            </ElButton>
-            <ElButton link @click="toggleRow(row)">切换</ElButton>
-            <ElButton link @click="runTest(row)">测试</ElButton>
-            <ElButton link @click="openRecords(row)">记录</ElButton>
-            <ElButton link type="danger" @click="removeTrigger(row)">
-              删除
-            </ElButton>
+            <span v-if="row.trigger_type === 'SCHEDULED'">
+              {{ scheduleLabel(row.trigger_setting) }}
+            </span>
+            <span v-else class="mono-line">{{
+              absoluteWebhookUrl(row.id)
+            }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="执行任务" width="180">
+          <template #default="{ row }">
+            <ElPopover placement="top-start" trigger="hover" width="260">
+              <template #reference>
+                <div class="task-tags">
+                  <ElTag v-if="taskTypeCount(row, 'APPLICATION')" size="small">
+                    应用 {{ taskTypeCount(row, 'APPLICATION') }}
+                  </ElTag>
+                  <ElTag
+                    v-if="taskTypeCount(row, 'TOOL')"
+                    size="small"
+                    type="success"
+                  >
+                    工具 {{ taskTypeCount(row, 'TOOL') }}
+                  </ElTag>
+                </div>
+              </template>
+              <div class="popover-list">
+                <div
+                  v-for="task in row.trigger_task"
+                  :key="task.id || `${task.source_type}-${task.source_id}`"
+                >
+                  <b>{{ sourceDisplayType(task.source_type || task.type) }}</b>
+                  <span>{{ taskName(task) }}</span>
+                </div>
+              </div>
+            </ElPopover>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="状态" width="110">
+          <template #default="{ row }">
+            <ElSwitch
+              :model-value="row.is_active !== false"
+              active-text="启"
+              inactive-text="停"
+              inline-prompt
+              @change="toggleRow(row)"
+            />
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="create_user" label="创建人" width="130" />
+        <ElTableColumn prop="create_time" label="创建时间" width="180" />
+        <ElTableColumn label="操作" fixed="right" width="230">
+          <template #default="{ row }">
+            <ElTooltip content="编辑" placement="top">
+              <ElButton
+                link
+                type="primary"
+                :icon="EditPen"
+                @click="openDrawer(row)"
+              />
+            </ElTooltip>
+            <ElTooltip content="测试运行" placement="top">
+              <ElButton
+                link
+                type="primary"
+                :icon="VideoPlay"
+                @click="openTest(row)"
+              />
+            </ElTooltip>
+            <ElTooltip content="执行记录" placement="top">
+              <ElButton
+                link
+                type="primary"
+                :icon="Tickets"
+                @click="openRecords(row)"
+              />
+            </ElTooltip>
+            <ElTooltip
+              v-if="row.trigger_type === 'EVENT'"
+              content="复制 Webhook"
+              placement="top"
+            >
+              <ElButton
+                link
+                type="primary"
+                :icon="Link"
+                @click="copyText(absoluteWebhookUrl(row.id))"
+              />
+            </ElTooltip>
+            <ElTooltip content="删除" placement="top">
+              <ElButton
+                link
+                type="danger"
+                :icon="Delete"
+                @click="removeTrigger(row)"
+              />
+            </ElTooltip>
           </template>
         </ElTableColumn>
       </ElTable>
 
-      <ElDialog v-model="dialogOpen" title="触发器配置" width="680px">
-        <ElForm label-width="90px" :model="form">
-          <ElFormItem label="名称">
-            <ElInput v-model="form.name" />
+      <footer class="pagination-footer">
+        <ElPagination
+          v-model:current-page="pageState.page"
+          v-model:page-size="pageState.size"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pageState.total"
+          layout="total, sizes, prev, pager, next"
+          @current-change="loadTriggers()"
+          @size-change="loadTriggers(true)"
+        />
+      </footer>
+
+      <TriggerDrawer
+        ref="triggerDrawerRef"
+        :workspace-id="workspaceId"
+        @refresh="loadTriggers"
+      />
+      <TriggerTaskRecordDrawer ref="recordDrawerRef" />
+
+      <ElDialog v-model="testOpen" title="测试运行" width="680px">
+        <ElForm label-position="top">
+          <ElFormItem label="触发器">
+            <ElInput :model-value="activeTrigger?.name || ''" disabled />
           </ElFormItem>
-          <ElFormItem label="类型">
-            <ElSelect v-model="form.triggerType">
-              <ElOption label="MANUAL" value="MANUAL" />
-              <ElOption label="WEBHOOK" value="WEBHOOK" />
-            </ElSelect>
+          <ElFormItem
+            v-if="activeTrigger?.trigger_type === 'EVENT'"
+            label="Webhook"
+          >
+            <div class="copy-input">
+              <ElInput
+                :model-value="
+                  activeTrigger?.id ? absoluteWebhookUrl(activeTrigger.id) : ''
+                "
+                readonly
+              />
+              <ElButton
+                :icon="CopyDocument"
+                @click="
+                  copyText(
+                    activeTrigger?.id
+                      ? absoluteWebhookUrl(activeTrigger.id)
+                      : '',
+                  )
+                "
+              />
+            </div>
           </ElFormItem>
-          <ElFormItem label="启用">
-            <ElSwitch v-model="form.enabled" />
+          <ElFormItem label="输入 JSON">
+            <ElInput v-model="testInput" type="textarea" :rows="7" />
           </ElFormItem>
-          <ElFormItem label="配置 JSON">
-            <ElInput v-model="form.configJson" type="textarea" :rows="6" />
+          <ElFormItem label="执行结果">
+            <pre class="result-box">{{
+              prettyJson(testResult, '暂无测试结果')
+            }}</pre>
           </ElFormItem>
-          <ElFormItem label="测试输入">
-            <ElInput v-model="testInput" type="textarea" :rows="4" />
-          </ElFormItem>
-          <ElFormItem label="Webhook">
-            <ElInput :model-value="webhookUrl" readonly />
-          </ElFormItem>
-          <pre class="result-box">{{
-            prettyJson(testResult, '暂无测试结果')
-          }}</pre>
         </ElForm>
         <template #footer>
-          <ElButton @click="runTest()">测试运行</ElButton>
-          <ElButton @click="dialogOpen = false">取消</ElButton>
-          <ElButton type="primary" @click="saveTrigger">保存</ElButton>
+          <ElButton @click="testOpen = false">关闭</ElButton>
+          <ElButton type="primary" :loading="testLoading" @click="runTest">
+            测试运行
+          </ElButton>
         </template>
       </ElDialog>
-
-      <ElDrawer
-        v-model="recordsOpen"
-        :title="`${activeTrigger?.name || ''} 运行记录`"
-        size="700px"
-      >
-        <ElTable :data="records" size="small">
-          <ElTableColumn prop="source" label="来源" width="100" />
-          <ElTableColumn prop="status" label="状态" width="100">
-            <template #default="{ row }">
-              <ElTag :type="statusType(row.status)" size="small">
-                {{ row.status }}
-              </ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="runTime" label="耗时" width="90" />
-          <ElTableColumn prop="inputJson" label="输入" />
-          <ElTableColumn prop="outputJson" label="输出" />
-        </ElTable>
-      </ElDrawer>
     </div>
   </Page>
 </template>
 
 <style scoped lang="scss">
-.ops-page {
+.trigger-page {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
-.toolbar {
+.trigger-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+
+.toolbar-left,
+.toolbar-right {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-.toolbar .el-select {
-  width: 260px;
+.search-type {
+  width: 112px;
+}
+
+.search-input {
+  width: 240px;
+}
+
+.trigger-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.pagination-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+.name-cell {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.name-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-radius: 6px;
+}
+
+.name-icon.event {
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+}
+
+.name-title,
+.name-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name-desc {
+  max-width: 260px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .mono-line {
@@ -281,10 +626,42 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.task-tags,
+.copy-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.copy-input {
+  width: 100%;
+}
+
+.copy-input .el-input {
+  flex: 1;
+}
+
+.popover-list {
+  display: grid;
+  gap: 8px;
+}
+
+.popover-list div {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
 .result-box {
-  max-height: 180px;
-  padding: 8px;
+  width: 100%;
+  min-height: 120px;
+  max-height: 260px;
+  padding: 10px;
   overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;

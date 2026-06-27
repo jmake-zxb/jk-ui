@@ -29,7 +29,9 @@ const props = withDefaults(
     backListLabel: string;
     canAddComponent?: boolean;
     canDebug?: boolean;
+    canLocalValidate?: boolean;
     canPublish?: boolean;
+    canRawDebug?: boolean;
     canRestoreVersion: boolean;
     canSave?: boolean;
     canValidate?: boolean;
@@ -51,7 +53,9 @@ const props = withDefaults(
   {
     canAddComponent: true,
     canDebug: true,
+    canLocalValidate: true,
     canPublish: true,
+    canRawDebug: true,
     canSave: true,
     canValidate: true,
     canViewVersions: true,
@@ -172,12 +176,13 @@ defineExpose({
                   {{ autoSaveEnabled ? '关闭自动保存' : '开启自动保存' }}
                 </ElDropdownItem>
                 <ElDropdownItem
-                  v-if="debugMode === 'drawer'"
+                  v-if="canRawDebug && debugMode === 'drawer'"
                   @click="rawDebugOpen = true"
                 >
                   调试原始流
                 </ElDropdownItem>
                 <ElDropdownItem
+                  v-if="canLocalValidate"
                   @click="workflowDesignerRef?.runLocalValidation(true)"
                 >
                   本地校验
@@ -189,25 +194,27 @@ defineExpose({
         </div>
       </div>
 
-      <WorkflowDesignerComponent
-        ref="workflowDesignerRef"
-        v-model:graph-data="graphData"
-        :foundation-mode="foundationMode"
-        :palette-mode="paletteMode"
-        @debug="runDebug"
-        @local-validation-change="emit('localValidationChange', $event)"
-        @raw-debug="rawDebugOpen = true"
-      />
+      <div class="workflow-body">
+        <WorkflowDesignerComponent
+          ref="workflowDesignerRef"
+          v-model:graph-data="graphData"
+          :foundation-mode="foundationMode"
+          :palette-mode="paletteMode"
+          @debug="runDebug"
+          @local-validation-change="emit('localValidationChange', $event)"
+          @raw-debug="rawDebugOpen = true"
+        />
 
-      <PublishHistorySidebar
-        v-if="versionsOpen"
-        :can-restore="canRestoreVersion"
-        :loading="versionsLoading"
-        :title="versionsDrawerTitle"
-        :versions="versions"
-        @close="versionsOpen = false"
-        @restore="(row: any) => emit('restoreVersion', row)"
-      />
+        <PublishHistorySidebar
+          v-if="versionsOpen"
+          :can-restore="canRestoreVersion"
+          :loading="versionsLoading"
+          :title="versionsDrawerTitle"
+          :versions="versions"
+          @close="versionsOpen = false"
+          @restore="(row: any) => emit('restoreVersion', row)"
+        />
+      </div>
 
       <slot name="drawers"></slot>
 
@@ -229,10 +236,16 @@ defineExpose({
   overflow: hidden;
 }
 
-.workflow-host :deep(.workflow-designer) {
+.workflow-body {
+  position: relative;
   flex: 1;
-  width: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+.workflow-host :deep(.workflow-designer) {
+  width: 100%;
+  height: 100%;
 }
 
 .toolbar {

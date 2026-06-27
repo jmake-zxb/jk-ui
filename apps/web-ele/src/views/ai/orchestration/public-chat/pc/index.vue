@@ -285,8 +285,9 @@ async function openExecutionDetail(row: any) {
         const data = res?.data ?? res;
         executionDetail.value = cloneDeep(data?.execution_details || []);
       }
-    } catch {
+    } catch (error) {
       executionDetail.value = [];
+      console.error('[openExecutionDetail] failed to fetch details:', error);
     } finally {
       rightPanelLoading.value = false;
     }
@@ -366,7 +367,7 @@ onMounted(() => {
           "
         >
           <div class="p-16-24 flex-between">
-            <h4 class="ellipsis-1" style="width: 66%">
+            <h4 class="ellipsis-1" style="width: 66%; font-size: 14px">
               {{ currentChatName }}
             </h4>
           </div>
@@ -395,7 +396,7 @@ onMounted(() => {
           <div class="flex-between border-b p-16">
             <h4
               class="medium ellipsis"
-              style="max-width: 300px"
+              style="max-width: 300px; font-size: 14px"
               :title="rightPanelTitle"
             >
               {{ rightPanelTitle }}
@@ -456,7 +457,7 @@ onMounted(() => {
 .chat-pc {
   height: 100%;
   overflow: hidden;
-  background: #eef1f4;
+  background: var(--el-bg-color-page);
 
   &__left {
     position: relative;
@@ -491,7 +492,7 @@ onMounted(() => {
       width: var(--execution-detail-panel-width, 400px);
       height: 100%;
       overflow: hidden;
-      background: #fff;
+      background: var(--el-bg-color);
       transition: width 0.4s;
 
       .execution-detail-content {

@@ -391,9 +391,9 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .form-node-title {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 20px;
   color: var(--el-text-color-primary);
 }
 

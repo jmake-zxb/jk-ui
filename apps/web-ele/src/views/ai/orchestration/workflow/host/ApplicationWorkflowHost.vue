@@ -7,7 +7,12 @@ import { useRouter } from 'vue-router';
 
 import { useAccessStore } from '@vben/stores';
 
-import { Close, FullScreen, Minus } from '@element-plus/icons-vue';
+import {
+  Close,
+  FullScreen,
+  InfoFilled as LogoIcon,
+  Minus,
+} from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDrawer,
@@ -442,39 +447,47 @@ onMounted(async () => {
           :class="{ 'debug-panel-ai-chat--enlarged': debugPanelEnlarged }"
         >
           <div class="dp-header">
-            <div class="dp-title">
-              <div class="dp-avatar">
-                <img
-                  v-if="currentApplication?.icon"
-                  :src="currentApplication.icon"
-                  alt=""
-                />
-                <span v-else>{{
-                  (currentApplicationName || 'AI').slice(0, 1)
+            <div class="flex-between">
+              <div class="align-center flex">
+                <div class="dp-avatar-wrap">
+                  <el-avatar
+                    v-if="currentApplication?.icon"
+                    shape="square"
+                    :size="32"
+                    style="background: none"
+                  >
+                    <img :src="currentApplication.icon" alt="" />
+                  </el-avatar>
+                  <LogoIcon v-else height="32px" />
+                </div>
+                <span class="dp-name" :title="currentApplicationName">{{
+                  currentApplicationName || '工作流调试'
                 }}</span>
               </div>
-              <span class="dp-name" :title="currentApplicationName">{{
-                currentApplicationName || '工作流调试'
-              }}</span>
-            </div>
-            <div class="dp-actions">
-              <ElButton link @click="debugPanelEnlarged = !debugPanelEnlarged">
-                <ElIcon :size="18">
-                  <FullScreen v-if="!debugPanelEnlarged" />
-                  <Minus v-else />
-                </ElIcon>
-              </ElButton>
-              <ElButton link @click="debugPanelVisible = false">
-                <ElIcon :size="18"><Close /></ElIcon>
-              </ElButton>
+              <div class="dp-actions">
+                <ElButton
+                  link
+                  @click="debugPanelEnlarged = !debugPanelEnlarged"
+                >
+                  <ElIcon :size="20">
+                    <FullScreen v-if="!debugPanelEnlarged" />
+                    <Minus v-else />
+                  </ElIcon>
+                </ElButton>
+                <ElButton link @click="debugPanelVisible = false">
+                  <ElIcon :size="20"><Close /></ElIcon>
+                </ElButton>
+              </div>
             </div>
           </div>
-          <AiChat
-            :app-id="`${applicationId}`"
-            :application-details="debugApplicationDetails"
-            :chat-record="debugChatRecord"
-            type="debug-ai-chat"
-          />
+          <div class="dp-scrollbar-wrap">
+            <AiChat
+              :app-id="`${applicationId}`"
+              :application-details="debugApplicationDetails"
+              :chat-record="debugChatRecord"
+              type="debug-ai-chat"
+            />
+          </div>
         </div>
       </Transition>
     </template>
@@ -494,28 +507,27 @@ onMounted(async () => {
 }
 
 .debug-panel-ai-chat {
-  position: absolute;
+  position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 30;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   width: 460px;
   height: 680px;
-  max-height: calc(100% - 32px);
   overflow: hidden;
-  background: hsl(var(--card));
+  background: var(--dialog-bg-gradient-color, var(--el-bg-color, #fff));
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  box-shadow: var(--el-box-shadow-light);
+  border-radius: 8px;
+  box-shadow: 0 4px 8px 0 rgb(var(--el-text-color-primary-rgb), 0.1);
   transition: all 0.25s ease;
 }
 
 .debug-panel-ai-chat--enlarged {
   right: 0;
   bottom: 0;
-  width: 50%;
-  height: 100%;
+  width: 50% !important;
+  height: 100% !important;
   border-radius: 0;
 }
 
@@ -525,44 +537,49 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+.debug-panel-ai-chat :deep(.ai-chat__operate) {
+  padding: 16px;
+
+  .operate-textarea {
+    background-color: var(--el-bg-color, #fff);
+    border: 1px solid var(--el-border-color-lighter);
+
+    &:has(.el-textarea__inner:focus) {
+      border: 1px solid var(--el-color-primary);
+    }
+  }
+
+  .video-stop-button:hover {
+    background: var(--el-bg-color, #fff);
+  }
+}
+
 .dp-header {
-  display: flex;
+  box-sizing: border-box;
   flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  height: var(--app-header-height, 48px);
+  line-height: var(--app-header-height, 48px);
+  background: var(--app-header-bg-color, var(--el-bg-color, #fff));
+  border-bottom: 1px solid var(--el-border-color);
 }
 
-.dp-title {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-}
-
-.dp-avatar {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
+.dp-scrollbar-wrap {
+  flex: 1;
+  height: calc(100% - var(--app-header-height, 48px) - 24px);
+  min-height: 0;
+  padding-top: 24px;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  background: var(--el-color-primary);
-  border-radius: 6px;
 }
 
-.dp-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.dp-avatar-wrap {
+  display: flex;
+  align-items: center;
+  margin-right: 12px;
+  margin-left: 24px;
 }
 
 .dp-name {
+  max-width: 270px;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 14px;
@@ -574,8 +591,8 @@ onMounted(async () => {
 .dp-actions {
   display: flex;
   flex-shrink: 0;
-  gap: 4px;
   align-items: center;
+  margin-right: 16px;
 }
 
 .drawer-grid {

@@ -121,7 +121,7 @@ class AppEdge extends BezierEdge {
       h(
         'style' as any,
         { type: 'text/css' },
-        '.lf-edge{stroke:#afafaf}.lf-edge:hover{stroke: var(--el-color-primary);}',
+        '.lf-edge{stroke:var(--el-border-color-darker)}.lf-edge:hover{stroke: var(--el-color-primary);}',
       ),
       h('path', {
         d: path,
@@ -229,7 +229,7 @@ export class AppEdgeModel extends BezierEdgeModel {
   override getEdgeStyle() {
     const style = super.getEdgeStyle();
     style.strokeWidth = 2;
-    style.stroke = '#BBBFC4';
+    style.stroke = 'var(--el-border-color-darker)';
     style.offset = 0;
     return style;
   }

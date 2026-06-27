@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import {
   Aim,
+  Expand,
+  Fold,
   MagicStick,
   Mouse,
-  Refresh,
+  Pointer,
   ZoomIn,
   ZoomOut,
 } from '@element-plus/icons-vue';
@@ -18,7 +20,6 @@ const emit = defineEmits<{
   collapse: [];
   expand: [];
   fit: [];
-  reset: [];
   toggleDrag: [value: boolean];
   zoomIn: [];
   zoomOut: [];
@@ -42,10 +43,9 @@ const emit = defineEmits<{
           text
           size="small"
           :class="{ 'is-active': !dragMode }"
+          :icon="Pointer"
           @click="emit('toggleDrag', false)"
-        >
-          手
-        </ElButton>
+        />
       </ElTooltip>
     </div>
     <ElDivider direction="vertical" />
@@ -59,17 +59,14 @@ const emit = defineEmits<{
       <ElTooltip content="适配视图" placement="top">
         <ElButton text size="small" :icon="Aim" @click="emit('fit')" />
       </ElTooltip>
-      <ElTooltip content="复位" placement="top">
-        <ElButton text size="small" :icon="Refresh" @click="emit('reset')" />
-      </ElTooltip>
     </div>
     <ElDivider direction="vertical" />
     <div class="designer-canvas-control__group">
       <ElTooltip content="收起节点" placement="top">
-        <ElButton text size="small" @click="emit('collapse')">收起</ElButton>
+        <ElButton text size="small" :icon="Fold" @click="emit('collapse')" />
       </ElTooltip>
       <ElTooltip content="展开节点" placement="top">
-        <ElButton text size="small" @click="emit('expand')">展开</ElButton>
+        <ElButton text size="small" :icon="Expand" @click="emit('expand')" />
       </ElTooltip>
       <ElTooltip content="自动排列" placement="top">
         <ElButton

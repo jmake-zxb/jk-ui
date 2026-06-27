@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
   <ElCard shadow="hover" class="model-card" :body-style="{ padding: '16px' }">
     <!-- Card header: icon + title + status -->
     <div class="card-header">
-      <span class="card-icon" v-safe-html="icon"></span>
+      <span class="card-icon" v-html="icon"></span>
       <div class="card-title-area">
         <div class="card-title-row">
           <span class="card-title ellipsis" :title="model.name">{{

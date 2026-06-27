@@ -53,7 +53,7 @@ class LoopBodyNodeModel extends AppNodeModel {
   }
 
   override setHeight(height: number) {
-    this.properties.height = height;
+    super.setHeight(height);
     this.refreshBranch();
   }
 }

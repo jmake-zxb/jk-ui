@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import type { WorkflowGraphData, WorkflowNode } from '../../nodes';
 
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue';
+
+import { usePreferences } from '@vben/preferences';
 
 import LogicFlow from '@logicflow/core';
 import { ElMessage } from 'element-plus';
@@ -46,6 +55,7 @@ const currentLoopBody = ref<WorkflowGraphData>(
   normalizeLoopBodyForParent(bodyDataFromProperties()),
 );
 let fitTimer = 0;
+const { isDark } = usePreferences();
 
 function isEmptyGraphData(value: WorkflowGraphData) {
   return value.nodes.length === 0 && value.edges.length === 0;
@@ -517,14 +527,16 @@ async function initNestedLogicFlow() {
   if (!canvasRef.value || nestedLfRef.value) return;
   const hasSize = await waitForElementSize(canvasRef.value);
   if (!hasSize || nestedLfRef.value) return;
+  const bgColor = isDark.value ? '#1d1e1f' : '#f5f6f7';
+  const gridColor = isDark.value ? '#4a4a4a' : '#DEE0E3';
   const lf = new LogicFlow({
     adjustEdge: false,
     adjustEdgeStartAndEnd: false,
-    background: { backgroundColor: '#f5f6f7' },
+    background: { backgroundColor: bgColor },
     container: canvasRef.value,
     edgeType: 'app-edge',
     grid: {
-      config: { color: '#DEE0E3', thickness: 1 },
+      config: { color: gridColor, thickness: 1 },
       size: 10,
       type: 'dot',
       visible: true,
@@ -540,6 +552,19 @@ async function initNestedLogicFlow() {
   bindNestedEvents(lf);
   await renderLoopBody();
 }
+
+watch(isDark, (dark) => {
+  if (!nestedLfRef.value) return;
+  const bgColor = dark ? '#1d1e1f' : '#f5f6f7';
+  const gridColor = dark ? '#4a4a4a' : '#DEE0E3';
+  nestedLfRef.value.graphModel.background = { backgroundColor: bgColor };
+  nestedLfRef.value.graphModel.grid = {
+    config: { color: gridColor, thickness: 1 },
+    size: 10,
+    type: 'dot',
+    visible: true,
+  };
+});
 
 function deleteSelectedBodyElement() {
   const lf = nestedLfRef.value;
@@ -675,8 +700,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.clearTimeout(fitTimer);
   setLoopBody();
-  const flowId = nestedLfRef.value?.graphModel?.flowId;
-  nestedLfRef.value?.destroy?.();
+  const lf = nestedLfRef.value;
+  const flowId = lf?.graphModel?.flowId;
+  if (lf) {
+    (lf as any).clearThemeMode = () => {};
+    lf.destroy?.();
+  }
   if (flowId) disconnectByFlow(flowId);
   nestedLfRef.value = undefined;
 });

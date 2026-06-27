@@ -122,7 +122,13 @@ const isProtectedNode = computed(() =>
 const paletteMode = computed<PaletteMode>(() => {
   void props.renderVersion;
   const mode = props.nodeModel.graphModel?.paletteMode;
-  if (mode === 'application-loop' || mode === 'tool') return mode;
+  if (
+    mode === 'application-loop' ||
+    mode === 'knowledge-loop' ||
+    mode === 'knowledge' ||
+    mode === 'tool'
+  )
+    return mode;
   return 'application';
 });
 const menuGroups = computed(() =>
@@ -163,10 +169,9 @@ const searchFocused = ref(false);
 const isNodeHovered = ref(!!props.nodeModel.isHovered);
 const isPointerInsideNode = ref(false);
 let resizeObserver: ResizeObserver | undefined;
-let foreignObjectObserver: MutationObserver | undefined;
-let resizeFrame = 0;
 let hoverReleaseFrame = 0;
 let lastMeasuredHeight = 0;
+let resizeDebounceTimer = 0;
 
 const INLINE_POPPER_SELECTOR = [
   '.el-popper',
@@ -278,8 +283,6 @@ function hasDuplicateStepName(name: string) {
 function setShowNode(value: boolean) {
   showNode.value = value;
   updateProperties({ showNode: value }, ['showNode']);
-  // Also resize after collapse transition ends (~300ms)
-  setTimeout(() => queueNodeResize(), 350);
 }
 
 function measuredHeightWithoutInlinePoppers(element: HTMLElement) {
@@ -301,72 +304,23 @@ function measuredHeightWithoutInlinePoppers(element: HTMLElement) {
 
 function resizeNode(element?: HTMLElement) {
   if (!element) return;
-  const height = measuredHeightWithoutInlinePoppers(element);
+  const card =
+    element.querySelector<HTMLElement>('.workflow-vue-node__card') ||
+    element.closest<HTMLElement>('.workflow-vue-node__card');
+  const measureTarget = card || element;
+  const height = measuredHeightWithoutInlinePoppers(measureTarget);
   const normalizedHeight = Math.round(height);
   if (normalizedHeight && normalizedHeight !== lastMeasuredHeight) {
     lastMeasuredHeight = normalizedHeight;
-    if (typeof props.nodeModel.syncNodeSize === 'function') {
-      props.nodeModel.syncNodeSize(normalizedHeight);
-    } else {
-      props.nodeModel.setHeight?.(normalizedHeight);
-      props.nodeModel.refreshConnectedEdges?.();
-    }
+    props.nodeModel.setHeight?.(normalizedHeight);
   }
-  syncForeignObjectGeometry(element);
-}
-
-function currentForeignObject(element?: HTMLElement) {
-  return element?.closest<SVGForeignObjectElement>('foreignObject');
-}
-
-function syncForeignObjectGeometry(element: HTMLElement) {
-  const foreignObject = currentForeignObject(element);
-  const width = Number(
-    props.nodeModel.width || props.nodeModel.properties?.width || 0,
-  );
-  const height = Number(
-    props.nodeModel.height || props.nodeModel.properties?.height || 0,
-  );
-  if (!foreignObject || !width || !height) return;
-  const nextAttributes = {
-    height: `${height}`,
-    width: `${width}`,
-  };
-  Object.entries(nextAttributes).forEach(([key, value]) => {
-    if (foreignObject.getAttribute(key) !== value) {
-      foreignObject.setAttribute(key, value);
-    }
-  });
-}
-
-function nextFrame() {
-  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 function queueNodeResize() {
-  cancelAnimationFrame(resizeFrame);
-  resizeFrame = requestAnimationFrame(async () => {
-    await nextTick();
-    await nextFrame();
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = window.setTimeout(() => {
     resizeNode(measureRef.value);
-    observeForeignObject();
-  });
-}
-
-function observeForeignObject() {
-  const foreignObject = currentForeignObject(measureRef.value);
-  if (!foreignObject || typeof MutationObserver === 'undefined') return;
-  if ((foreignObject as any).__workflowNodeObserved === props.nodeModel.id)
-    return;
-  foreignObjectObserver?.disconnect();
-  (foreignObject as any).__workflowNodeObserved = props.nodeModel.id;
-  foreignObjectObserver = new MutationObserver(() => {
-    if (measureRef.value) syncForeignObjectGeometry(measureRef.value);
-  });
-  foreignObjectObserver.observe(foreignObject, {
-    attributeFilter: ['height', 'width'],
-    attributes: true,
-  });
+  }, 100);
 }
 
 function copyNode() {
@@ -624,7 +578,6 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(() => queueNodeResize());
     resizeObserver.observe(measureRef.value);
   }
-  observeForeignObject();
   queueNodeResize();
 });
 
@@ -633,10 +586,9 @@ onUpdated(() => {
 });
 
 onBeforeUnmount(() => {
-  cancelAnimationFrame(resizeFrame);
-  cancelAnimationFrame(hoverReleaseFrame);
+  clearTimeout(resizeDebounceTimer);
   resizeObserver?.disconnect();
-  foreignObjectObserver?.disconnect();
+  cancelAnimationFrame(hoverReleaseFrame);
   const nodeModel = getNodeModel();
   nodeModel.queueNodeResize = undefined;
   nodeModel.openNodeMenu = undefined;
@@ -664,7 +616,18 @@ onBeforeUnmount(() => {
       }"
     >
       <div ref="measureRef" class="workflow-vue-node__measure">
-        <header class="workflow-vue-node__header">
+        <header
+          class="workflow-vue-node__header"
+          :style="{
+            gridTemplateColumns: runtimeStatus
+              ? showNode
+                ? '36px auto minmax(0, 1fr) auto'
+                : '24px auto minmax(0, 1fr) auto'
+              : showNode
+                ? '36px minmax(0, 1fr) auto'
+                : '24px minmax(0, 1fr) auto',
+          }"
+        >
           <span class="workflow-vue-node__badge" :class="`is-${meta.status}`">{{
             meta.status.slice(0, 2).toUpperCase()
           }}</span>
@@ -680,7 +643,7 @@ onBeforeUnmount(() => {
             <span
               class="workflow-vue-node__title"
               :title="currentTitle()"
-              v-safe-html="highlightedTitle(currentTitle())"
+              v-html="highlightedTitle(currentTitle())"
             ></span>
           </div>
           <div
@@ -945,7 +908,6 @@ onBeforeUnmount(() => {
 
 .workflow-vue-node__header {
   display: grid;
-  grid-template-columns: 36px auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 10px;
@@ -959,7 +921,6 @@ onBeforeUnmount(() => {
 }
 
 .workflow-vue-node__card.is-collapsed .workflow-vue-node__header {
-  grid-template-columns: 24px auto minmax(0, 1fr) auto;
   min-height: 32px;
   padding: 0;
   background: transparent;

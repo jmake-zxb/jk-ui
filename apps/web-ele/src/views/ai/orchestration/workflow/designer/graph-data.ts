@@ -9,6 +9,7 @@ import type {
 import { cloneDeep, set } from 'lodash-es';
 
 import {
+  createDefaultKnowledgeWorkflowNodes,
   createDefaultLoopBodyGraphData,
   createDefaultToolWorkflowNodes,
   createDefaultWorkflowNodes,
@@ -71,6 +72,23 @@ function toolFoundationNodesForGraph(nodes: any[], edges: any[]) {
   return [...foundationNodes, ...nodes];
 }
 
+function knowledgeFoundationNodesForGraph(nodes: any[], edges: any[]) {
+  if (nodes.length === 0 || isDefaultApplicationFoundation(nodes, edges)) {
+    return createDefaultKnowledgeWorkflowNodes();
+  }
+  const foundationNodes: WorkflowNode[] = [];
+  if (!nodes.some((node) => isNodeType(node, 'knowledge-base-node'))) {
+    foundationNodes.push({
+      id: 'knowledge-base-node',
+      name: '知识库基础',
+      properties: defaultProperties('knowledge-base-node', '知识库基础'),
+      type: 'knowledge-base-node',
+      ...DEFAULT_BASE_NODE_POSITION,
+    });
+  }
+  return [...foundationNodes, ...nodes];
+}
+
 function foundationNodesForEmptyGraph(
   nodes: any[],
   edges: any[],
@@ -78,6 +96,8 @@ function foundationNodesForEmptyGraph(
 ) {
   if (foundationMode === 'tool')
     return toolFoundationNodesForGraph(nodes, edges);
+  if (foundationMode === 'knowledge')
+    return knowledgeFoundationNodesForGraph(nodes, edges);
   if (nodes.length === 0) return createDefaultWorkflowNodes();
   if (!nodes.some((node) => isNodeType(node, 'base-node'))) {
     return [

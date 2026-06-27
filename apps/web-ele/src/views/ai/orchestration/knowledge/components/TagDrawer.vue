@@ -16,7 +16,13 @@ import {
   ElTag,
 } from 'element-plus';
 
-import { createTag, deleteTag, pageTags, updateTag } from '#/api/ai/knowledge';
+import {
+  batchDeleteTags,
+  createTag,
+  deleteTag,
+  pageTags,
+  updateTag,
+} from '#/api/ai/knowledge';
 
 type Id = number | string;
 
@@ -300,7 +306,7 @@ async function removeRow(row: TagRow) {
 async function batchDelete() {
   const knowledgeId = idValue(props.knowledgeId);
   if (knowledgeId === undefined || selectedIds.value.length === 0) return;
-  await Promise.all(selectedIds.value.map((id) => deleteTag(knowledgeId, id)));
+  await batchDeleteTags(knowledgeId, selectedIds.value);
   selectedIds.value = [];
   ElMessage.success('批量删除成功');
   await loadTags();

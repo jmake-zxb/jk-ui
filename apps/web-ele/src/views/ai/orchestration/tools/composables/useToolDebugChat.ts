@@ -52,6 +52,7 @@ type NodeRunRecord = JsonRecord & {
 };
 
 export interface ToolDebugResult {
+  chatRecordId?: number | string;
   error: boolean;
   errorMessage?: string;
   finalOutput?: string;
@@ -253,6 +254,10 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
       }
       case 'done': {
         result.value.finalOutput = event.payload;
+        // 保存 chatRecordId，用于表单提交时更新已有记录而非创建新记录
+        if (event.chatRecordId !== undefined && event.chatRecordId !== null) {
+          result.value.chatRecordId = event.chatRecordId;
+        }
         break;
       }
       case 'node_chunk':
@@ -412,6 +417,7 @@ export function useToolDebugChat(options: UseToolDebugChatOptions) {
     }
     const formDataJson = JSON.stringify(formData);
     await streamSse(resumeToolWorkflowStream(options.getToolId(), runId), {
+      chatRecordId: result.value.chatRecordId,
       formData,
       formDataJson,
     });

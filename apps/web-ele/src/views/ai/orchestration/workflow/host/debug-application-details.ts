@@ -39,6 +39,8 @@ export function buildDebugApplicationDetails(
   return {
     ...app,
     prologue: prologue ?? app.prologue ?? '',
+    show_user_avatar: app.show_user_avatar ?? true,
+    user_avatar: app.user_avatar ?? '',
     work_flow: { ...workFlow, nodes },
   };
 }

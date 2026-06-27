@@ -6,8 +6,8 @@ const fileTooltip = JSON.stringify(
   [
     {
       name: 'File Name',
-      url: './oss/file/019d8ac3-e2c6-7ff2-8956-c9c98f0e11f4',
-      file_id: '019d8ac3-e2c6-7ff2-8956-c9c98f0e11f4',
+      url: '/admin/sys-file/local/example.pdf',
+      file_id: '1234567890123456789',
     },
   ],
   null,

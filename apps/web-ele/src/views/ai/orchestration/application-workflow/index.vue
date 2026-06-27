@@ -6,14 +6,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Close } from '@element-plus/icons-vue';
-import {
-  ElButton,
-  ElDrawer,
-  ElDropdownItem,
-  ElIcon,
-  ElInput,
-  ElMessage,
-} from 'element-plus';
+import { ElButton, ElDropdownItem, ElIcon, ElMessage } from 'element-plus';
 
 import {
   getWorkflowDraft,
@@ -21,9 +14,12 @@ import {
   publishWorkflow,
   restoreWorkflowVersion,
   saveWorkflowDraft,
-  validateWorkflowDraft,
 } from '#/api/ai/application-workflow';
-import { getApplication, listApplications } from '#/api/ai/applications';
+import {
+  getApplication,
+  listApplications,
+  pageAccessTokens,
+} from '#/api/ai/applications';
 import AiChat from '#/components/ai-chat/index.vue';
 import {
   createDebugChatRecord,
@@ -52,13 +48,13 @@ const router = useRouter();
 const chromeRef = ref<InstanceType<typeof WorkflowHostChrome>>();
 const applications = ref<any[]>([]);
 const applicationDetail = ref<any>();
+const accessTokens = ref<any[]>([]);
 const applicationId = ref<number | string>(props.applicationId || '');
 const workflowGraphJson = ref(DEFAULT_GRAPH_DATA);
 const applicationConfig = ref('{}');
 const validation = ref<any>();
 const localValidation = ref<ValidationState>({ errors: [], warnings: [] });
 const loading = ref(false);
-const applicationConfigOpen = ref(false);
 const versions = ref<any[]>([]);
 const versionsLoading = ref(false);
 
@@ -88,6 +84,10 @@ const currentApplication = computed(() =>
 const currentApplicationName = computed(
   () => currentApplication.value?.name || applicationId.value || '未选择应用',
 );
+const iconLoadFailed = ref(false);
+watch(currentApplication, () => {
+  iconLoadFailed.value = false;
+});
 const subtitleText = computed(() => {
   if (lastSavedAt.value) return `最近保存 ${lastSavedAt.value}`;
   return autoSaveEnabled.value ? '自动保存开启' : '手动保存';
@@ -111,6 +111,13 @@ async function loadApplicationDetail() {
   }
   const detail = await getApplication(applicationId.value);
   applicationDetail.value = detail;
+  accessTokens.value = recordsOf(
+    await pageAccessTokens(applicationId.value, {
+      current: 1,
+      page: 1,
+      size: 20,
+    }),
+  );
   if (detail?.id && !isWorkflowApplication(detail.type)) {
     ElMessage.info('智能体应用使用对话调试');
     await router.replace({
@@ -146,12 +153,22 @@ function backToApplications() {
   router.push('/ai/orchestration/applications/index');
 }
 
+function tokenText(record?: any) {
+  const value =
+    record?.token ?? record?.accessToken ?? record?.access_token ?? '';
+  return `${value || ''}`;
+}
+
 function openPublicChat() {
-  if (!applicationId.value) return;
-  router.push({
-    path: APPLICATION_DETAIL_PATH,
-    query: { applicationId: applicationId.value, tab: 'overview' },
-  });
+  const token = tokenText(accessTokens.value[0]);
+  if (!token) {
+    ElMessage.warning('暂无公开访问令牌');
+    return;
+  }
+  window.open(
+    `${window.location.origin}/ui/chat/${encodeURIComponent(token)}`,
+    '_blank',
+  );
 }
 
 async function loadApplications() {
@@ -237,12 +254,6 @@ async function autoSaveDraft() {
   await saveDraft(false);
 }
 
-async function validateDraft() {
-  if (!(await saveDraft(false))) return;
-  validation.value = await validateWorkflowDraft(applicationId.value);
-  ElMessage.success('校验完成');
-}
-
 async function publishDraft() {
   if (!(await saveDraft(false))) return;
   await publishWorkflow(applicationId.value, { description: '前端工作流发布' });
@@ -295,11 +306,6 @@ async function toggleDebugPanel() {
   debugPanelVisible.value = true;
 }
 
-function switchApplication(id: number | string) {
-  applicationId.value = id;
-  loadDraft();
-}
-
 watch(
   () => props.applicationId,
   (next) => {
@@ -324,7 +330,9 @@ onMounted(async () => {
     v-model:graph-data="workflowGraphJson"
     :auto-save-enabled="autoSaveEnabled"
     back-list-label="应用管理"
+    :can-local-validate="false"
     :can-restore-version="true"
+    :can-validate="false"
     debug-drawer-title="工作流调试"
     debug-mode="panel"
     foundation-mode="application"
@@ -345,37 +353,14 @@ onMounted(async () => {
     @save="saveDraft()"
     @toggle-auto-save="autoSaveEnabled = !autoSaveEnabled"
     @toggle-debug="toggleDebugPanel"
-    @validate="validateDraft"
   >
     <template #menu-before>
-      <ElDropdownItem
-        v-for="item in applications"
-        :key="item.id"
-        @click="switchApplication(item.id)"
-      >
-        切换到 {{ item.name || item.id }}
-      </ElDropdownItem>
-    </template>
-    <template #menu-after>
       <ElDropdownItem
         :disabled="!publicAccessAvailable"
         @click="openPublicChat"
       >
-        公开访问
+        去对话
       </ElDropdownItem>
-      <ElDropdownItem @click="applicationConfigOpen = true">
-        应用配置
-      </ElDropdownItem>
-    </template>
-    <template #drawers>
-      <ElDrawer v-model="applicationConfigOpen" title="应用配置" size="640px">
-        <div class="drawer-grid">
-          <section>
-            <div class="panel-title">应用配置</div>
-            <ElInput v-model="applicationConfig" type="textarea" :rows="8" />
-          </section>
-        </div>
-      </ElDrawer>
     </template>
     <template #debug-panel>
       <Transition name="debug-panel-transition">
@@ -384,9 +369,10 @@ onMounted(async () => {
             <div class="dp-title">
               <div class="dp-avatar">
                 <img
-                  v-if="currentApplication?.icon"
+                  v-if="currentApplication?.icon && !iconLoadFailed"
                   :src="currentApplication.icon"
                   alt=""
+                  @error="iconLoadFailed = true"
                 />
                 <span v-else>{{
                   (currentApplicationName || 'AI').slice(0, 1)
@@ -447,6 +433,10 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.debug-panel-ai-chat :deep(.ai-chat__content) {
+  padding-top: 20px;
 }
 
 .dp-header {

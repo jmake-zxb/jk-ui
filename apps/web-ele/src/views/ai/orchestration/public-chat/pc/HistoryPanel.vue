@@ -125,7 +125,7 @@ function editLogTitle(row: Record<string, any>) {
               color: applicationDetail?.custom_theme?.header_font_color,
             }"
             class="ellipsis"
-            style="max-width: 185px"
+            style="max-width: 185px; font-size: 14px"
             :title="applicationDetail?.name"
           >
             {{ applicationDetail?.name }}
@@ -186,18 +186,14 @@ function editLogTitle(row: Record<string, any>) {
                   @mouseenter="mouseenter(row)"
                   @mouseleave="mouseId = ''"
                 >
-                  <div class="flex-between">
+                  <div class="history-item__row">
                     <span
                       :title="row.abstract"
-                      class="ellipsis"
-                      style="max-width: 180px"
+                      class="ellipsis history-item__title"
                     >
                       {{ row.abstract || '新对话' }}
                     </span>
-                    <div
-                      @click.stop
-                      v-show="mouseId === row.id && row.id !== 'new'"
-                    >
+                    <div class="history-item__actions" @click.stop>
                       <ElDropdown trigger="click" :teleported="false">
                         <ElButton text>
                           <ElIcon><MoreFilled /></ElIcon>
@@ -326,7 +322,7 @@ function editLogTitle(row: Record<string, any>) {
 .history-component {
   display: flex;
   flex-direction: column;
-  background: var(--el-color-primary-light-06, #f5f7fa) !important;
+  background: var(--el-fill-color-lighter) !important;
   border-right: 1px solid var(--el-menu-border-color);
 
   :deep(.el-menu) {
@@ -373,13 +369,37 @@ function editLogTitle(row: Record<string, any>) {
       &.active {
         font-weight: 500;
         color: var(--el-text-color-primary);
-        background-color: #fff;
+        background-color: var(--el-bg-color);
 
         &:hover {
-          background-color: #fff;
+          background-color: var(--el-bg-color);
         }
       }
     }
+  }
+
+  .history-item__row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .history-item__title {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .history-item__actions {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .common-list li:hover .history-item__actions {
+    opacity: 1;
   }
 
   .add-button {
@@ -470,10 +490,10 @@ function editLogTitle(row: Record<string, any>) {
 }
 
 .chat-pc-popper {
-  background: #eef1f4;
+  background: var(--el-fill-color-lighter);
 
   .el-menu {
-    background: var(--el-color-primary-light-06, #f5f7fa) !important;
+    background: var(--el-fill-color-lighter) !important;
   }
 
   .el-menu-item-group__title {
@@ -495,7 +515,7 @@ function editLogTitle(row: Record<string, any>) {
 
     &.is-active {
       color: var(--el-text-color-primary);
-      background-color: #fff;
+      background-color: var(--el-bg-color);
     }
   }
 }

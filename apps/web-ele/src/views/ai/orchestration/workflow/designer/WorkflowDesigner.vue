@@ -19,6 +19,9 @@ import {
   watch,
 } from 'vue';
 
+import { usePreferences } from '@vben/preferences';
+
+import { DagreLayout } from '@antv/layout';
 import { Search } from '@element-plus/icons-vue';
 import LogicFlow from '@logicflow/core';
 import {
@@ -50,6 +53,7 @@ import { collectNodeValidationErrors } from './node-validation';
 import {
   cloneValue,
   DEFAULT_GRAPH_DATA,
+  DEFAULT_KNOWLEDGE_GRAPH_DATA,
   DEFAULT_TOOL_GRAPH_DATA,
   defaultProperties,
   groupedNodeTemplates,
@@ -94,6 +98,7 @@ let unbindCanvasMouse: (() => void) | undefined;
 let unbindDocumentPaste: (() => void) | undefined;
 let persistingLoopBodies = false;
 const lastCanvasMouse = { hasValue: false, x: 0, y: 0 };
+const { isDark } = usePreferences();
 const canvasMeasureFrames = 30;
 const basicQaChainIds = [
   'start-node',
@@ -104,22 +109,28 @@ const basicQaChainIds = [
 const basicQaChainPrompt =
   '请根据用户问题和知识库检索结果回答。\n\n用户问题：{{start-node.question}}\n\n知识库检索结果：\n{{search-knowledge-node.data}}\n\n如果检索结果不足以回答，请说明无法从现有知识中确认。';
 
-const activeFoundationMode = computed<WorkflowFoundationMode>(() =>
-  props.foundationMode === 'tool' ? 'tool' : 'application',
-);
-const activePaletteMode = computed<PaletteMode>(
-  () =>
-    props.paletteMode ||
-    (activeFoundationMode.value === 'tool' ? 'tool' : 'application'),
-);
-const defaultGraphData = computed(() =>
-  activeFoundationMode.value === 'tool'
-    ? DEFAULT_TOOL_GRAPH_DATA
-    : DEFAULT_GRAPH_DATA,
-);
-const fallbackNodeType = computed(() =>
-  activeFoundationMode.value === 'tool' ? 'tool-base-node' : 'base-node',
-);
+const activeFoundationMode = computed<WorkflowFoundationMode>(() => {
+  if (props.foundationMode === 'tool') return 'tool';
+  if (props.foundationMode === 'knowledge') return 'knowledge';
+  return 'application';
+});
+const activePaletteMode = computed<PaletteMode>(() => {
+  if (props.paletteMode) return props.paletteMode;
+  if (activeFoundationMode.value === 'tool') return 'tool';
+  if (activeFoundationMode.value === 'knowledge') return 'knowledge';
+  return 'application';
+});
+const defaultGraphData = computed(() => {
+  if (activeFoundationMode.value === 'tool') return DEFAULT_TOOL_GRAPH_DATA;
+  if (activeFoundationMode.value === 'knowledge')
+    return DEFAULT_KNOWLEDGE_GRAPH_DATA;
+  return DEFAULT_GRAPH_DATA;
+});
+const fallbackNodeType = computed(() => {
+  if (activeFoundationMode.value === 'tool') return 'tool-base-node';
+  if (activeFoundationMode.value === 'knowledge') return 'knowledge-base-node';
+  return 'base-node';
+});
 
 function syncWorkflowProvide(lf: any) {
   if (!lf?.graphModel) return;
@@ -231,6 +242,9 @@ function syncGraphData() {
   if (!lf) return;
   if (activeFoundationMode.value === 'application') {
     syncStartNodeConfigFromBaseNode(lf.getNodeModelById?.('start-node'));
+  }
+  if (activeFoundationMode.value === 'knowledge') {
+    lf.getNodeModelById?.('knowledge-base-node')?.refreshVueComponent?.();
   }
   persistTransientLoopBodies(lf);
   workflowGraphData.value = prettyJson(
@@ -660,7 +674,9 @@ function bindCanvasShortcuts(lf: any) {
     lastCanvasMouse.hasValue = true;
   };
   lf.container?.addEventListener?.('mousemove', updateMouse);
-  lf.container?.addEventListener?.('mousedown', () => lf.container?.focus?.());
+  lf.container?.addEventListener?.('mousedown', () => {
+    if (document.activeElement !== lf.container) lf.container?.focus?.();
+  });
   unbindCanvasMouse = () =>
     lf.container?.removeEventListener?.('mousemove', updateMouse);
 
@@ -893,21 +909,21 @@ async function initLogicFlow() {
   if (!canvasRef.value || lfRef.value) return;
   const hasSize = await waitForElementSize(canvasRef.value);
   if (!hasSize || lfRef.value) return;
+  const bgColor = isDark.value ? '#1d1e1f' : '#f5f6f7';
+  const gridColor = isDark.value ? '#4a4a4a' : '#DEE0E3';
   const lf = new LogicFlow({
     adjustEdge: false,
     adjustEdgeStartAndEnd: false,
     container: canvasRef.value,
-    background: { backgroundColor: '#f5f6f7' },
+    background: { backgroundColor: bgColor },
     edgeType: 'app-edge',
     grid: {
-      config: { color: '#DEE0E3', thickness: 1 },
+      config: { color: gridColor, thickness: 1 },
       size: 10,
       type: 'dot',
       visible: true,
     },
-    history: true,
     keyboard: { enabled: true },
-    snapline: true,
     textEdit: false,
   });
   registerWorkflowNodes(lf);
@@ -1047,24 +1063,13 @@ async function deleteSelected() {
 function fitView() {
   const lf = lfRef.value;
   if (!lf) return;
-  if (typeof lf.fitView === 'function') lf.fitView(40, 40);
-  else lf.resetZoom();
-  const scale = Number(lf.graphModel?.transformModel?.SCALE_X || 1);
-  if (scale > 1) {
-    lf.resetZoom();
-    lf.translateCenter?.();
-  }
+  lf.resetZoom?.();
+  lf.resetTranslate?.();
+  if (typeof lf.fitView === 'function') lf.fitView();
 }
 
 function zoomCanvas(zoomIn: boolean) {
   lfRef.value?.zoom?.(zoomIn, [0, 0]);
-}
-
-function resetView() {
-  const lf = lfRef.value;
-  if (!lf) return;
-  lf.resetZoom();
-  lf.translateCenter?.();
 }
 
 function toggleCanvasDragMode(value: boolean) {
@@ -1086,142 +1091,52 @@ function setAllNodeCollapsed(collapsed: boolean) {
   syncGraphData();
 }
 
-function layoutWorkflowGraphData(graphData: WorkflowGraphData) {
-  const nodes = graphData.nodes;
-  if (nodes.length === 0) return graphData;
-  const nodeIds = new Set(nodes.map((node) => node.id));
-  const outgoing = new Map<string, string[]>();
-  const indegree = new Map<string, number>();
-  nodes.forEach((node) => {
-    outgoing.set(node.id, []);
-    indegree.set(node.id, 0);
-  });
-  graphData.edges.forEach((edge) => {
-    if (
-      !edge.source ||
-      !edge.target ||
-      !nodeIds.has(edge.source) ||
-      !nodeIds.has(edge.target)
-    )
-      return;
-    outgoing.get(edge.source)?.push(edge.target);
-    indegree.set(edge.target, (indegree.get(edge.target) || 0) + 1);
-  });
+function arrangeNodes() {
+  const lf = lfRef.value;
+  if (!lf?.graphModel) return;
 
-  const preferredRoots = nodes
-    .filter((node) =>
-      [
-        'base-node',
-        'knowledge-base-node',
-        'start-node',
-        'tool-start-node',
-      ].includes(node.type),
-    )
-    .map((node) => node.id);
-  const zeroIndegree = nodes
-    .filter(
-      (node) =>
-        (indegree.get(node.id) || 0) === 0 && !preferredRoots.includes(node.id),
-    )
-    .toSorted(
-      (left, right) =>
-        (left.y || 0) - (right.y || 0) || (left.x || 0) - (right.x || 0),
-    )
-    .map((node) => node.id);
-  const queue = [...preferredRoots, ...zeroIndegree].filter(
-    (id, index, source) => source.indexOf(id) === index,
-  );
-  const layerById = new Map<string, number>();
-  queue.forEach((id) => layerById.set(id, 0));
+  const { nodes, edges, gridSize } = lf.graphModel;
+  if (!nodes?.length) return;
 
-  for (let cursor = 0; cursor < queue.length; cursor += 1) {
-    const id = queue[cursor]!;
-    const nextLayer = (layerById.get(id) || 0) + 1;
-    (outgoing.get(id) || []).forEach((target) => {
-      const current = layerById.get(target);
-      if (current === undefined || nextLayer > current)
-        layerById.set(target, nextLayer);
-      indegree.set(target, Math.max(0, (indegree.get(target) || 0) - 1));
-      if ((indegree.get(target) || 0) === 0 && !queue.includes(target))
-        queue.push(target);
-    });
+  // Match MaxKB dagre defaults
+  let nodesep = 40;
+  let ranksep = 40;
+  if (gridSize > 20) {
+    nodesep = gridSize * 2;
+    ranksep = gridSize * 2;
   }
 
-  nodes.forEach((node) => {
-    if (layerById.has(node.id)) return;
-    const incomingLayers = graphData.edges
-      .filter(
-        (edge) =>
-          edge.target === node.id && edge.source && layerById.has(edge.source),
-      )
-      .map((edge) => layerById.get(edge.source!) || 0);
-    layerById.set(
-      node.id,
-      incomingLayers.length > 0 ? Math.max(...incomingLayers) + 1 : 0,
-    );
+  const layoutInstance = new DagreLayout({
+    type: 'dagre',
+    rankdir: 'LR',
+    align: 'DR',
+    nodesep,
+    ranksep,
+    begin: [120, 120],
   });
 
-  const layers = new Map<number, WorkflowNode[]>();
-  nodes.forEach((node) => {
-    const layer = layerById.get(node.id) || 0;
-    const layerNodes = layers.get(layer) || [];
-    layerNodes.push(node);
-    layers.set(layer, layerNodes);
+  const layoutData = layoutInstance.layout({
+    nodes: nodes.map((node: any) => ({
+      id: node.id,
+      model: node,
+      size: {
+        width: node.width,
+        height: node.height,
+      },
+    })),
+    edges: edges.map((edge: any) => ({
+      source: edge.sourceNodeId,
+      target: edge.targetNodeId,
+      model: edge,
+    })),
   });
 
-  const arrangedNodes = new Map<string, WorkflowNode>();
-  [...layers.entries()].forEach(([layer, layerNodes]) => {
-    layerNodes
-      .toSorted((left, right) => {
-        const parentY = (nodeId: string) => {
-          const parents = graphData.edges.filter(
-            (edge) =>
-              edge.target === nodeId &&
-              edge.source &&
-              arrangedNodes.has(edge.source),
-          );
-          if (parents.length === 0) return 0;
-          let parentYTotal = 0;
-          parents.forEach((edge) => {
-            if (edge.source)
-              parentYTotal += arrangedNodes.get(edge.source)?.y || 0;
-          });
-          return parentYTotal / parents.length;
-        };
-        return (
-          parentY(left.id) - parentY(right.id) ||
-          (left.y || 0) - (right.y || 0) ||
-          (left.x || 0) - (right.x || 0)
-        );
-      })
-      .forEach((node, index) => {
-        arrangedNodes.set(node.id, {
-          ...node,
-          x: 180 + layer * 420,
-          y: 140 + index * 240,
-        });
-      });
+  layoutData.nodes?.forEach((node: any) => {
+    const { model } = node;
+    model.setPosition?.({ x: node.x, y: node.y });
   });
 
-  return {
-    ...graphData,
-    nodes: nodes.map((node) => arrangedNodes.get(node.id) || node),
-  };
-}
-
-function arrangeNodes() {
-  const graphData = normalizeGraphData(
-    fromLogicFlowGraph(
-      lfRef.value?.getGraphData?.() || parsedGraphData.value,
-      parsedGraphData.value,
-      activeFoundationMode.value,
-    ),
-    true,
-    true,
-    activeFoundationMode.value,
-  );
-  workflowGraphData.value = prettyJson(layoutWorkflowGraphData(graphData));
-  renderGraphData(undefined, true);
+  fitView();
 }
 
 function refreshGraphData() {
@@ -1244,6 +1159,23 @@ function runLocalValidation(showMessage = true) {
     true,
     activeFoundationMode.value,
   );
+  if (activeFoundationMode.value === 'knowledge') {
+    const hasKnowledgeEntry = graphData.nodes.some(
+      (node) =>
+        node.id === 'knowledge-base-node' ||
+        (node.properties as Record<string, any> | undefined)?.kind ===
+          'data-source',
+    );
+    if (!hasKnowledgeEntry) {
+      localValidation.value = {
+        errors: ['知识工作流必须包含一个知识库基础节点'],
+        warnings: [],
+      };
+      emit('localValidationChange', localValidation.value);
+      if (showMessage) ElMessage.error('本地校验未通过：1 个错误');
+      return false;
+    }
+  }
   localValidation.value = validateWorkflow(
     graphData,
     activeFoundationMode.value,
@@ -1298,6 +1230,19 @@ watch(activeFoundationMode, () => {
   refreshRenderedNodeComponents();
 });
 
+watch(isDark, (dark) => {
+  if (!lfRef.value) return;
+  const bgColor = dark ? '#1d1e1f' : '#f5f6f7';
+  const gridColor = dark ? '#4a4a4a' : '#DEE0E3';
+  lfRef.value.graphModel.background = { backgroundColor: bgColor };
+  lfRef.value.graphModel.grid = {
+    config: { color: gridColor, thickness: 1 },
+    size: 10,
+    type: 'dot',
+    visible: true,
+  };
+});
+
 onMounted(async () => {
   await nextTick();
   await initLogicFlow();
@@ -1306,7 +1251,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unbindCanvasMouse?.();
   unbindDocumentPaste?.();
-  lfRef.value?.destroy?.();
+  const lf = lfRef.value;
+  if (lf) {
+    // LogicFlow 2.0.14 destroy() unconditionally calls this.clearThemeMode()
+    (lf as any).clearThemeMode = () => {};
+    lf.destroy?.();
+  }
   lfRef.value = undefined;
 });
 
@@ -1431,7 +1381,6 @@ defineExpose({
         @collapse="setAllNodeCollapsed(true)"
         @expand="setAllNodeCollapsed(false)"
         @fit="fitView"
-        @reset="resetView"
         @toggle-drag="toggleCanvasDragMode"
         @zoom-in="zoomCanvas(true)"
         @zoom-out="zoomCanvas(false)"
@@ -2203,7 +2152,7 @@ defineExpose({
   border: 1px solid var(--el-border-color-light);
   border-top: 5px solid var(--node-accent);
   border-radius: 8px;
-  box-shadow: 0 10px 24px rgb(15 23 42 / 8%);
+  box-shadow: 0 10px 24px rgb(var(--el-text-color-primary-rgb) / 8%);
 }
 
 :deep(.workflow-html-node__header) {

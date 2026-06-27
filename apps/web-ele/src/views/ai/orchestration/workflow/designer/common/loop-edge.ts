@@ -12,7 +12,7 @@ class LoopEdgeModel extends AppEdgeModel {
 
   override getEdgeStyle() {
     const style = super.getEdgeStyle();
-    style.stroke = '#BBBFC4';
+    style.stroke = 'var(--el-border-color-darker)';
     style.strokeWidth = 2;
     style.offset = 0;
     return style;

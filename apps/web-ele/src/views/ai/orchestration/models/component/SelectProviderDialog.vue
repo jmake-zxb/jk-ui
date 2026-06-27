@@ -146,7 +146,7 @@ defineExpose({ open, close });
           <div class="provider-card-inner">
             <span
               class="provider-card-icon"
-              v-safe-html="getProviderIcon(data)"
+              v-html="getProviderIcon(data)"
             ></span>
             <span class="provider-card-name">{{ data.name }}</span>
           </div>
