@@ -1,0 +1,93 @@
+{
+  "userInput": "用户输入",
+  "quote": "引用",
+  "download": "下载",
+  "share": "分享",
+  "history": "历史记录",
+  "executing": "执行中",
+  "copyLinkText": "复制链接文本",
+  "noDocument": "暂无文档",
+  "noPermissionDownload": "无权限下载",
+  "inputPlaceholder": {
+    "default": "请输入您的问题...",
+    "disabled": "当前对话已结束",
+    "holdToTalk": "按住说话",
+    "speaking": "松开发送，上滑取消",
+    "cancelTouchChat": "松开手指，取消发送",
+    "touchChatMessage": "按住说话",
+    "recorderLoading": "录音加载中..."
+  },
+  "operation": {
+    "startChat": "开始对话",
+    "stopChat": "停止回答",
+    "regeneration": "重新生成",
+    "continue": "继续",
+    "like": "点赞",
+    "oppose": "反对",
+    "cancelLike": "取消点赞",
+    "cancelOppose": "取消反对",
+    "play": "播放",
+    "pause": "暂停"
+  },
+  "tip": {
+    "prologueMessage": "欢迎使用智能对话助手",
+    "answerMessage": "正在思考中...",
+    "answerLoading": "正在生成回答",
+    "stopAnswer": "回答已停止",
+    "inputParamMessage1": "请输入必填参数：",
+    "inputParamMessage2": "",
+    "confirm": "确认",
+    "recorderTip": "录音提示",
+    "error500Message": "服务器错误，请稍后重试",
+    "errorIdentifyMessage": "识别错误",
+    "errorLimitMessage": "超出限制"
+  },
+  "KnowledgeSource": {
+    "title": "知识来源",
+    "referenceParagraph": "引用段落",
+    "consume": "消耗",
+    "consumeTime": "耗时",
+    "noSource": "暂无来源"
+  },
+  "executionDetails": {
+    "title": "执行详情",
+    "currentChat": "当前对话",
+    "question": "问题",
+    "answer": "回答",
+    "knowedMessage": "已知信息",
+    "errLog": "错误日志"
+  },
+  "paragraphSource": {
+    "question": "问题",
+    "questionPadded": "填充后的问题"
+  },
+  "uploadFile": {
+    "localUpload": "本地上传",
+    "urlTitle": "URL地址",
+    "urlPlaceholder": "请输入文件URL地址",
+    "fileType": "文件类型",
+    "limit": "大小限制",
+    "most": "最多上传",
+    "sizeLimit": "文件大小不能超过",
+    "sizeLimit2": "",
+    "limitMessage2": "文件数量超过限制",
+    "tipMessage": "提示信息",
+    "errorMessage": "上传失败",
+    "urlErrorMessage": "URL 地址无效",
+    "invalidUrl": "无效的 URL",
+    "documentMessage": "文档上传成功",
+    "imageMessage": "图片上传成功",
+    "audioMessage": "音频上传成功",
+    "videoMessage": "视频上传成功",
+    "otherMessage": "文件上传成功"
+  },
+  "vote": {
+    "placeholder": "请输入您的反馈...",
+    "likeTitle": "点赞原因",
+    "opposeTitle": "反对原因",
+    "accurate": "准确",
+    "complete": "完整",
+    "inaccurate": "不准确",
+    "irrelevantAnswer": "答非所问"
+  }
+}

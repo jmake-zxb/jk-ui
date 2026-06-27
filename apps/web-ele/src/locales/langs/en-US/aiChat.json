@@ -1,0 +1,93 @@
+{
+  "userInput": "User Input",
+  "quote": "Quote",
+  "download": "Download",
+  "share": "Share",
+  "history": "History",
+  "executing": "Executing",
+  "copyLinkText": "Copy Link Text",
+  "noDocument": "No Document",
+  "noPermissionDownload": "No Permission to Download",
+  "inputPlaceholder": {
+    "default": "Please enter your question...",
+    "disabled": "The conversation has ended",
+    "holdToTalk": "Hold to talk",
+    "speaking": "Release to send, slide up to cancel",
+    "cancelTouchChat": "Release to cancel sending",
+    "touchChatMessage": "Hold to talk",
+    "recorderLoading": "Loading recorder..."
+  },
+  "operation": {
+    "startChat": "Start Chat",
+    "stopChat": "Stop",
+    "regeneration": "Regenerate",
+    "continue": "Continue",
+    "like": "Like",
+    "oppose": "Dislike",
+    "cancelLike": "Cancel Like",
+    "cancelOppose": "Cancel Dislike",
+    "play": "Play",
+    "pause": "Pause"
+  },
+  "tip": {
+    "prologueMessage": "Welcome to the intelligent conversation assistant",
+    "answerMessage": "Thinking...",
+    "answerLoading": "Generating answer",
+    "stopAnswer": "Answer stopped",
+    "inputParamMessage1": "Please enter required parameters: ",
+    "inputParamMessage2": "",
+    "confirm": "Confirm",
+    "recorderTip": "Recorder Tip",
+    "error500Message": "Server error, please try again later",
+    "errorIdentifyMessage": "Recognition error",
+    "errorLimitMessage": "Limit exceeded"
+  },
+  "KnowledgeSource": {
+    "title": "Knowledge Source",
+    "referenceParagraph": "Reference Paragraph",
+    "consume": "Consume",
+    "consumeTime": "Time",
+    "noSource": "No source"
+  },
+  "executionDetails": {
+    "title": "Execution Details",
+    "currentChat": "Current Chat",
+    "question": "Question",
+    "answer": "Answer",
+    "knowedMessage": "Known Information",
+    "errLog": "Error Log"
+  },
+  "paragraphSource": {
+    "question": "Question",
+    "questionPadded": "Padded Question"
+  },
+  "uploadFile": {
+    "localUpload": "Local Upload",
+    "urlTitle": "URL Address",
+    "urlPlaceholder": "Please enter file URL address",
+    "fileType": "File Type",
+    "limit": "Size Limit",
+    "most": "Max Upload",
+    "sizeLimit": "File size cannot exceed",
+    "sizeLimit2": "",
+    "limitMessage2": "File count exceeds limit",
+    "tipMessage": "Tip Message",
+    "errorMessage": "Upload failed",
+    "urlErrorMessage": "Invalid URL address",
+    "invalidUrl": "Invalid URL",
+    "documentMessage": "Document uploaded successfully",
+    "imageMessage": "Image uploaded successfully",
+    "audioMessage": "Audio uploaded successfully",
+    "videoMessage": "Video uploaded successfully",
+    "otherMessage": "File uploaded successfully"
+  },
+  "vote": {
+    "placeholder": "Please enter your feedback...",
+    "likeTitle": "Reason for Like",
+    "opposeTitle": "Reason for Dislike",
+    "accurate": "Accurate",
+    "complete": "Complete",
+    "inaccurate": "Inaccurate",
+    "irrelevantAnswer": "Irrelevant Answer"
+  }
+}

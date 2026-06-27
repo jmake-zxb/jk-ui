@@ -171,7 +171,9 @@ const uniqueParagraphList = computed(() => {
       <ElRow :gutter="8" v-if="uniqueParagraphList?.length">
         <template v-for="(item, index) in uniqueParagraphList" :key="index">
           <ElCol :span="12" class="mb-2">
-            <ElCard shadow="never" style="--el-card-padding: 8px">
+            <ElCard shadow="never" style="
+
+--el-card-padding: 8px">
               <div class="flex-between">
                 <div class="align-center flex">
                   <img

@@ -154,6 +154,7 @@ const file_count_limit = computed(() => {
           <ElCard
             shadow="never"
             style="
+
               --el-card-padding: 8px 12px;
 
               line-height: normal;

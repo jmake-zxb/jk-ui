@@ -1,0 +1,13 @@
+{
+  "application": {
+    "form": {
+      "roleSettings": {
+        "label": "Role Settings"
+      }
+    }
+  },
+  "chatLog": {
+    "editContent": "Edit Content",
+    "editMark": "Edit Mark"
+  }
+}

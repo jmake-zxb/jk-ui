@@ -167,6 +167,7 @@ onMounted(() => {
           shadow="always"
           class="mb-2 rounded-lg"
           style="
+
             --el-card-padding: 1px 16px;
 
             width: fit-content;
@@ -177,7 +178,9 @@ onMounted(() => {
               :is="iconComponent(`${progress.node_type}-icon`)"
               class="mr-2"
               :size="16"
-              style="--el-avatar-border-radius: 3px"
+              style="
+
+--el-avatar-border-radius: 3px"
             />
             <MdRenderer :source="progress.content" />
           </div>
@@ -185,7 +188,9 @@ onMounted(() => {
         <ElCard
           shadow="always"
           class="rounded-lg"
-          style="--el-card-padding: 6px 16px"
+          style="
+
+--el-card-padding: 6px 16px"
         >
           <MdRenderer
             v-if="

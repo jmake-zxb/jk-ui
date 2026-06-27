@@ -378,7 +378,9 @@ onMounted(() => {
     <ElCard
       shadow="always"
       class="rounded-lg"
-      style="--el-card-padding: 16px 8px"
+      style="
+
+--el-card-padding: 16px 8px"
     >
       <div class="align-center cursor flex w-full" style="padding: 0 8px">
         <span

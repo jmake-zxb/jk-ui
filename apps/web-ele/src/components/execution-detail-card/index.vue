@@ -93,7 +93,9 @@ const formData = computed({
   <ElCard
     class="g-mb-8 execution-detail-card"
     shadow="never"
-    style="--el-card-padding: 12px 16px"
+    style="
+
+--el-card-padding: 12px 16px"
   >
     <div
       class="flex-between cursor execution-detail-card__header"
@@ -161,7 +163,9 @@ const formData = computed({
                     <template v-for="(f, i) in data.document_list" :key="i">
                       <ElCard
                         shadow="never"
-                        style="--el-card-padding: 8px"
+                        style="
+
+--el-card-padding: 8px"
                         class="file cursor"
                       >
                         <div class="align-center flex">
@@ -225,7 +229,9 @@ const formData = computed({
                     <template v-for="(f, i) in data.other_list" :key="i">
                       <ElCard
                         shadow="never"
-                        style="--el-card-padding: 8px"
+                        style="
+
+--el-card-padding: 8px"
                         class="file cursor"
                       >
                         <div class="align-center flex">
@@ -414,7 +420,9 @@ const formData = computed({
                 <ElScrollbar height="200">
                   <ElCard
                     shadow="never"
-                    style="--el-card-padding: 8px"
+                    style="
+
+--el-card-padding: 8px"
                     v-for="(file_content, index) in data.content"
                     :key="index"
                     class="g-mb-8"
@@ -452,7 +460,9 @@ const formData = computed({
               <div class="g-p-8-12 border-t-dashed lighter">
                 <ElCard
                   shadow="never"
-                  style="--el-card-padding: 8px"
+                  style="
+
+--el-card-padding: 8px"
                   v-for="(file_content, index) in data.content"
                   :key="index"
                   class="g-mb-8"
@@ -1221,7 +1231,9 @@ const formData = computed({
                 <ElScrollbar height="200">
                   <ElCard
                     shadow="never"
-                    style="--el-card-padding: 8px"
+                    style="
+
+--el-card-padding: 8px"
                     v-for="(file_content, index) in data.output_params"
                     :key="index"
                     class="g-mb-8"

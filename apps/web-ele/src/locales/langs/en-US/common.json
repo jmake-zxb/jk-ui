@@ -1,0 +1,20 @@
+{
+  "copy": "Copy",
+  "confirm": "Confirm",
+  "cancel": "Cancel",
+  "custom": "Custom",
+  "moreSettings": "More Settings",
+  "submit": "Submit",
+  "edit": "Edit",
+  "copySuccess": "Copy Success",
+  "tip": "Tip",
+  "other": "Other",
+  "allCheck": "Select All",
+  "fileUpload": {
+    "document": "Document",
+    "image": "Image",
+    "audio": "Audio",
+    "video": "Video",
+    "other": "Other"
+  }
+}

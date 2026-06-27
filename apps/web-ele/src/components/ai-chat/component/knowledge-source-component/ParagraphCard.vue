@@ -58,7 +58,9 @@ function infoMessage(data: any) {
       <slot name="footer">
         <ElCard
           shadow="never"
-          style="--el-card-padding: 8px"
+          style="
+
+--el-card-padding: 8px"
           class="mb-3 w-full"
           v-if="data?.document_name?.trim()"
         >

@@ -1061,6 +1061,7 @@ async function saveUrl() {
               <ElCard
                 shadow="never"
                 style="
+
                   --el-card-padding: 8px;
 
                   max-width: 100%;
@@ -1107,6 +1108,7 @@ async function saveUrl() {
               <ElCard
                 shadow="never"
                 style="
+
                   --el-card-padding: 8px;
 
                   max-width: 100%;
@@ -1153,7 +1155,9 @@ async function saveUrl() {
             >
               <ElCard
                 shadow="never"
-                style="--el-card-padding: 8px"
+                style="
+
+--el-card-padding: 8px"
                 class="file cursor"
               >
                 <div
@@ -1416,7 +1420,9 @@ async function saveUrl() {
       <ElCard
         shadow="always"
         class="rounded-lg"
-        style="--el-card-padding: 16px"
+        style="
+
+--el-card-padding: 16px"
         v-if="props.applicationDetails.file_upload_setting.url_upload"
       >
         <ElForm label-position="top" :model="urlForm">

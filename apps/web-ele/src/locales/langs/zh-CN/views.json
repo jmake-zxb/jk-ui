@@ -1,0 +1,13 @@
+{
+  "application": {
+    "form": {
+      "roleSettings": {
+        "label": "角色设置"
+      }
+    }
+  },
+  "chatLog": {
+    "editContent": "编辑内容",
+    "editMark": "编辑标记"
+  }
+}

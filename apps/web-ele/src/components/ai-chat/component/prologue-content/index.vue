@@ -83,7 +83,9 @@ const prologue = computed(() => {
       <ElCard
         shadow="always"
         class="rounded-lg"
-        style="--el-card-padding: 10px 16px 12px"
+        style="
+
+--el-card-padding: 10px 16px 12px"
       >
         <MdRenderer
           :source="prologue"

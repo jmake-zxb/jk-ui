@@ -129,7 +129,9 @@ const activeText = computed(() => {
         :validate-event="false"
         placeholder="搜索"
         class="input-with-select"
-        style="--el-color-danger: #c0c4cc"
+        style="
+
+--el-color-danger: #c0c4cc"
         clearable
       >
         <template #prepend>
@@ -142,6 +144,7 @@ const activeText = computed(() => {
       :data="tableData"
       highlight-current-row
       style="
+
         --el-bg-color: #f5f6f7;
 
         width: 100%;
