@@ -1,74 +1,65 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { MdPreview } from 'md-editor-v3';
-
 import ExecutionDetailCard from '#/components/execution-detail-card/index.vue';
+import MdRenderer from '#/components/markdown/MdRenderer.vue';
 import { isWorkFlow } from '#/utils/application';
 import { arraySort } from '#/utils/array';
 
-import 'md-editor-v3/lib/preview.css';
-
 const props = defineProps<{
   appType?: string;
-  detail?: Array<Record<string, any>>;
+  detail?: any[];
 }>();
 
-/** 工作流模式：按 index 排序后交给 ExecutionDetailCard 逐条渲染 */
-const sortedDetail = computed(() => arraySort(props.detail ?? [], 'index'));
-
-// ---- 以下为简单对话模式（非工作流）的计算属性 ----
-
-/** 错误步骤信息 */
 const errStepMsg = computed(() => {
-  const errStep = props.detail?.find((item) => item.status === 500);
-  if (errStep) {
-    return `${errStep.step_type || errStep.type}: ${errStep.err_message}`;
+  const err_step = props.detail?.find((item) => item.status === 500);
+  if (err_step) {
+    return `${err_step.step_type}: ${err_step.err_message}`;
   }
   return undefined;
 });
 
-/** chat_step 类型的步骤（简单对话模式才存在） */
 const messageList = computed(() => {
-  const chatStep = props.detail?.find((item) => item.step_type === 'chat_step');
-  return chatStep?.message_list ?? [];
+  const chat_step = props.detail?.find(
+    (item) => item.step_type === 'chat_step',
+  );
+  if (chat_step) {
+    return chat_step.message_list;
+  }
+  return [];
 });
+const get_padding_problem = () => {
+  return props.detail?.find((item) => item.step_type === 'problem_padding');
+};
 
-const problemPadding = computed(() =>
-  props.detail?.find((item) => item.step_type === 'problem_padding'),
-);
+const get_padded_problem = () => {
+  return props.detail?.find((item) => item.step_type === 'problem_padding');
+};
 
 const paddedProblem = computed(() => {
-  if (problemPadding.value) {
-    return problemPadding.value.padding_problem_text ?? '';
-  }
-  return '';
+  const problem_padded = get_padded_problem();
+  return problem_padded ? problem_padded.padding_problem_text : '';
 });
 
 const problem = computed(() => {
-  if (problemPadding.value) {
-    return problemPadding.value.problem_text ?? '';
+  const problem_padding = get_padding_problem();
+  if (problem_padding) {
+    return problem_padding.problem_text;
   }
-  const userList = messageList.value.filter(
+  const user_list = messageList.value.filter(
     (item: any) => item.role === 'user',
   );
-  if (userList.length > 0) {
-    return userList[userList.length - 1].content;
-  }
-  return '';
+  return user_list.length > 0 ? user_list[user_list.length - 1].content : '';
 });
 
 const system = computed(() => {
-  const sysMsgs = messageList.value.filter(
+  const user_list = messageList.value.filter(
     (item: any) => item.role === 'system',
   );
-  if (sysMsgs.length > 0) {
-    return sysMsgs[sysMsgs.length - 1].content;
-  }
-  return '';
+  return user_list.length > 0 ? user_list[user_list.length - 1].content : '';
 });
 
-const historyRecord = computed(() => {
+const historyRecord = computed<any>(() => {
   const messages = messageList.value.filter(
     (item: any) => item.role !== 'system',
   );
@@ -85,163 +76,151 @@ const currentChat = computed(() => {
   return messages.slice(-2, -1);
 });
 
-const aiResponse = computed(() => {
-  const messages = messageList.value.filter(
+const AiResponse = computed(() => {
+  const messages = messageList.value?.filter(
     (item: any) => item.role !== 'system',
   );
   return messages.slice(-1);
 });
-</script>
 
+// Group execution details by view_type
+// Consecutive nodes with view_type !=== 'single_view' are grouped together
+// Nodes with view_type === 'single_view' are kept separate
+const groupedDetails = computed(() => {
+  const sorted = arraySort(props.detail ?? [], 'index');
+  const groups: any[][] = [];
+  let currentGroup: any[] = [];
+  let previousViewType: null | string = null;
+
+  for (const item of sorted) {
+    const viewType = item.view_type;
+
+    // Start a new group if:
+    // 1. This is the first item, OR
+    // 2. Current item is single_view, OR
+    // 3. Previous item was single_view
+    if (
+      currentGroup.length === 0 ||
+      viewType === 'single_view' ||
+      previousViewType === 'single_view'
+    ) {
+      if (currentGroup.length > 0) {
+        groups.push(currentGroup);
+      }
+      currentGroup = [item];
+    } else {
+      // Add to current group if both current and previous are not single_view
+      currentGroup.push(item);
+    }
+
+    previousViewType = viewType;
+  }
+
+  // Add the last group
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  return groups;
+});
+</script>
 <template>
   <div class="execution-details">
-    <!-- 工作流模式：逐节点渲染 -->
-    <div v-if="isWorkFlow(appType) || sortedDetail.length > 0">
-      <template v-for="(item, index) in sortedDetail" :key="index">
-        <ExecutionDetailCard :data="item" />
+    <div v-if="isWorkFlow(props.appType)">
+      <template v-for="(group, groupIndex) in groupedDetails" :key="groupIndex">
+        <ExecutionDetailCard v-if="group.length === 1" :data="group[0]" />
+        <div v-else class="execution-detail-group">
+          <template v-for="(item, index) in group" :key="index">
+            <ExecutionDetailCard :data="item" />
+          </template>
+        </div>
       </template>
     </div>
 
-    <!-- 简单对话模式 -->
     <template v-else>
-      <div v-if="!detail?.length" class="empty-message">暂无执行详情</div>
-      <template v-else>
-        <div class="detail-card">
-          <h5 class="detail-section-title">问题</h5>
-          <div class="detail-section-body">
-            <span class="g-mb-8">user: {{ problem }}</span>
+      <div class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('aiChat.paragraphSource.question') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <span class="mb-2">user: {{ problem }}</span>
+        </div>
+      </div>
+      <div v-if="paddedProblem" class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('aiChat.paragraphSource.questionPadded') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <span class="mb-2">user: {{ paddedProblem }}</span>
+        </div>
+      </div>
+      <div v-if="system" class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('views.application.form.roleSettings.label') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <span class="mb-2">{{ system }}</span>
+        </div>
+      </div>
+
+      <div class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('aiChat.history') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <div v-for="(msg, index) in historyRecord" :key="index">
+            <span>{{ msg.role }}: </span>
+            <span>{{ msg.content }}</span>
           </div>
         </div>
-        <div v-if="paddedProblem" class="detail-card">
-          <h5 class="detail-section-title">优化后问题</h5>
-          <div class="detail-section-body">
-            <span class="g-mb-8">user: {{ paddedProblem }}</span>
+      </div>
+
+      <div class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('aiChat.executionDetails.currentChat') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <div class="mb-2">
+            {{ $$t('aiChat.executionDetails.knowedMessage') }}:
+          </div>
+          <div v-for="(msg, index) in currentChat" :key="index">
+            <span>{{ msg.content }}</span>
           </div>
         </div>
-        <div v-if="system" class="detail-card">
-          <h5 class="detail-section-title">角色设定</h5>
-          <div class="detail-section-body">
-            <span class="g-mb-8">{{ system }}</span>
-          </div>
-        </div>
-        <div class="detail-card">
-          <h5 class="detail-section-title">历史记录</h5>
-          <div class="detail-section-body">
-            <template v-if="historyRecord.length > 0">
-              <div
-                v-for="(msg, index) in historyRecord"
-                :key="index"
-                class="g-mb-4"
-              >
-                <span class="color-secondary g-mr-4">{{ msg.role }}:</span>
-                <span>{{ msg.content }}</span>
-              </div>
-            </template>
+      </div>
+
+      <div class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('aiChat.executionDetails.answer') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <div v-for="(msg, index) in AiResponse" :key="index">
+            <MdRenderer
+              v-if="msg.content"
+              :source="msg.content"
+              no-img-zoom-in
+            />
             <template v-else> -</template>
           </div>
         </div>
-        <div class="detail-card">
-          <h5 class="detail-section-title">当前对话</h5>
-          <div class="detail-section-body">
-            <div class="g-mb-8">已知信息:</div>
-            <div v-for="(msg, index) in currentChat" :key="index">
-              <span>{{ msg.content }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="detail-card">
-          <h5 class="detail-section-title">回答</h5>
-          <div class="detail-section-body">
-            <div v-for="(msg, index) in aiResponse" :key="index">
-              <MdPreview
-                v-if="msg.content"
-                :editor-id="`exec-answer-${index}`"
-                :model-value="msg.content"
-                no-iconfont
-                no-prettier
-                :code-foldable="false"
-              />
-              <template v-else> -</template>
-            </div>
-          </div>
-        </div>
-        <div v-if="errStepMsg" class="detail-card is-error">
-          <h5 class="detail-section-title">错误日志</h5>
-          <div class="detail-section-body">
+      </div>
+      <div v-if="errStepMsg" class="card-never mb-3 rounded-md">
+        <h5 class="p-8-12">
+          {{ $$t('aiChat.executionDetails.errLog') }}
+        </h5>
+        <div class="p-8-12 border-t-dashed lighter">
+          <div>
             <span>{{ errStepMsg }}</span>
           </div>
         </div>
-      </template>
+      </div>
     </template>
   </div>
 </template>
-
-<style scoped>
+<style lang="scss" scoped>
 .execution-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 100px;
-}
-
-.execution-details :deep(.md-editor-preview) {
-  background: none !important;
-}
-
-.empty-message {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100px;
-  font-size: 14px;
-  color: var(--el-text-color-secondary);
-}
-
-.detail-card {
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-}
-
-.detail-card + .detail-card {
-  margin-top: 8px;
-}
-
-.detail-section-title {
-  padding: 8px 12px;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  border-bottom: 1px dashed var(--el-border-color-lighter);
-}
-
-.detail-section-body {
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--el-text-color-regular);
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-}
-
-.g-mb-4 {
-  margin-bottom: 4px;
-}
-
-.g-mb-8 {
-  margin-bottom: 8px;
-}
-
-.g-mr-4 {
-  margin-right: 4px;
-}
-
-.color-secondary {
-  color: var(--el-text-color-secondary);
-}
-
-.is-error {
-  color: var(--el-color-danger);
+  :deep(.md-editor-previewOnly) {
+    background: none !important;
+  }
 }
 </style>

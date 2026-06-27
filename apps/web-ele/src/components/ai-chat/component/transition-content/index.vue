@@ -1,32 +1,33 @@
 <script setup lang="ts">
+import { ElAvatar, ElImage } from 'element-plus';
+
 defineProps<{
-  application: Record<string, any>;
+  application: any;
   text: string;
   type: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
 }>();
 </script>
-
 <template>
-  <div class="question-content">
-    <div class="content">
-      <span>{{ text }}</span>
-      <span class="dotting"></span>
+  <!-- 问题内容 -->
+  <div class="question-content item-content lighter mb-4">
+    <div class="content p-12-16 rounded-lg">
+      <span> {{ text }}</span
+      ><span class="dotting"></span>
     </div>
-    <div class="avatar" v-if="application.show_user_avatar">
-      <el-image
+    <div class="avatar ml-2" v-if="application.show_user_avatar">
+      <ElImage
         v-if="application.user_avatar"
         :src="application.user_avatar"
         alt=""
         fit="cover"
         style="display: block; width: 28px; height: 28px"
       />
-      <el-avatar v-else :size="28">
-        <span style="font-size: 14px">U</span>
-      </el-avatar>
+      <ElAvatar v-else>
+        <img src="#/assets/user-icon.svg" style="width: 50%" alt="" />
+      </ElAvatar>
     </div>
   </div>
 </template>
-
 <style lang="scss" scoped>
 .question-content {
   box-sizing: border-box;
@@ -34,64 +35,81 @@ defineProps<{
   justify-content: flex-end;
   width: 100%;
   padding-left: var(--padding-left);
-  margin-bottom: 16px; /* was: .mb-16 */
-  font-weight: 400; /* was: .lighter */
 
   .content {
-    padding: 12px 16px; /* was: .p-12-16 */
-    background: #d6e2ff;
-    border-radius: 8px; /* was: .border-r-8 (MaxKB has this on content) */
+    padding-right: 16px;
+    padding-left: 16px;
+    background: var(--el-color-primary-light-9);
   }
 
-  .avatar {
-    float: left;
-    margin-left: 8px; /* was: .ml-8 */
+  .download-file {
+    height: 43px;
+
+    &:hover {
+      color: var(--el-color-primary);
+      border: 1px solid var(--el-color-primary);
+
+      .download-button {
+        display: block;
+        line-height: 26px;
+        text-align: center;
+      }
+
+      .show {
+        display: none;
+      }
+    }
+
+    .download-button {
+      display: none;
+    }
   }
 
-  /* was: .dotting — typing animation dots */
-  .dotting {
-    box-sizing: border-box;
-    display: inline-block;
-    width: 10px;
-    min-height: 2px;
-    padding-right: 2px;
-    padding-left: 2px;
-    margin-left: 2px;
-    background-color: currentcolor;
-    background-clip: content-box;
-    border-right: 2px solid currentcolor;
-    border-left: 2px solid currentcolor;
-    animation: dot 0.8s infinite step-start both;
+  .media-file-width {
+    :deep(.el-space__item) {
+      flex-grow: 1;
+      min-width: 40% !important;
+    }
+  }
 
-    &::before {
-      content: '';
+  .media-2 {
+    flex: 1;
+  }
+
+  .media-0 {
+    flex: inherit;
+  }
+
+  .media-1 {
+    width: 50%;
+  }
+}
+
+@media only screen and (max-width: 768px) {
+  .question-content {
+    .media-file-width {
+      :deep(.el-space__item) {
+        min-width: 100% !important;
+      }
+    }
+
+    .media-1 {
+      width: 100%;
     }
   }
 }
 
-@keyframes dot {
-  0% {
-    background-color: transparent;
-    border-right-color: transparent;
-    border-left-color: currentcolor;
-  }
+.debug-ai-chat {
+  .question-content {
+    .media-file-width {
+      :deep(.el-space__item) {
+        min-width: 100% !important;
+      }
+    }
 
-  33% {
-    background-color: transparent;
-    border-right-color: currentcolor;
-    border-left-color: currentcolor;
-  }
-
-  66% {
-    background-color: currentcolor;
-    border-right-color: currentcolor;
-    border-left-color: currentcolor;
-  }
-
-  100% {
-    background-color: currentcolor;
-    border-right-color: currentcolor;
-    border-left-color: transparent;
+    .media-1 {
+      width: 100%;
+    }
   }
 }
 </style>

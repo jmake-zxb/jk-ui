@@ -1,378 +1,346 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue';
 
-import { Document, Link, Tickets } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowUp, Document } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElCard,
   ElCol,
+  ElCollapseTransition,
   ElDialog,
   ElDivider,
   ElIcon,
-  ElMessage,
   ElRow,
   ElScrollbar,
 } from 'element-plus';
 import { cloneDeep } from 'lodash-es';
 
-import { getImgUrl } from '#/utils/file-util';
+import { $t } from '#/locales';
+import { arraySort } from '#/utils/array';
+import { getFileUrl, getImgUrl } from '#/utils/common';
+import { MsgInfo } from '#/utils/message';
 
 import ExecutionDetailContent from './ExecutionDetailContent.vue';
 import ParagraphDocumentContent from './ParagraphDocumentContent.vue';
 import ParagraphSourceContent from './ParagraphSourceContent.vue';
 
-const props = withDefaults(
-  defineProps<{
-    application?: Record<string, any>;
-    appType?: string;
-    data?: Record<string, any>;
-    executionIsRightPanel?: boolean;
-    type?: string;
-  }>(),
-  {
-    appType: '',
-    application: () => ({}),
-    data: () => ({}),
-    executionIsRightPanel: false,
-    type: '',
+const props = defineProps({
+  data: {
+    type: Object,
+    default: () => {},
   },
-);
+  type: {
+    type: String,
+    default: '',
+  },
+  appType: {
+    type: String,
+    default: '',
+  },
+  executionIsRightPanel: {
+    type: Boolean,
+    required: false,
+  },
+  application: {
+    type: Object,
+    default: () => {},
+  },
+});
 
-const emit = defineEmits<{
-  openExecutionDetail: [value: unknown];
-  openParagraph: [value: Record<string, any>];
-  openParagraphDocument: [value: Record<string, any>];
-}>();
-
+const emit = defineEmits([
+  'openExecutionDetail',
+  'openParagraph',
+  'openParagraphDocument',
+]);
+const showPDF = (item: any) => {
+  return (
+    item.document_name.toLocaleLowerCase().endsWith('.pdf') &&
+    item.meta?.source_file_id &&
+    props.executionIsRightPanel
+  );
+};
 const dialogVisible = ref(false);
 const dialogTitle = ref('');
-const currentComponent = shallowRef<unknown>(null);
-const currentChatDetail = ref<unknown>(null);
+const currentComponent = shallowRef<any>(null);
+const currentChatDetail = ref<any>(null);
+const dialogType = ref('');
+const inlineDetailExpanded = ref(false);
 
-const showSourceBlock = computed(() =>
-  props.type === 'log' || props.type === 'debug-ai-chat'
-    ? true
-    : props.application?.show_source,
-);
-
-const showExecBlock = computed(() =>
-  props.type === 'log' || props.type === 'debug-ai-chat'
-    ? true
-    : props.application?.show_exec,
-);
-
-function parseMeta(value: unknown): Record<string, any> {
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return {};
-    }
+function handleExecutionDetail(details: any) {
+  if (props.type === 'debug-ai-chat') {
+    inlineDetailExpanded.value = !inlineDetailExpanded.value;
+  } else {
+    openExecutionDetail(details);
   }
-  return value && typeof value === 'object' ? value : {};
 }
 
-function documentName(item: Record<string, any>) {
-  const meta = parseMeta(item.meta ?? item.metadata);
-  return `${
-    item.document_name ||
-    item.documentName ||
-    meta.document_name ||
-    meta.source_file_name ||
-    item.title ||
-    '知识段落'
-  }`;
+function infoMessage(data: any) {
+  if (data?.meta?.allow_download === false) {
+    MsgInfo($t('aiChat.noPermissionDownload'));
+  } else {
+    MsgInfo($t('aiChat.noDocument'));
+  }
 }
-
-function metaOf(item: Record<string, any>): Record<string, any> {
-  const meta = parseMeta(item.meta ?? item.metadata);
-  return {
-    ...meta,
-    source_file_id:
-      meta.source_file_id ?? meta.sourceFileId ?? item.source_file_id,
-    source_url: meta.source_url ?? meta.sourceUrl ?? item.source_url,
-  };
-}
-
-function getFileUrl(fileId?: number | string) {
-  if (!fileId) return '';
-  return `/admin/sys-file/details?id=${encodeURIComponent(`${fileId}`)}`;
-}
-
-function showPDF(item: Record<string, any>) {
-  if (!props.executionIsRightPanel) return false;
-  return (
-    documentName(item).toLowerCase().endsWith('.pdf') &&
-    !!metaOf(item).source_file_id
-  );
-}
-
-function infoMessage(data: Record<string, any>) {
-  if (metaOf(data).allow_download === false)
-    ElMessage.info('暂无权限下载该文档');
-  else ElMessage.info('暂无可预览文档');
-}
-
-function openParagraph(row: Record<string, any>, id?: string) {
-  dialogTitle.value = '知识来源';
+function openParagraph(row: any, id?: string) {
+  dialogTitle.value = $t('aiChat.KnowledgeSource.title');
   const obj = cloneDeep(row);
-  const list = Array.isArray(obj.paragraph_list) ? obj.paragraph_list : [];
-  obj.paragraph_list = (
-    id ? list.filter((v: any) => v.knowledge_id === id) : list
-  ).toSorted(
-    (a: any, b: any) =>
-      Number(b.similarity ?? b.score ?? 0) -
-      Number(a.similarity ?? a.score ?? 0),
-  );
+  obj.paragraph_list = id
+    ? obj.paragraph_list.filter((v: any) => v.knowledge_id === id)
+    : obj.paragraph_list;
+  obj.paragraph_list = arraySort(obj.paragraph_list, 'similarity', true);
   if (props.executionIsRightPanel) {
-    emit('openParagraph', obj);
+    emit('openParagraph');
     return;
   }
+  dialogType.value = '';
   currentComponent.value = ParagraphSourceContent;
   currentChatDetail.value = obj;
   dialogVisible.value = true;
 }
-
-function openExecutionDetail(row: unknown) {
-  dialogTitle.value = '执行详情';
+function openExecutionDetail(row: any) {
+  dialogTitle.value = $t('aiChat.executionDetails.title');
   if (props.executionIsRightPanel) {
-    emit('openExecutionDetail', row);
+    emit('openExecutionDetail');
     return;
   }
+  dialogType.value = '';
   currentComponent.value = ExecutionDetailContent;
   currentChatDetail.value = row;
   dialogVisible.value = true;
 }
-
-function openParagraphDocument(row: Record<string, any>) {
+function openParagraphDocument(row: any) {
   if (props.executionIsRightPanel) {
     emit('openParagraphDocument', row);
     return;
   }
+  dialogType.value = 'pdfDocument';
   currentComponent.value = ParagraphDocumentContent;
-  dialogTitle.value = documentName(row);
+  dialogTitle.value = row.document_name;
   currentChatDetail.value = row;
   dialogVisible.value = true;
 }
 
 const uniqueParagraphList = computed(() => {
-  const seen = new Set<string>();
-  const list = Array.isArray(props.data?.paragraph_list)
-    ? props.data.paragraph_list
-    : [];
-  return list.filter((item: Record<string, any>) => {
-    const key = documentName(item).trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-});
-
-function toFiniteNumber(value: unknown) {
-  const numberValue = Number(value ?? 0);
-  return Number.isFinite(numberValue) ? numberValue : 0;
-}
-
-const totalTokens = computed(
-  () =>
-    toFiniteNumber(props.data?.message_tokens) +
-    toFiniteNumber(props.data?.answer_tokens),
-);
-const runTime = computed(() => {
-  const seconds = toFiniteNumber(props.data?.run_time);
-  if (seconds < 0.01) {
-    return `${Math.round(seconds * 1000)} ms`;
-  }
-  return `${seconds.toFixed(2)} s`;
+  const seen = new Set();
+  return (
+    props.data.paragraph_list?.filter((paragraph: any) => {
+      const key = paragraph.document_name.trim();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      // 判断如果 meta 属性不是 {} 需要json解析 转对象
+      if (paragraph.meta && typeof paragraph.meta === 'string') {
+        paragraph.meta = JSON.parse(paragraph.meta);
+        paragraph.source_url = paragraph.meta.source_url;
+      }
+      return true;
+    }) || []
+  );
 });
 </script>
-
 <template>
   <div class="chat-knowledge-source">
-    <div v-if="showSourceBlock" class="source-title-row">
-      <span class="secondary-text">知识来源</span>
+    <div
+      class="align-center mt-4 flex"
+      v-if="
+        type === 'log' || type === 'debug-ai-chat'
+          ? true
+          : application.show_source
+      "
+    >
+      <span class="color-secondary mr-1">{{
+        $$t('aiChat.KnowledgeSource.title')
+      }}</span>
       <ElDivider direction="vertical" />
-      <ElButton type="primary" link @click="openParagraph(data)">
-        <ElIcon class="g-mr-4"><Tickets /></ElIcon>
-        引用分段 {{ data.paragraph_list?.length || 0 }}
+      <ElButton type="primary" class="mr-2" link @click="openParagraph(data)">
+        <AppIcon icon-name="app-reference-outlined" class="mr-1" />
+        {{ $$t('aiChat.KnowledgeSource.referenceParagraph') }}
+        {{ data.paragraph_list?.length || 0 }}
       </ElButton>
     </div>
 
-    <div v-if="showSourceBlock" class="source-list">
-      <ElRow v-if="uniqueParagraphList?.length" :gutter="8">
-        <ElCol
-          v-for="(item, index) in uniqueParagraphList"
-          :key="index"
-          :span="12"
-          class="g-mb-8"
-        >
-          <ElCard shadow="never" class="source-card">
-            <div class="source-card-inner">
-              <ElIcon v-if="metaOf(item).source_url" :size="22">
-                <Link />
-              </ElIcon>
-              <img
-                v-else
-                :src="getImgUrl(documentName(item))"
-                alt=""
-                width="24"
-              />
-              <button
-                v-if="showPDF(item)"
-                class="doc-link"
-                type="button"
-                @click="openParagraphDocument(item)"
-              >
-                {{ documentName(item) }}
-              </button>
-              <a
-                v-else-if="
-                  metaOf(item).source_file_id || metaOf(item).source_url
-                "
-                class="doc-link"
-                :href="
-                  getFileUrl(metaOf(item).source_file_id) ||
-                  metaOf(item).source_url
-                "
-                target="_blank"
-                rel="noopener noreferrer"
-                :title="documentName(item).trim()"
-              >
-                {{ documentName(item) }}
-              </a>
-              <button
-                v-else
-                class="doc-link"
-                type="button"
-                @click="infoMessage(item)"
-              >
-                {{ documentName(item) }}
-              </button>
-            </div>
-          </ElCard>
-        </ElCol>
+    <div
+      class="mt-2"
+      v-if="
+        type === 'log' || type === 'debug-ai-chat'
+          ? true
+          : application.show_source
+      "
+    >
+      <ElRow :gutter="8" v-if="uniqueParagraphList?.length">
+        <template v-for="(item, index) in uniqueParagraphList" :key="index">
+          <ElCol :span="12" class="mb-2">
+            <ElCard shadow="never" style="--el-card-padding: 8px">
+              <div class="flex-between">
+                <div class="align-center flex">
+                  <img
+                    src="#/assets/fileType/web-link-icon.svg"
+                    alt=""
+                    width="24"
+                    v-if="item?.meta?.source_file_id || item?.meta?.source_url"
+                  />
+                  <img
+                    v-else
+                    :src="getImgUrl(item && item?.document_name)"
+                    alt=""
+                    width="24"
+                  />
+                  <div
+                    class="ellipsis-1 ml-1"
+                    :title="item?.document_name"
+                    v-if="showPDF(item)"
+                    @click="openParagraphDocument(item)"
+                  >
+                    <p>{{ item && item?.document_name }}</p>
+                  </div>
+                  <div
+                    class="ml-1"
+                    v-else-if="
+                      item?.meta?.source_file_id || item?.meta?.source_url
+                    "
+                  >
+                    <a
+                      :href="
+                        getFileUrl(item?.meta?.source_file_id) ||
+                        item?.meta?.source_url
+                      "
+                      target="_blank"
+                      class="ellipsis-1"
+                      :title="item?.document_name?.trim()"
+                    >
+                      <span :title="item?.document_name?.trim()">{{
+                        item?.document_name
+                      }}</span>
+                    </a>
+                  </div>
+                  <div v-else @click="infoMessage(item)">
+                    <span
+                      class="ellipsis-1 break-all"
+                      :title="item?.document_name?.trim()"
+                    >
+                      {{ item?.document_name?.trim() }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </ElCard>
+          </ElCol>
+        </template>
       </ElRow>
     </div>
 
-    <div v-if="showExecBlock" class="execution-details">
-      <div class="execution-summary">
-        <span class="g-mr-8">消耗 tokens: {{ totalTokens }}</span>
-        <span>耗时: {{ runTime }}</span>
+    <div
+      v-if="
+        type === 'log' || type === 'debug-ai-chat'
+          ? true
+          : application.show_exec
+      "
+      class="execution-details color-secondary flex-between mt-3 border-t"
+      style="padding-top: 12px; padding-bottom: 8px"
+    >
+      <div>
+        <span class="mr-2">
+          {{ $$t('aiChat.KnowledgeSource.consume') }}:
+          {{ data?.message_tokens + data?.answer_tokens }}
+        </span>
+        <span>
+          {{ $$t('aiChat.KnowledgeSource.consumeTime') }}:
+          {{ data?.run_time?.toFixed(2) }} s</span
+        >
       </div>
       <ElButton
-        class="execution-detail-button"
         type="primary"
         link
-        @click="openExecutionDetail(data)"
+        @click="handleExecutionDetail(data.execution_details)"
+        style="padding: 0"
       >
-        <ElIcon class="g-mr-4"><Document /></ElIcon>
-        执行详情
+        <ElIcon class="mr-1"><Document /></ElIcon>
+        {{ $$t('aiChat.executionDetails.title') }}
+        <ElIcon v-if="type === 'debug-ai-chat'" class="ml-1">
+          <ArrowUp v-if="inlineDetailExpanded" />
+          <ArrowDown v-else />
+        </ElIcon>
       </ElButton>
     </div>
-
+    <!-- debug-ai-chat 模式：执行详情内联展示 -->
+    <ElCollapseTransition>
+      <div
+        v-if="
+          type === 'debug-ai-chat' &&
+          inlineDetailExpanded &&
+          data.execution_details
+        "
+        class="inline-execution-detail mt-2"
+      >
+        <ExecutionDetailContent
+          :detail="data.execution_details"
+          :app-type="appType"
+        />
+      </div>
+    </ElCollapseTransition>
+    <!-- 知识库引用/执行详情 dialog -->
     <ElDialog
-      v-model="dialogVisible"
-      append-to-body
-      destroy-on-close
       class="scrollbar-dialog"
       :title="dialogTitle"
+      v-model="dialogVisible"
+      destroy-on-close
+      append-to-body
+      align-center
       :close-on-click-modal="false"
       :close-on-press-escape="false"
     >
+      <template #header="{ titleId, titleClass }">
+        <div class="flex-between">
+          <span
+            class="medium ellipsis"
+            style="max-width: 300px"
+            :title="dialogTitle"
+            :id="titleId"
+            :class="titleClass"
+          >
+            {{ dialogTitle }}
+          </span>
+          <!-- <div class="flex align-center mr-2" v-if="dialogType === 'pdfDocument'">
+            <span class="mr-1">
+              <el-button text>
+                <el-icon> <Download /> </el-icon>
+              </el-button>
+            </span>
+            <span>
+              <el-button text> <app-icon iconName="app-export" size="20" /></el-button>
+            </span>
+            <el-divider direction="vertical" />
+          </div> -->
+        </div>
+      </template>
+
       <ElScrollbar>
-        <div class="dialog-content">
+        <div class="mb-2 p-2" style="max-height: calc(100vh - 260px)">
           <component
             :is="currentComponent"
-            :app-type="appType"
             :detail="currentChatDetail"
+            :app-type="appType"
           />
         </div>
       </ElScrollbar>
     </ElDialog>
   </div>
 </template>
-
-<style scoped>
-.source-title-row,
-.execution-details,
-.source-card-inner {
-  display: flex;
-  align-items: center;
-}
-
-.source-title-row {
-  margin-top: 16px;
-}
-
-.secondary-text {
-  color: var(--el-text-color-secondary);
-}
-
-.source-list {
-  margin-top: 8px;
-}
-
-.source-card :deep(.el-card__body) {
+<style lang="scss" scoped>
+.inline-execution-detail {
+  max-height: 400px;
   padding: 8px;
-}
-
-.source-card-inner {
-  gap: 6px;
-  min-width: 0;
-}
-
-.doc-link {
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--el-color-primary);
-  white-space: nowrap;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-}
-
-.execution-details {
-  justify-content: space-between;
-  padding-top: 12px;
-  padding-bottom: 8px;
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.execution-summary {
-  display: flex;
-  flex-wrap: wrap;
-  row-gap: 4px;
-  min-width: 0;
-}
-
-.execution-detail-button {
-  padding: 0;
-}
-
-.dialog-content {
-  max-height: calc(100vh - 260px);
-  padding: 8px;
-}
-
-.g-mr-4 {
-  margin-right: 4px;
-}
-
-.g-mr-8 {
-  margin-right: 8px;
-}
-
-.g-mb-8 {
-  margin-bottom: 8px;
+  overflow-y: auto;
+  background: var(--el-fill-color-lighter, #f5f7fa);
+  border-radius: 4px;
 }
 
 @media only screen and (max-width: 420px) {
-  .execution-details {
-    display: block;
+  .chat-knowledge-source {
+    .execution-details {
+      display: block;
+    }
   }
 }
 </style>

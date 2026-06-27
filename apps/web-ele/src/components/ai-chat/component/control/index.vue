@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 
-import { ElMessage } from 'element-plus';
+import { ElDropdown, ElDropdownItem, ElDropdownMenu } from 'element-plus';
 
-import { aiChatBus } from '../../utils/bus';
+import { $t } from '#/locales';
+import bus from '#/utils/bus';
 
-const visibleMenu = ref(false);
-const menuStyle = ref<Record<string, string>>({});
+const isOpen = ref<boolean>(false);
+const menuPosition = ref({ x: 0, y: 0 });
 
 function getSelection() {
   const selection = window.getSelection();
@@ -23,66 +24,72 @@ function getSelection() {
   return undefined;
 }
 
-const openControl = (event: MouseEvent) => {
+/**
+ * 打开控制台
+ * @param event
+ */
+const openControl = (event: any) => {
   const c = getSelection();
   if (c) {
-    if (visibleMenu.value) {
+    menuPosition.value = { x: event.clientX, y: event.clientY };
+    if (isOpen.value) {
       clearSelectedText();
-      visibleMenu.value = false;
+      isOpen.value = false;
     } else {
       nextTick(() => {
-        menuStyle.value = {
-          left: `${event.clientX}px`,
-          top: `${event.clientY}px`,
-        };
-        visibleMenu.value = true;
+        isOpen.value = true;
       });
     }
     event.preventDefault();
   } else {
-    visibleMenu.value = false;
+    isOpen.value = false;
   }
 };
 
 const menus = ref([
   {
-    icon: 'copy',
-    label: '复制',
+    label: $t('common.copy'),
     click: () => {
       const selectionText = getSelection();
       if (selectionText) {
         clearSelectedText();
-        navigator.clipboard
-          ?.writeText(selectionText)
-          .then(() => {
-            ElMessage.success('复制成功');
-          })
-          .catch(() => {
-            const input = document.createElement('input');
-            input.setAttribute('value', selectionText);
-            document.body.append(input);
-            input.select();
-            try {
-              if (document.execCommand('copy')) {
-                ElMessage.success('复制成功');
-              }
-            } finally {
-              input.remove();
+        if (
+          navigator.clipboard === undefined ||
+          navigator.clipboard.writeText === undefined
+        ) {
+          const input = document.createElement('input');
+          input.setAttribute('value', selectionText);
+          document.body.append(input);
+          input.select();
+          try {
+            if (document.execCommand('copy')) {
+              ElMessage.success($t('common.copySuccess'));
             }
+          } finally {
+            input.remove();
+          }
+        } else {
+          navigator.clipboard.writeText(selectionText).then(() => {
+            ElMessage.success($t('common.copySuccess'));
           });
+        }
       }
+      isOpen.value = false;
     },
   },
   {
-    icon: 'quote',
-    label: '引用',
+    label: $t('aiChat.quote'),
     click: () => {
-      aiChatBus.emit('chat-input', getSelection());
+      bus.emit('chat-input', getSelection());
       clearSelectedText();
+      isOpen.value = false;
     },
   },
 ]);
 
+/**
+ * 清除选中文本
+ */
 const clearSelectedText = () => {
   if (window.getSelection) {
     const selection = window.getSelection();
@@ -92,57 +99,47 @@ const clearSelectedText = () => {
   }
 };
 
-function closeMenu() {
-  visibleMenu.value = false;
-}
+const handleVisibleChange = (visible: boolean) => {
+  if (!visible) {
+    isOpen.value = false;
+  }
+};
 
 onMounted(() => {
-  aiChatBus.on('open-control', openControl);
-  document.addEventListener('click', closeMenu);
-});
-
-onBeforeUnmount(() => {
-  aiChatBus.off('open-control', openControl);
-  document.removeEventListener('click', closeMenu);
+  bus.on('open-control', openControl);
 });
 </script>
 
 <template>
-  <div v-if="visibleMenu" class="control-menu" :style="menuStyle" @click.stop>
-    <div
-      v-for="(menu, index) in menus"
-      :key="index"
-      class="control-menu-item"
-      @click="
-        menu.click();
-        visibleMenu = false;
-      "
-    >
-      {{ menu.label }}
-    </div>
-  </div>
+  <ElDropdown
+    v-if="isOpen"
+    trigger="contextmenu"
+    :teleported="false"
+    :style="{
+      position: 'fixed',
+      left: `${menuPosition.x}px`,
+      top: `${menuPosition.y}px`,
+      zIndex: 9999,
+    }"
+    @visible-change="handleVisibleChange"
+  >
+    <span style="display: none"></span>
+    <template #dropdown>
+      <ElDropdownMenu>
+        <ElDropdownItem
+          v-for="(menu, index) in menus"
+          :key="index"
+          @click="menu.click"
+        >
+          {{ menu.label }}
+        </ElDropdownItem>
+      </ElDropdownMenu>
+    </template>
+  </ElDropdown>
 </template>
 
 <style lang="scss" scoped>
-.control-menu {
-  position: fixed;
-  z-index: 9999;
-  min-width: 80px;
-  padding: 4px 0;
-  background: #fff;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px rgb(0 0 0 / 15%);
-
-  &-item {
-    padding: 8px 16px;
-    font-size: 14px;
-    white-space: nowrap;
-    cursor: pointer;
-
-    &:hover {
-      color: var(--el-color-primary);
-      background: #f5f7fa;
-    }
-  }
+.el-dropdown {
+  pointer-events: none;
 }
 </style>

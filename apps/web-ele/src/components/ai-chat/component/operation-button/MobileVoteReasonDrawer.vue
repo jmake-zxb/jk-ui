@@ -3,10 +3,11 @@ import { computed, ref } from 'vue';
 
 import { ElButton, ElCheckTag, ElDrawer, ElInput, ElSpace } from 'element-plus';
 
-import { vote } from '#/api/ai/chat';
+import chatAPI from '#/api/ai/chat';
+import { $t } from '#/locales';
 
 const props = defineProps<{
-  applicationId: string;
+  chatId: string;
   defaultOtherContent?: string;
   defaultReason?: string;
   recordId: string;
@@ -15,22 +16,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   success: [voteStatus: string];
 }>();
-const feedBack = ref<string>('');
-const selectedReason = ref<string>('');
 const visible = ref(false);
-const voteType = ref<string>('');
+const voteType = ref<string>(''); // '0' like, '1' oppose
+const selectedReason = ref<string>('');
+const feedBack = ref<string>('');
+const loading = ref(false);
 
-const LIKE_REASONS = [
-  { label: '回答准确', value: 'accurate' },
-  { label: '回答完整', value: 'complete' },
-  { label: '其他', value: 'other' },
-];
-
-const OPPOSE_REASONS = [
-  { label: '回答不准确', value: 'inaccurate' },
-  { label: '答非所问', value: 'incomplete' },
-  { label: '其他', value: 'other' },
-];
+const selectReason = (value: string) => {
+  selectedReason.value = value;
+};
 
 const isSubmitDisabled = computed(() => {
   if (!selectedReason.value) {
@@ -42,29 +36,42 @@ const isSubmitDisabled = computed(() => {
   return false;
 });
 
+const LIKE_REASONS = [
+  { label: $t('aiChat.vote.accurate'), value: 'accurate' },
+  { label: $t('aiChat.vote.complete'), value: 'complete' },
+  { label: $t('common.other'), value: 'other' },
+];
+
+const OPPOSE_REASONS = [
+  { label: $t('aiChat.vote.inaccurate'), value: 'inaccurate' },
+  { label: $t('aiChat.vote.irrelevantAnswer'), value: 'incomplete' },
+  { label: $t('common.other'), value: 'other' },
+];
+
+const title = computed(() => {
+  return voteType.value === '0'
+    ? $t('aiChat.vote.likeTitle')
+    : $t('aiChat.vote.opposeTitle');
+});
+
 const reasons = computed(() => {
   return voteType.value === '0' ? LIKE_REASONS : OPPOSE_REASONS;
 });
 
-const title = computed(() => {
-  return voteType.value === '0' ? '点赞原因' : '点踩原因';
-});
-
-const selectReason = (value: string) => {
-  selectedReason.value = value;
-};
-
 function voteHandle() {
-  vote(
-    props.applicationId,
-    props.recordId,
-    voteType.value,
-    selectedReason.value,
-    feedBack.value,
-  ).then(() => {
-    emit('success', voteType.value);
-    visible.value = false;
-  });
+  chatAPI
+    .vote(
+      props.chatId,
+      props.recordId,
+      voteType.value,
+      selectedReason.value,
+      feedBack.value,
+      loading,
+    )
+    .then(() => {
+      emit('success', voteType.value);
+      visible.value = false;
+    });
 }
 
 const open = (voteStatus: string) => {
@@ -81,15 +88,15 @@ defineExpose({ open });
   <ElDrawer
     v-model="visible"
     direction="btt"
+    size="-"
     footer-class="mobile-vote-drawer-footer"
     :modal="true"
-    size="-"
   >
     <template #header>
       <h4 class="text-center">{{ title }}</h4>
     </template>
     <template #default>
-      <ElSpace :size="12" wrap>
+      <ElSpace wrap :size="12">
         <template v-for="reason in reasons" :key="reason.value">
           <ElCheckTag
             type="primary"
@@ -101,25 +108,27 @@ defineExpose({ open });
         </template>
       </ElSpace>
 
-      <div v-if="selectedReason === 'other'" class="g-mt-16">
+      <div v-if="selectedReason === 'other'" class="mt-4">
         <ElInput
           v-model="feedBack"
-          :autosize="{ maxRows: 20, minRows: 4 }"
-          placeholder="请输入您的反馈"
           type="textarea"
+          :autosize="{ minRows: 4, maxRows: 20 }"
+          :placeholder="$$t('aiChat.vote.placeholder')"
         />
       </div>
     </template>
     <template #footer>
-      <ElSpace :fill-ratio="40" fill style="width: 100%">
-        <ElButton size="large" @click="visible = false">取消</ElButton>
+      <ElSpace fill wrap :fill-ratio="40" style="width: 100%">
+        <ElButton @click="visible = false" size="large">
+          {{ $$t('common.cancel') }}
+        </ElButton>
         <ElButton
           :disabled="isSubmitDisabled"
-          size="large"
           type="primary"
+          size="large"
           @click="voteHandle()"
         >
-          提交
+          {{ $$t('common.submit') }}
         </ElButton>
       </ElSpace>
     </template>
@@ -130,11 +139,5 @@ defineExpose({ open });
 .mobile-vote-drawer-footer {
   padding: 0 24px 32px;
   border: none !important;
-}
-</style>
-
-<style lang="scss" scoped>
-.g-mt-16 {
-  margin-top: 16px;
 }
 </style>

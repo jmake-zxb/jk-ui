@@ -3,10 +3,11 @@ import { computed, ref } from 'vue';
 
 import { ElButton, ElCheckTag, ElInput, ElSpace } from 'element-plus';
 
-import { vote } from '#/api/ai/chat';
+import chatAPI from '#/api/ai/chat';
+import { $t } from '#/locales';
 
 const props = defineProps<{
-  applicationId: string;
+  chatId: string;
   defaultOtherContent?: string;
   defaultReason?: string;
   readonly?: boolean;
@@ -18,24 +19,20 @@ const emit = defineEmits<{
   close: [];
   success: [voteStatus: string];
 }>();
-const feedBack = ref<string>(
-  props.readonly ? props.defaultOtherContent || '' : '',
-);
 const selectedReason = ref<string>(
   props.readonly ? props.defaultReason || '' : '',
 );
+const feedBack = ref<string>(
+  props.readonly ? props.defaultOtherContent || '' : '',
+);
+const loading = ref(false);
 
-const LIKE_REASONS = [
-  { label: '回答准确', value: 'accurate' },
-  { label: '回答完整', value: 'complete' },
-  { label: '其他', value: 'other' },
-];
-
-const OPPOSE_REASONS = [
-  { label: '回答不准确', value: 'inaccurate' },
-  { label: '答非所问', value: 'incomplete' },
-  { label: '其他', value: 'other' },
-];
+const selectReason = (value: string) => {
+  if (props.readonly) {
+    return;
+  }
+  selectedReason.value = value;
+};
 
 const isSubmitDisabled = computed(() => {
   if (!selectedReason.value) {
@@ -47,40 +44,50 @@ const isSubmitDisabled = computed(() => {
   return false;
 });
 
+const LIKE_REASONS = [
+  { label: $t('aiChat.vote.accurate'), value: 'accurate' },
+  { label: $t('aiChat.vote.complete'), value: 'complete' },
+  { label: $t('common.other'), value: 'other' },
+];
+
+const OPPOSE_REASONS = [
+  { label: $t('aiChat.vote.inaccurate'), value: 'inaccurate' },
+  { label: $t('aiChat.vote.irrelevantAnswer'), value: 'incomplete' },
+  { label: $t('common.other'), value: 'other' },
+];
+
+const title = computed(() => {
+  return props.voteType === '0'
+    ? $t('aiChat.vote.likeTitle')
+    : $t('aiChat.vote.opposeTitle');
+});
+
 const reasons = computed(() => {
   return props.voteType === '0' ? LIKE_REASONS : OPPOSE_REASONS;
 });
 
-const title = computed(() => {
-  return props.voteType === '0' ? '点赞原因' : '点踩原因';
-});
-
-const selectReason = (value: string) => {
-  if (props.readonly) {
-    return;
-  }
-  selectedReason.value = value;
-};
-
 function voteHandle() {
-  vote(
-    props.applicationId,
-    props.recordId,
-    props.voteType,
-    selectedReason.value,
-    feedBack.value,
-  ).then(() => {
-    emit('success', props.voteType);
-    emit('close');
-  });
+  chatAPI
+    .vote(
+      props.chatId,
+      props.recordId,
+      props.voteType,
+      selectedReason.value,
+      feedBack.value,
+      loading,
+    )
+    .then(() => {
+      emit('success', props.voteType);
+      emit('close');
+    });
 }
 </script>
 
 <template>
   <div>
     <h4>{{ title }}</h4>
-    <div class="g-mt-16">
-      <ElSpace :size="12" wrap>
+    <div class="mt-4">
+      <ElSpace wrap :size="12">
         <template v-for="reason in reasons" :key="reason.value">
           <ElCheckTag
             type="primary"
@@ -92,30 +99,26 @@ function voteHandle() {
         </template>
       </ElSpace>
     </div>
-    <div v-if="selectedReason === 'other'" class="g-mt-16">
+    <div v-if="selectedReason === 'other'" class="mt-4">
       <ElInput
         v-model="feedBack"
-        :autosize="{ maxRows: 20, minRows: 4 }"
-        placeholder="请输入您的反馈"
-        :readonly="readonly"
         type="textarea"
+        :autosize="{ minRows: 4, maxRows: 20 }"
+        :placeholder="$$t('aiChat.vote.placeholder')"
+        :readonly="readonly"
       />
     </div>
-    <div v-if="!readonly" class="dialog-footer mt-24 text-right">
-      <ElButton @click="emit('close')">取消</ElButton>
+    <div v-if="!readonly" class="dialog-footer mt-6 text-right">
+      <ElButton @click="emit('close')"> {{ $$t('common.cancel') }}</ElButton>
       <ElButton
         :disabled="isSubmitDisabled"
         type="primary"
         @click="voteHandle()"
       >
-        提交
+        {{ $$t('common.submit') }}
       </ElButton>
     </div>
   </div>
 </template>
 
-<style lang="scss" scoped>
-.g-mt-16 {
-  margin-top: 16px;
-}
-</style>
+<style lang="scss" scoped></style>

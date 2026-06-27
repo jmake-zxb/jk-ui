@@ -1,65 +1,102 @@
 <script setup lang="ts">
-import type { ChatRecord } from '#/components/ai-chat/types/application';
+import type { Ref } from 'vue';
 
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import {
-  CopyDocument,
-  Refresh,
-  Share,
-  Star,
-  StarFilled,
-  VideoPause,
-  VideoPlay,
-} from '@element-plus/icons-vue';
-import {
-  ElButton,
-  ElMessage,
-  ElPopover,
-  ElText,
-  ElTooltip,
-} from 'element-plus';
+import { ElButton, ElPopover, ElText, ElTooltip } from 'element-plus';
 
-import { textToSpeech, vote } from '#/api/ai/chat';
-
-import { aiChatBus } from '../../utils/bus';
-import MobileVoteReasonDrawer from './MobileVoteReasonDrawer.vue';
-import VoteReasonContent from './VoteReasonContent.vue';
+import applicationApi from '#/api/ai/applications';
+import chatAPI from '#/api/ai/chat';
+import MobileVoteReasonDrawer from '#/components/ai-chat/component/operation-button/MobileVoteReasonDrawer.vue';
+import VoteReasonContent from '#/components/ai-chat/component/operation-button/VoteReasonContent.vue';
+import bus from '#/utils/bus';
+import { copyClick } from '#/utils/clipboard';
+import { MsgError as showError } from '#/utils/message';
+import { datetimeFormat } from '#/utils/time';
 
 const props = withDefaults(
   defineProps<{
-    applicationId?: string;
-    chatId?: string;
-    chatLoading?: boolean;
-    data?: ChatRecord;
-    shareAvailable?: boolean;
+    applicationId: string;
+    chatId: string;
+    chatLoading: boolean;
+    data?: any;
     tts?: boolean;
     ttsAutoplay?: boolean;
     ttsType?: string;
     type?: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
   }>(),
   {
-    applicationId: '',
-    chatId: '',
-    chatLoading: false,
-    data: undefined,
-    shareAvailable: true,
-    tts: false,
-    ttsAutoplay: false,
-    ttsType: '',
+    data: () => ({}),
     type: 'ai-chat',
+    tts: false,
+    ttsType: 'BROWSER',
+    ttsAutoplay: false,
   },
 );
+const emit = defineEmits(['update:data', 'regeneration', 'clickShare']);
+const route = useRoute();
+const {
+  params: { id },
+  query: { mode },
+} = route as any;
 
-const emit = defineEmits<{
-  clickShare: [recordId: string];
-  regeneration: [];
-  'update:data': [value: ChatRecord];
-}>();
+const clickShareHandle = (id: string) => {
+  bus.emit('click:share', id);
+};
 
-// --- TTS 辅助函数 ---
-function markdownToPlainText(md: string): string {
+const copy = (data: any) => {
+  try {
+    const text = data.answer_text_list
+      .map((item: Array<any>) => item.map((i) => i.content).join('\n'))
+      .join('\n\n');
+    copyClick(removeFormRander(text));
+  } catch {
+    copyClick(removeFormRander(data?.answer_text.trim()));
+  }
+};
+
+const likePopoverRef = ref();
+const opposePopoverRef = ref();
+const closePopover = () => {
+  likePopoverRef.value.hide();
+  opposePopoverRef.value.hide();
+};
+const mobileVoteReasonDrawerRef = ref<InstanceType<
+  typeof MobileVoteReasonDrawer
+> | null>(null);
+const mobileVoteReasonHandler = (voteStatus: string) => {
+  if (mobileVoteReasonDrawerRef.value) {
+    mobileVoteReasonDrawerRef.value.open(voteStatus);
+  }
+};
+
+const audioCiontainer = ref<HTMLDivElement>();
+const buttonData = ref(props.data);
+const loading = ref(false);
+
+function regeneration() {
+  emit('regeneration');
+}
+
+function handleVoteSuccess(voteStatus: string) {
+  buttonData.value.vote_status = voteStatus;
+  emit('update:data', buttonData.value);
+  if (mode !== 'mobile') {
+    closePopover();
+  }
+}
+
+function cancelVoteHandle(val: string) {
+  chatAPI
+    .vote(props.chatId, props.data.record_id, val, undefined, '', loading)
+    .then(() => {
+      buttonData.value.vote_status = val;
+      emit('update:data', buttonData.value);
+    });
+}
+
+function markdownToPlainText(md: string) {
   return (
     md
       // 移除图片 ![alt](url)
@@ -88,11 +125,10 @@ function markdownToPlainText(md: string): string {
   );
 }
 
-function removeFormRander(text: string): string {
+function removeFormRander(text: string) {
   return text.replaceAll(/<form_rander>.*?<\/form_rander>/gs, '').trim();
 }
-
-function getKey(keys: number[], index: number): number {
+function getKey(keys: Array<number>, index: number) {
   // 从后往前查找第一个小于等于index的键
   for (let i = keys.length - 1; i >= 0; i--) {
     if (keys[i] <= index) {
@@ -101,47 +137,45 @@ function getKey(keys: number[], index: number): number {
   }
   return 0;
 }
-
+const defaultMinLengthConfig = { 0: 10, 1: 25, 3: 50, 5: 100 };
 function smartSplit(
   str: string,
-  minLengthConfig: Record<number, number> = {} as Record<number, number>,
-  isEnd = false,
-): string[] {
-  const config = { 0: 10, 1: 25, 3: 50, 5: 100, ...minLengthConfig };
+  minLengthConfig: any = defaultMinLengthConfig,
+  is_end = false,
+) {
   // 匹配中文逗号/句号，且后面至少还有20个字符（含任何字符，包括换行）
   const regex = /([。？\n])|(<audio[^>]*><\/audio>)/g;
   // 拆分并保留分隔符
   const parts = str.split(regex);
-  const result: string[] = [];
-  const keys = Object.keys(config).map(Number);
-  let minLength = config[0] || 10;
-  let tempStr = '';
+  const result = [];
+  const keys = Object.keys(minLengthConfig).map(Number);
+  let minLength = minLengthConfig[0];
+  let temp_str = '';
   for (const [i, content] of parts.entries()) {
     if (content === undefined) {
       continue;
     }
     if (/^<audio[^>]*><\/audio>$/.test(content)) {
-      if (tempStr.length > 0) {
-        result.push(tempStr);
-        tempStr = '';
+      if (temp_str.length > 0) {
+        result.push(temp_str);
+        temp_str = '';
       }
       result.push(content);
       continue;
     }
-    tempStr += content;
-    if (tempStr.length > minLength && /[。？\n]$/.test(tempStr)) {
-      minLength = config[getKey(keys, i)] || 10;
-      result.push(tempStr);
-      tempStr = '';
+    temp_str += content;
+    if (temp_str.length > minLength && /[。？\n]$/.test(temp_str)) {
+      minLength = minLengthConfig[getKey(keys, i)];
+      result.push(temp_str);
+      temp_str = '';
     }
   }
-  if (tempStr.length > 0 && isEnd) {
-    result.push(tempStr);
+  if (temp_str.length > 0 && is_end) {
+    result.push(temp_str);
   }
   return result;
 }
 
-// --- AudioManage 类 ---
 const AudioStatus = {
   END: 'END',
   ERROR: 'ERROR',
@@ -149,30 +183,33 @@ const AudioStatus = {
   PLAY_INT: 'PLAY_INT',
   READY: 'READY',
 } as const;
-type AudioStatusValue = (typeof AudioStatus)[keyof typeof AudioStatus];
-
+type AudioStatusType = (typeof AudioStatus)[keyof typeof AudioStatus];
+const getTextToSpeechAPI = () => {
+  return props.type === 'ai-chat'
+    ? (application_id?: string, data?: any, loading?: Ref<boolean>) => {
+        return chatAPI.textToSpeech(data, loading);
+      }
+    : applicationApi.postTextToSpeech;
+};
+const textToSpeechAPI = getTextToSpeechAPI();
 class AudioManage {
-  applicationId: string;
-  audioList: (HTMLAudioElement | SpeechSynthesisUtterance)[];
-  isEnd: boolean;
+  audioList: Array<HTMLAudioElement | SpeechSynthesisUtterance>;
+  is_end: boolean;
   root: Element;
-  statusList: AudioStatusValue[];
-  textList: string[];
-  tryList: number[];
+  statusList: Array<AudioStatusType>;
+  textList: Array<string>;
+  tryList: Array<number>;
   ttsType: string;
-
-  constructor(ttsType: string, root: HTMLDivElement, applicationId: string) {
+  constructor(ttsType: string, root: HTMLDivElement) {
     this.textList = [];
     this.audioList = [];
     this.statusList = [];
     this.tryList = [];
     this.ttsType = ttsType;
     this.root = root;
-    this.isEnd = false;
-    this.applicationId = applicationId;
+    this.is_end = false;
   }
-
-  appendTextList(textList: string[]): number {
+  appendTextList(textList: Array<string>) {
     const newTextList = textList.slice(this.textList.length);
     // 没有新增段落
     if (newTextList.length <= 0) {
@@ -194,11 +231,11 @@ class AudioManage {
           this.statusList[index] = AudioStatus.END;
           // 如果所有的节点都播放结束
           if (
-            this.statusList.every((item) => item === AudioStatus.END) &&
-            this.isEnd
+            this.statusList.every((_item) => _item === AudioStatus.END) &&
+            this.is_end
           ) {
-            this.statusList = this.statusList.map(() => AudioStatus.READY);
-            this.isEnd = false;
+            this.statusList = this.statusList.map((_item) => AudioStatus.READY);
+            this.is_end = false;
           } else {
             // next
             this.play();
@@ -209,15 +246,19 @@ class AudioManage {
           audioElement.src = text.match(/src="([^"]*)"/)?.[1] || '';
           this.statusList[index] = AudioStatus.READY;
         } else {
-          textToSpeech(this.applicationId, { text })
+          textToSpeechAPI(
+            (props.applicationId as string) || (id as string),
+            { text },
+            loading,
+          )
             .then(async (res: any) => {
               if (res.type === 'application/json') {
                 const text = await res.text();
                 if (this.tryList[index] >= 3) {
-                  ElMessage.error(text);
+                  showError(text);
                 }
                 this.statusList[index] = AudioStatus.ERROR;
-                throw new Error('textToSpeech response was JSON, not audio');
+                throw new Error('Speech synthesis failed');
               }
               // 假设我们有一个 MP3 文件的字节数组
               // 创建 Blob 对象
@@ -228,7 +269,7 @@ class AudioManage {
               this.statusList[index] = AudioStatus.READY;
               this.play();
             })
-            .catch(() => {
+            .catch((_error) => {
               this.statusList[index] = AudioStatus.ERROR;
               this.play();
             });
@@ -241,7 +282,7 @@ class AudioManage {
         speechSynthesisUtterance.onend = () => {
           this.statusList[index] = AudioStatus.END;
           // 如果所有的节点都播放结束
-          if (this.statusList.every((item) => item === AudioStatus.END)) {
+          if (this.statusList.every((_item) => _item === AudioStatus.END)) {
             this.statusList = this.statusList.map(() => AudioStatus.READY);
           } else {
             // next
@@ -257,10 +298,8 @@ class AudioManage {
         this.play();
       }
     });
-    return newTextList.length;
   }
-
-  getTextList(text: string, isEnd: boolean): string[] {
+  getTextList(text: string, is_end: boolean) {
     // 移除表单渲染器
     text = removeFormRander(text);
     // text 处理成纯文本
@@ -272,16 +311,16 @@ class AudioManage {
         1: 50,
         5: 100,
       },
-      isEnd,
+      is_end,
     );
 
     return split;
   }
-
-  isPlaying(): boolean {
-    return this.statusList.includes(AudioStatus.PLAY_INT);
+  isPlaying() {
+    return this.statusList.some((_item) =>
+      [AudioStatus.PLAY_INT].includes(_item),
+    );
   }
-
   pause(self?: boolean) {
     const index = this.statusList.indexOf(AudioStatus.PLAY_INT);
     if (index === -1) {
@@ -304,23 +343,24 @@ class AudioManage {
       }
     }
   }
-
-  play(text?: string, isEnd?: boolean, self?: boolean) {
-    if (isEnd) {
-      this.isEnd = true;
+  play(text?: string, is_end?: boolean, self?: boolean) {
+    if (is_end) {
+      this.is_end = true;
     }
     if (self) {
       this.tryList = this.tryList.map(() => 0);
     }
     if (text) {
-      const textList = this.getTextList(text, !!isEnd);
+      const textList = this.getTextList(text, !!is_end);
       if (this.appendTextList(textList) !== 0) {
         // 没有新增段落
         return;
       }
     }
     // 如果存在在阅读的元素则直接返回
-    if (this.statusList.includes(AudioStatus.PLAY_INT)) {
+    if (
+      this.statusList.some((_item) => [AudioStatus.PLAY_INT].includes(_item))
+    ) {
       return;
     }
     this.reTryError();
@@ -341,7 +381,7 @@ class AudioManage {
         this.statusList[index] = AudioStatus.PLAY_INT;
         const play = audioElement.play();
         if (play instanceof Promise) {
-          play.catch(() => {
+          play.catch((_error) => {
             this.statusList[index] = AudioStatus.READY;
           });
         }
@@ -359,16 +399,15 @@ class AudioManage {
         }
         // 等待取消完成后重新播放
         setTimeout(() => {
-          if (window.speechSynthesis.speaking) {
+          if (speechSynthesis.speaking) {
             return;
           }
-          window.speechSynthesis.speak(audioElement);
+          speechSynthesis.speak(audioElement);
           this.statusList[index] = AudioStatus.PLAY_INT;
         }, 500);
       }
     }
   }
-
   reTryError() {
     this.statusList.forEach((status, index) => {
       if (status === AudioStatus.ERROR && this.tryList[index] <= 3) {
@@ -377,16 +416,18 @@ class AudioManage {
         if (audioElement instanceof HTMLAudioElement) {
           const text = this.textList[index];
           this.statusList[index] = AudioStatus.MOUNTED;
-          textToSpeech(this.applicationId, { text })
+          textToSpeechAPI(
+            (props.applicationId as string) || (id as string),
+            { text },
+            loading,
+          )
             .then(async (res: any) => {
               if (res.type === 'application/json') {
                 const text = await res.text();
                 if (this.tryList[index] >= 3) {
-                  ElMessage.error(text);
+                  showError(text);
                 }
-                throw new Error(
-                  'retry textToSpeech response was JSON, not audio',
-                );
+                throw new Error('Speech synthesis failed');
               }
               // 假设我们有一个 MP3 文件的字节数组
               // 创建 Blob 对象
@@ -398,7 +439,8 @@ class AudioManage {
               this.statusList[index] = AudioStatus.READY;
               this.play();
             })
-            .catch(() => {
+            .catch((_error) => {
+              // console.log('err:', error);
               this.statusList[index] = AudioStatus.ERROR;
               this.play();
             });
@@ -407,229 +449,126 @@ class AudioManage {
     });
   }
 }
-
-const route = useRoute();
-const {
-  query: { mode },
-} = route as any;
-
-const showActions = computed(
-  () => props.type === 'ai-chat' || props.type === 'log',
-);
-
-const isMobile = computed(() => mode === 'mobile');
-
-// --- 投票功能 ---
-const buttonData = ref<ChatRecord | undefined>(props.data);
-const voteLoading = ref(false);
-
-const likePopoverRef = ref();
-const opposePopoverRef = ref();
-const mobileVoteReasonDrawerRef =
-  ref<InstanceType<typeof MobileVoteReasonDrawer>>();
-
-const closePopover = () => {
-  likePopoverRef.value?.hide();
-  opposePopoverRef.value?.hide();
-};
-
-const mobileVoteReasonHandler = (voteStatus: string) => {
-  mobileVoteReasonDrawerRef.value?.open(voteStatus);
-};
-
-function handleVoteSuccess(voteStatus: string) {
-  if (buttonData.value) {
-    buttonData.value.vote_status = voteStatus;
-    emit('update:data', buttonData.value);
-  }
-  if (!isMobile.value) {
-    closePopover();
-  }
-}
-
-function cancelVoteHandle(val: string) {
-  voteLoading.value = true;
-  vote(props.chatId || '', props.data?.record_id || '', val)
-    .then(() => {
-      if (buttonData.value) {
-        buttonData.value.vote_status = val;
-        emit('update:data', buttonData.value);
-      }
-    })
-    .finally(() => {
-      voteLoading.value = false;
-    });
-}
-
-// 监听 data 变化
-watch(
-  () => props.data,
-  (newData) => {
-    buttonData.value = newData;
-  },
-  { deep: true },
-);
-
-// --- TTS 功能 ---
-const audioContainer = ref<HTMLDivElement>();
 const audioManage = ref<AudioManage>();
-
-function toggleTTS() {
-  if (!audioManage.value || !props.data?.answer_text) return;
-
-  if (audioManage.value.isPlaying()) {
-    audioManage.value.pause(true);
-  } else {
-    aiChatBus.emit('play:pause', props.data.record_id);
-    audioManage.value.play(props.data.answer_text, true, true);
+onMounted(() => {
+  if (audioCiontainer.value) {
+    audioManage.value = new AudioManage(props.ttsType, audioCiontainer.value);
   }
-}
+  bus.on('play:pause', (record_id: string) => {
+    if (record_id !== props.data.record_id && audioManage.value) {
+      audioManage.value?.pause();
+    }
+  });
 
-const isPlaying = computed(() => audioManage.value?.isPlaying() || false);
-
-// 监听 autoplay
-watch(
-  () => props.data?.write_ed,
-  (writeEd) => {
+  bus.on('change:answer', (data: any) => {
+    const record_id = data.record_id;
+    bus.emit('play:pause', record_id);
     if (
+      props.data.record_id === record_id &&
       props.tts &&
       props.ttsAutoplay &&
-      writeEd &&
-      props.data?.answer_text &&
       audioManage.value
     ) {
-      audioManage.value.play(props.data.answer_text, true);
+      audioManage.value.play(props.data.answer_text, data.is_end);
     }
-  },
-);
-
-// 监听播放暂停事件
-function handlePlayPause(recordId: string) {
-  if (recordId !== props.data?.record_id) {
-    audioManage.value?.pause();
-  }
-}
-
-// 监听答案变化事件
-function handleAnswerChange(data: { is_end: boolean; record_id: string }) {
-  aiChatBus.emit('play:pause', data.record_id);
-  if (
-    props.data?.record_id === data.record_id &&
-    props.tts &&
-    props.ttsAutoplay &&
-    audioManage.value
-  ) {
-    audioManage.value.play(props.data.answer_text, data.is_end);
-  }
-}
-
-onMounted(() => {
-  if (audioContainer.value) {
-    audioManage.value = new AudioManage(
-      props.ttsType || 'BROWSER',
-      audioContainer.value,
-      props.applicationId,
-    );
-  }
-  aiChatBus.on('play:pause', handlePlayPause);
-  aiChatBus.on('change:answer', handleAnswerChange);
+  });
 });
-
-onUnmounted(() => {
-  aiChatBus.off('change:answer', handleAnswerChange);
-  aiChatBus.off('play:pause', handlePlayPause);
-  audioManage.value?.pause();
+onBeforeUnmount(() => {
+  bus.off('change:answer');
+  bus.off('play:pause');
+  if (audioManage.value) {
+    audioManage.value.pause();
+  }
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
 });
-
-// --- 复制功能 ---
-async function copy() {
-  const text = props.data?.answer_text_list
-    ?.map((item) => item.map((answer) => answer.content).join('\n'))
-    .join('\n\n');
-  await navigator.clipboard?.writeText(text || props.data?.answer_text || '');
-}
-
-function share() {
-  const id = props.data?.record_id || '';
-  aiChatBus.emit('click:share', id);
-  emit('clickShare', id);
-}
 </script>
-
 <template>
   <div class="chat-operation-button flex-between">
     <ElText type="info">
-      <span class="ml-4" v-if="data?.create_time">{{
-        new Date(data.create_time).toLocaleString()
+      <span class="ml-1" v-if="data.create_time">{{
+        datetimeFormat(data.create_time)
       }}</span>
     </ElText>
 
-    <div v-if="showActions" class="operation-actions">
+    <div>
       <!-- 语音播放 -->
-      <template v-if="tts">
-        <ElTooltip v-if="isPlaying" content="暂停" placement="top">
+      <span v-if="tts">
+        <ElTooltip
+          v-if="audioManage?.isPlaying()"
+          effect="dark"
+          :content="$$t('aiChat.operation.pause')"
+          placement="top"
+        >
+          <ElButton
+            type="primary"
+            text
+            :disabled="!data?.write_ed"
+            @click="audioManage?.pause(true)"
+          >
+            <AppIcon class="color-secondary" icon-name="app-video-pause" />
+          </ElButton>
+        </ElTooltip>
+        <ElTooltip
+          effect="dark"
+          :content="$$t('aiChat.operation.play')"
+          placement="top"
+          v-else
+        >
           <ElButton
             text
             :disabled="!data?.write_ed"
-            :icon="VideoPause"
-            @click="toggleTTS"
-          />
-        </ElTooltip>
-        <ElTooltip v-else content="播放" placement="top">
-          <ElButton
-            text
-            :disabled="!data?.write_ed"
-            :icon="VideoPlay"
-            @click="toggleTTS"
-          />
-        </ElTooltip>
-      </template>
-      <span class="ml-8">
-        <ElTooltip content="复制" placement="top">
-          <ElButton text :icon="CopyDocument" @click="copy" />
+            @click="
+              () => {
+                bus.emit('play:pause', props.data.record_id);
+                audioManage?.play(props.data.answer_text, true, true);
+              }
+            "
+          >
+            <AppIcon class="color-secondary" icon-name="app-video-play" />
+          </ElButton>
         </ElTooltip>
       </span>
-      <span class="ml-8">
-        <ElTooltip content="重新生成" placement="top">
-          <ElButton
-            text
-            :disabled="chatLoading"
-            :icon="Refresh"
-            @click="emit('regeneration')"
-          />
-        </ElTooltip>
-      </span>
-
-      <!-- 投票按钮 - 移动端 -->
-      <template v-if="isMobile">
-        <span class="ml-8" v-if="buttonData?.vote_status === '-1'">
-          <ElTooltip content="点赞" placement="top">
+      <span v-if="type === 'ai-chat' || type === 'log'">
+        <span>
+          <ElTooltip
+            effect="dark"
+            :content="$$t('common.copy')"
+            placement="top"
+          >
+            <ElButton text @click="copy(data)">
+              <AppIcon class="color-secondary" icon-name="app-copy" />
+            </ElButton>
+          </ElTooltip>
+        </span>
+        <span>
+          <ElTooltip
+            effect="dark"
+            :content="$$t('aiChat.operation.regeneration')"
+            placement="top"
+          >
+            <ElButton :disabled="chatLoading" text @click="regeneration">
+              <AppIcon icon-name="app-refresh" class="color-secondary" />
+            </ElButton>
+          </ElTooltip>
+        </span>
+        <span v-if="buttonData?.vote_status === '-1' && mode === 'mobile'">
+          <ElTooltip
+            effect="dark"
+            :content="$$t('aiChat.operation.like')"
+            placement="top"
+          >
             <ElButton
               text
-              :disabled="voteLoading"
-              :icon="Star"
+              :disabled="loading"
               @click="mobileVoteReasonHandler('0')"
-            />
+            >
+              <AppIcon class="color-secondary" icon-name="app-like" />
+            </ElButton>
           </ElTooltip>
         </span>
-        <span class="ml-8" v-if="buttonData?.vote_status === '-1'">
-          <ElTooltip content="反对" placement="top">
-            <ElButton
-              text
-              :disabled="voteLoading"
-              :icon="StarFilled"
-              @click="mobileVoteReasonHandler('1')"
-            />
-          </ElTooltip>
-        </span>
-      </template>
 
-      <!-- 投票按钮 - 桌面端 -->
-      <template v-else>
-        <!-- 点赞按钮（未投票状态） -->
         <ElPopover
           ref="likePopoverRef"
           trigger="click"
@@ -637,37 +576,56 @@ function share() {
           :width="360"
           popper-class="vote-popover"
           :persistent="false"
-          v-if="buttonData?.vote_status === '-1'"
+          v-if="buttonData?.vote_status === '-1' && mode !== 'mobile'"
         >
           <template #reference>
-            <span class="ml-8">
-              <ElTooltip content="点赞" placement="top">
-                <ElButton text :disabled="voteLoading" :icon="Star" />
+            <span>
+              <ElTooltip
+                effect="dark"
+                :content="$$t('aiChat.operation.like')"
+                placement="top"
+              >
+                <ElButton text :disabled="loading">
+                  <AppIcon class="color-secondary" icon-name="app-like" />
+                </ElButton>
               </ElTooltip>
             </span>
           </template>
           <VoteReasonContent
             vote-type="0"
-            :application-id="applicationId"
-            :record-id="data?.record_id || ''"
+            :chat-id="props.chatId"
+            :record-id="props.data.record_id"
             @success="handleVoteSuccess"
             @close="closePopover"
           />
         </ElPopover>
-
-        <!-- 已点赞状态 -->
-        <span class="ml-8" v-if="buttonData?.vote_status === '0'">
-          <ElTooltip content="取消点赞" placement="top">
+        <span v-if="buttonData?.vote_status === '0'">
+          <ElTooltip
+            effect="dark"
+            :content="$$t('aiChat.operation.cancelLike')"
+            placement="top"
+          >
+            <ElButton text @click="cancelVoteHandle('-1')" :disabled="loading">
+              <AppIcon class="color-secondary" icon-name="app-like-color" />
+            </ElButton>
+          </ElTooltip>
+        </span>
+        <span v-if="buttonData?.vote_status === '-1' && mode === 'mobile'">
+          <ElTooltip
+            effect="dark"
+            :content="$$t('aiChat.operation.oppose')"
+            placement="top"
+          >
             <ElButton
               text
-              :disabled="voteLoading"
-              :icon="StarFilled"
-              @click="cancelVoteHandle('-1')"
-            />
+              :disabled="loading"
+              @click="mobileVoteReasonHandler('1')"
+            >
+              <AppIcon class="color-secondary" icon-name="app-oppose" />
+            </ElButton>
           </ElTooltip>
         </span>
 
-        <!-- 反对按钮（未投票状态） -->
         <ElPopover
           ref="opposePopoverRef"
           trigger="click"
@@ -675,88 +633,67 @@ function share() {
           :width="360"
           popper-class="vote-popover"
           :persistent="false"
-          v-if="buttonData?.vote_status === '-1'"
+          v-if="buttonData?.vote_status === '-1' && mode !== 'mobile'"
         >
           <template #reference>
-            <span class="ml-8">
-              <ElTooltip content="反对" placement="top">
-                <ElButton text :disabled="voteLoading" :icon="StarFilled" />
+            <span>
+              <ElTooltip
+                effect="dark"
+                :content="$$t('aiChat.operation.oppose')"
+                placement="top"
+              >
+                <ElButton text :disabled="loading">
+                  <AppIcon class="color-secondary" icon-name="app-oppose" />
+                </ElButton>
               </ElTooltip>
             </span>
           </template>
           <VoteReasonContent
             vote-type="1"
-            :application-id="applicationId"
-            :record-id="data?.record_id || ''"
+            :chat-id="props.chatId"
+            :record-id="props.data.record_id"
             @success="handleVoteSuccess"
             @close="closePopover"
           />
         </ElPopover>
-
-        <!-- 已反对状态 -->
-        <span class="ml-8" v-if="buttonData?.vote_status === '1'">
-          <ElTooltip content="取消反对" placement="top">
-            <ElButton
-              text
-              :disabled="voteLoading"
-              :icon="StarFilled"
-              @click="cancelVoteHandle('-1')"
-            />
+        <span v-if="buttonData?.vote_status === '1'">
+          <ElTooltip
+            effect="dark"
+            :content="$$t('aiChat.operation.cancelOppose')"
+            placement="top"
+          >
+            <ElButton text @click="cancelVoteHandle('-1')" :disabled="loading">
+              <AppIcon class="color-secondary" icon-name="app-oppose-color" />
+            </ElButton>
           </ElTooltip>
         </span>
-      </template>
-
-      <span class="ml-8" v-if="shareAvailable">
-        <ElTooltip content="分享" placement="top">
-          <ElButton text :disabled="chatLoading" :icon="Share" @click="share" />
-        </ElTooltip>
+        <span>
+          <ElTooltip
+            effect="dark"
+            :content="$$t('aiChat.share')"
+            placement="top"
+          >
+            <ElButton
+              text
+              @click.stop="clickShareHandle(props.data.record_id)"
+              :disabled="chatLoading"
+            >
+              <AppIcon class="color-secondary" icon-name="app-share" />
+            </ElButton>
+          </ElTooltip>
+        </span>
       </span>
+      <div ref="audioCiontainer"></div>
     </div>
-
-    <!-- 音频容器（隐藏） -->
-    <div ref="audioContainer" style="display: none"></div>
-
-    <!-- 移动端投票抽屉 -->
     <MobileVoteReasonDrawer
       ref="mobileVoteReasonDrawerRef"
-      :application-id="applicationId"
-      :record-id="data?.record_id || ''"
+      :chat-id="props.chatId"
+      :record-id="props.data.record_id"
       @success="handleVoteSuccess"
     />
   </div>
 </template>
-
 <style lang="scss">
-.chat-operation-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 8px;
-}
-
-.operation-actions {
-  display: flex;
-  align-items: center;
-}
-
-.ml-4 {
-  margin-left: 4px;
-}
-
-.ml-8 {
-  margin-left: 8px;
-}
-
-.ml-12 {
-  margin-left: 12px;
-}
-
-.flex-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 @media only screen and (max-width: 430px) {
   .chat-operation-button {
     display: block;

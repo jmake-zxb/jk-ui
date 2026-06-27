@@ -24,7 +24,7 @@
     }
 
     .content {
-      /* stylelint-disable-next-line selector-pseudo-class-no-unknown */
+      // stylelint-disable-next-line selector-pseudo-class-no-unknown
       :deep(ol) {
         margin-left: 16px !important;
       }
@@ -49,48 +49,69 @@
   }
 }
 
-.chat-width {
-  max-width: 80%;
-  margin: 0 auto;
+// AI Chat 特定的自定义类（Tailwind 没有的）
+.item-content {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 16px;
 }
 
-@media only screen and (max-width: 1000px) {
-  .chat-width {
-    max-width: 100% !important;
-    margin: 0 auto;
-  }
+.lighter {
+  font-weight: 400;
 }
 
-.chat-mobile {
-  .el-button.is-text:not(.is-disabled):hover {
-    background: none;
-  }
-
-  .mul-operation {
-    width: 100% !important;
-    margin-left: 0 !important;
-  }
+// 特定的内边距组合（Tailwind 需要用 p-[8px_12px] 语法，保留自定义更简洁）
+.p-8-12 {
+  padding: 8px 12px;
 }
 
-.chat-embed {
-  .mul-operation {
-    width: 100% !important;
-    margin-left: 0 !important;
-  }
+.p-12-16 {
+  padding: 12px 16px;
 }
 
-.chat-pc {
-  &.openLeft {
-    .mul-operation {
-      width: calc(100% - 281px);
-      margin-left: 281px;
-    }
-  }
+// Flex 布局组合类
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
-  &.hideLeft {
-    .mul-operation {
-      width: calc(100% - 65px);
-      margin-left: 65px;
-    }
-  }
+.align-center {
+  align-items: center;
+}
+
+// 文本工具类
+.ellipsis-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pre-wrap {
+  white-space: pre-wrap;
+}
+
+.color-secondary {
+  color: var(--el-text-color-secondary);
+}
+
+// 文件相关样式
+.file {
+  position: relative;
+  width: fit-content;
+}
+
+.file-image {
+  position: relative;
+  overflow: hidden;
+}
+
+// 其他工具类
+.cursor {
+  cursor: pointer;
+}
+
+.text {
+  font-size: 14px;
+  line-height: 1.6;
 }

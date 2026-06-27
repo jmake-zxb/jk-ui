@@ -1,17 +1,14 @@
 <script setup lang="ts">
 import type { Ref } from 'vue';
 
+import type { Dict } from '#/api/ai/type/common';
 import type { FormField } from '#/components/dynamics-form/type';
 
 import { computed, onMounted, ref } from 'vue';
 
 import { get } from 'lodash-es';
 
-import { aiChatBus } from '../../utils/bus';
-
-export type { FormField };
-
-export type Dict<T> = Record<string, T>;
+import bus from '#/utils/bus';
 
 const props = defineProps<{
   defaultItemWidth: string;
@@ -34,16 +31,16 @@ const props = defineProps<{
 
 const emit = defineEmits(['change', 'changeLabel']);
 const loading = ref<boolean>(false);
-const componentFormRef = ref<any>(null);
+const componentFormRef = ref<any>();
 
 const itemValue = computed({
   get: () => props.modelValue,
   set: (value: any) => {
     emit('change', value);
     if (props.parentField) {
-      aiChatBus.emit(`${props.parentField}.${props.formfield.field}`, value);
+      bus.emit(`${props.parentField}.${props.formfield.field}`, value);
     } else {
-      aiChatBus.emit(props.formfield.field, value);
+      bus.emit(props.formfield.field, value);
     }
   },
 });
@@ -94,7 +91,7 @@ const onTrigger = (self: any, trigger_field_dict?: Dict<any>) => {
     Object.keys(trigger_field_dict).forEach((key) => {
       const setting = trigger_field_dict[key];
       const values: Array<any> = setting.values;
-      aiChatBus.on(key, (v: any) => {
+      bus.on(key, (v: any) => {
         if (values && values.length > 0) {
           if (values.includes(v)) {
             props.trigger(key, v, setting, self, loading);
@@ -125,7 +122,6 @@ defineExpose({
   },
 });
 </script>
-
 <template>
   <div
     class="inline-form-item"
@@ -140,107 +136,39 @@ defineExpose({
   >
     <div
       v-if="formfield.input_type === 'SwitchInput'"
-      class="align-center border-r-6 flex border"
+      class="align-center flex rounded-md border"
       style="padding: 4px 10px"
     >
-      <span :title="switchLabel" class="lighter g-mr-4">{{ switchLabel }}</span>
-      <el-switch v-model="itemValue" size="small" />
+      <span :title="switchLabel" class="lighter mr-1">{{ switchLabel }}</span>
+      <component
+        ref="componentFormRef"
+        :view="view"
+        v-model="itemValue"
+        :is="formfield.input_type"
+        :form-field="formfield"
+        :other-params="otherParams"
+        :field="formfield.field"
+        v-bind="attrs"
+        :formfield-list="formfieldList"
+        size="small"
+      />
     </div>
-    <el-input
-      v-else-if="formfield.input_type === 'TextInput'"
-      v-model="itemValue"
-      v-bind="attrs"
-      :placeholder="
-        typeof formfield.label === 'string'
-          ? formfield.label
-          : formfield.label?.label || formfield.field
-      "
-      size="small"
-    />
-    <el-input
-      v-else-if="formfield.input_type === 'TextareaInput'"
-      v-model="itemValue"
-      type="textarea"
-      :rows="2"
-      v-bind="attrs"
-      :placeholder="
-        typeof formfield.label === 'string'
-          ? formfield.label
-          : formfield.label?.label || formfield.field
-      "
-      size="small"
-    />
-    <el-select
-      v-else-if="formfield.input_type === 'SingleSelect'"
-      v-model="itemValue"
-      v-bind="attrs"
-      :placeholder="
-        typeof formfield.label === 'string'
-          ? formfield.label
-          : formfield.label?.label || formfield.field
-      "
-      size="small"
-    >
-      <el-option
-        v-for="option in formfield.option_list"
-        :key="option.value"
-        :label="option.key"
-        :value="option.value"
-      />
-    </el-select>
-    <el-select
-      v-else-if="formfield.input_type === 'MultiSelect'"
-      v-model="itemValue"
-      v-bind="attrs"
-      collapse-tags
-      collapse-tags-tooltip
-      :max-collapse-tags="1"
-      :placeholder="
-        typeof formfield.label === 'string'
-          ? formfield.label
-          : formfield.label?.label || formfield.field
-      "
-      multiple
-      size="small"
-    >
-      <el-option
-        v-for="option in formfield.option_list"
-        :key="option.value"
-        :label="option.key"
-        :value="option.value"
-      />
-    </el-select>
-    <el-date-picker
-      v-else-if="formfield.input_type === 'DatePicker'"
-      v-model="itemValue"
-      v-bind="attrs"
-      :placeholder="
-        typeof formfield.label === 'string'
-          ? formfield.label
-          : formfield.label?.label || formfield.field
-      "
-      size="small"
-    />
-    <el-input
+    <component
       v-else
+      ref="componentFormRef"
+      :view="view"
       v-model="itemValue"
+      :is="formfield.input_type"
+      :form-field="formfield"
+      :other-params="otherParams"
+      :field="formfield.field"
       v-bind="attrs"
-      :placeholder="
-        typeof formfield.label === 'string'
-          ? formfield.label
-          : formfield.label?.label || formfield.field
-      "
-      size="small"
+      :formfield-list="formfieldList"
     />
   </div>
 </template>
-
 <style lang="scss" scoped>
 .inline-form-item {
   flex-shrink: 0;
-}
-
-.g-mr-4 {
-  margin-right: 4px;
 }
 </style>

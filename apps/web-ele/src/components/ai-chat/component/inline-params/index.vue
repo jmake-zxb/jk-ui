@@ -1,28 +1,31 @@
 <script setup lang="ts">
-import type { Dict, FormField } from './InlineFormItem.vue';
+import type { Dict } from '#/api/ai/type/common';
+import type { FormField } from '#/components/dynamics-form/type';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { ElButton, ElIcon } from 'element-plus';
-import { get } from 'lodash-es';
+import { ElButton } from 'element-plus';
+import _ from 'lodash-es';
 
 import { computeVisibilityMap } from '#/components/dynamics-form/visibility';
+import { $t } from '#/locales';
+import { MsgWarning } from '#/utils/message';
 
 import InlineFormItem from './InlineFormItem.vue';
 
 const props = defineProps<{
-  application: Record<string, any>;
+  application: any;
   formData: any;
   maxExposed?: number;
 }>();
 
-const emit = defineEmits(['openDialog', 'update:formData']);
+const emit = defineEmits(['update:formData', 'openDialog']);
 
 const fieldList = ref<FormField[]>([]);
 const formValue = ref<Dict<any>>({});
 const setting = ref<{ exposed_fields: string[]; menu_title: string }>({
   exposed_fields: [],
-  menu_title: '更多设置',
+  menu_title: $t('common.moreSettings'),
 });
 
 watch(
@@ -62,13 +65,12 @@ watch(
 );
 
 function handleInputFieldList() {
-  (props.application as any)?.work_flow?.nodes
+  props.application?.work_flow?.nodes
     ?.filter((v: any) => v.id === 'base-node')
     .forEach((v: any) => {
-      // Deduplicate by field name (keep first occurrence)
-      const rawFields: FormField[] = v.properties.user_input_field_list
+      fieldList.value = v.properties.user_input_field_list
         ? v.properties.user_input_field_list.map((v: any) => {
-            let field: FormField;
+            let field;
             switch (v.type) {
               case 'date': {
                 field = {
@@ -79,8 +81,8 @@ function handleInputFieldList() {
                   required: v.is_required,
                   attrs: {
                     format: 'YYYY-MM-DD HH:mm:ss',
-                    type: 'datetime',
                     'value-format': 'YYYY-MM-DD HH:mm:ss',
+                    type: 'datetime',
                   },
                 };
                 break;
@@ -109,34 +111,8 @@ function handleInputFieldList() {
                 };
                 break;
               }
-              case 'switch': {
-                field = {
-                  field: v.variable,
-                  input_type: 'SwitchInput',
-                  label: v.name,
-                  default_value: v.default_value,
-                  required: v.is_required,
-                };
-                break;
-              }
-              case 'textarea': {
-                field = {
-                  field: v.variable,
-                  input_type: 'TextareaInput',
-                  label: v.name,
-                  default_value: v.default_value,
-                  required: v.is_required,
-                };
-                break;
-              }
               default: {
-                field = {
-                  field: v.variable,
-                  input_type: 'TextInput',
-                  label: v.name,
-                  default_value: v.default_value,
-                  required: v.is_required,
-                };
+                field = { ...v };
                 break;
               }
             }
@@ -172,17 +148,10 @@ function handleInputFieldList() {
             return field;
           })
         : [];
-      const seen = new Set<string>();
-      fieldList.value = rawFields.filter((f: any) => {
-        const key = f?.field;
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
 
       setting.value = v.properties.user_input_field_list_setting || {
         exposed_fields: [],
-        menu_title: '更多设置',
+        menu_title: $t('common.moreSettings'),
       };
     });
 }
@@ -206,13 +175,13 @@ const visibilityMap = computed(() =>
 
 const show = (field: FormField) => {
   if (field.relation_show_field_dict) {
-    const key = Object.keys(field.relation_show_field_dict)[0];
-    if (key) {
-      const v = get(formValue.value, key);
-      if (v && v !== undefined && v !== null) {
-        const values = field.relation_show_field_dict[key];
-        return values && values.length > 0 ? values.includes(v) : true;
-      }
+    const keys = Object.keys(field.relation_show_field_dict);
+    const key = keys[0];
+    const v = _.get(formValue.value, key);
+    if (v && v !== undefined && v !== null) {
+      const values = field.relation_show_field_dict[key];
+      return values && values.length > 0 ? values.includes(v) : true;
+    } else {
       return false;
     }
   }
@@ -246,7 +215,7 @@ defineExpose({
             typeof item.label === 'string'
               ? item.label
               : item.label?.label || item.field;
-          console.warn(`${name} 为必填属性`);
+          MsgWarning(`${name} 为必填属性`);
           return Promise.reject(new Error(`${name} 为必填属性`));
         }
       }
@@ -259,7 +228,13 @@ const change = (field: FormField, value: any) => {
   formValue.value[field.field] = value;
 };
 
-const trigger = () => {
+const trigger = (
+  _trigger_field: string,
+  _trigger_value: any,
+  _trigger_setting: any,
+  _self: any,
+  _loading: any,
+) => {
   // 暂留空，后续按需补充
 };
 
@@ -281,38 +256,32 @@ onMounted(() => {
   handleInputFieldList();
 });
 </script>
-
 <template>
   <div class="inline-params" v-if="fieldList.length > 0">
     <template v-for="item in exposedFields" :key="item.field">
       <InlineFormItem
         v-if="show(item)"
-        default-item-width="auto"
-        :form-value="formValue"
-        :formfield="item"
-        :formfield-list="fieldList"
-        :init-default-data="initDefaultData"
         :model-value="formValue[item.field]"
-        :other-params="{}"
+        @change="change(item, $event)"
+        :formfield="item"
         :trigger="trigger"
         :view="false"
-        @change="change(item, $event)"
+        :init-default-data="initDefaultData"
+        default-item-width="auto"
+        :other-params="{}"
+        :form-value="formValue"
+        :formfield-list="fieldList"
       />
     </template>
     <ElButton
-      v-if="dialogFields.length > 0"
       style="padding: 8px"
+      v-if="dialogFields.length > 0"
       @click="emit('openDialog')"
     >
-      <ElIcon>
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
-        </svg>
-      </ElIcon>
+      <AppIcon icon-name="app-all-menu" />
     </ElButton>
   </div>
 </template>
-
 <style lang="scss" scoped>
 .inline-params {
   display: flex;

@@ -1,21 +1,16 @@
 <script setup lang="ts">
-import type { ChatRecord } from '../../types/application';
+import type { Ref } from 'vue';
 
-import {
-  computed,
-  inject,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  reactive,
-  ref,
-} from 'vue';
+import type { chatType } from '#/api/ai/types';
+
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import {
   CircleCloseFilled,
   Microphone,
   Paperclip,
+  Promotion as SendIcon,
 } from '@element-plus/icons-vue';
 import {
   ElButton,
@@ -27,7 +22,6 @@ import {
   ElIcon,
   ElImage,
   ElInput,
-  ElMessage,
   ElOption,
   ElRow,
   ElScrollbar,
@@ -39,9 +33,14 @@ import {
 } from 'element-plus';
 import Recorder from 'recorder-core';
 
-import { getImgUrl } from '#/utils/file-util';
+import applicationApi from '#/api/ai/applications';
+import chatAPI from '#/api/ai/chat';
+import iconSendSvg from '#/assets/chat/icon_send.svg';
+import { $t } from '#/locales';
+import bus from '#/utils/bus';
+import { getImgUrl } from '#/utils/common';
+import { MsgAlert, MsgWarning } from '#/utils/message';
 
-import { aiChatBus } from '../../utils/bus';
 import TouchChat from './TouchChat.vue';
 
 import 'recorder-core/src/engine/mp3';
@@ -50,47 +49,36 @@ import 'recorder-core/src/engine/mp3-engine';
 const props = withDefaults(
   defineProps<{
     appId?: string;
-    applicationDetails?: Record<string, any>;
-    chatId?: string;
-    isMobile?: boolean;
-    loading?: boolean;
-    openChatId?: () => Promise<string>;
-    sendMessage?: (
+    applicationDetails?: any;
+    chatId: string;
+    isMobile: boolean;
+    loading: boolean;
+    openChatId: () => Promise<string>;
+    sendMessage: (
       question: string,
-      otherParamsData?: unknown,
-      chat?: ChatRecord,
+      other_params_data?: any,
+      chat?: chatType,
     ) => void;
-    type?: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
-    validate?: () => Promise<any>;
+    type: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
+    validate: () => Promise<any>;
   }>(),
   {
-    appId: '',
+    appId: undefined,
     applicationDetails: () => ({}),
-    chatId: '',
-    isMobile: false,
-    loading: false,
-    openChatId: () => Promise.resolve(''),
-    sendMessage: () => {},
-    type: 'ai-chat',
-    validate: () => Promise.resolve(),
+    available: true,
   },
 );
-
 const emit = defineEmits([
-  'backBottom',
   'update:chatId',
   'update:loading',
   'update:showUserInput',
+  'backBottom',
 ]);
-
-Recorder.CLog = function () {};
-
 const router = useRouter();
 const route = useRoute();
 const {
   query: { mode, question },
 } = route as any;
-
 const quickInputRef = ref();
 const chartOpenId = ref<string>();
 const chatId_context = computed({
@@ -105,6 +93,15 @@ const chatId_context = computed({
     emit('update:chatId', v);
   },
 });
+const localLoading = computed({
+  get: () => {
+    return props.loading;
+  },
+  set: (v) => {
+    emit('update:loading', v);
+  },
+});
+
 const showURLSetting = ref(false);
 const urlForm = reactive({
   source_url: '',
@@ -116,26 +113,16 @@ const uploadLoading = computed(() => {
 });
 
 const inputPlaceholder = computed(() => {
-  if (recorderStatus.value === 'START') return '正在说话...';
-  if (recorderStatus.value === 'TRANSCRIBING') return '语音识别中...';
-  return '输入问题，Shift+Enter换行';
+  if (recorderStatus.value === 'START') {
+    return `${$t('aiChat.inputPlaceholder.speaking')}...`;
+  }
+  if (recorderStatus.value === 'TRANSCRIBING') {
+    return `${$t('aiChat.inputPlaceholder.recorderLoading')}...`;
+  }
+  return `${$t('aiChat.inputPlaceholder.default')}`;
 });
 
 const upload = ref();
-
-// Inject URL fetch function and upload function from parent (ai-chat/index.vue)
-const getUrlFn = inject<(url: string) => Promise<Record<string, any>>>(
-  'getUrl',
-  () => Promise.reject(new Error('getUrl not provided')),
-);
-const uploadFn = inject<(file: File) => Promise<{ data: string }>>(
-  'upload',
-  undefined as unknown as (file: File) => Promise<{ data: string }>,
-);
-const sttFn = inject<(audioBlob: Blob) => Promise<Record<string, any>>>(
-  'stt',
-  () => Promise.reject(new Error('stt not provided')),
-);
 
 const imageExtensions = ['JPG', 'JPEG', 'PNG', 'GIF', 'BMP'];
 const documentExtensions = [
@@ -154,7 +141,7 @@ const otherExtensions = ref(['PPT', 'DOC']);
 
 const getAcceptList = () => {
   const { image, document, audio, video, other } =
-    props.applicationDetails.file_upload_setting || {};
+    props.applicationDetails.file_upload_setting;
   let accepts: any = [];
   if (image) {
     accepts = [...imageExtensions];
@@ -169,24 +156,21 @@ const getAcceptList = () => {
     accepts = [...accepts, ...videoExtensions];
   }
   if (other) {
+    // 其他文件类型
     otherExtensions.value =
-      props.applicationDetails.file_upload_setting.otherExtensions ||
-      otherExtensions.value;
+      props.applicationDetails.file_upload_setting.otherExtensions;
     accepts = [...accepts, ...otherExtensions.value];
   }
 
   if (accepts.length === 0) {
-    // 无配置文件类型时返回一个不存在的扩展名，阻止上传
-    return '.upload_not_allowed';
+    return `.${$t('aiChat.uploadFile.tipMessage')}`;
   }
   return accepts.map((ext: any) => `.${ext}`).join(',');
 };
 
 const checkMaxFilesLimit = () => {
-  const setting = props.applicationDetails.file_upload_setting;
-  if (!setting) return false;
   return (
-    setting.maxFiles <=
+    props.applicationDetails.file_upload_setting.maxFiles <=
     uploadImageList.value.length +
       uploadDocumentList.value.length +
       uploadAudioList.value.length +
@@ -194,10 +178,10 @@ const checkMaxFilesLimit = () => {
       uploadOtherList.value.length
   );
 };
-const filePromisionDict = ref<any>({});
+const filePromisionDict: any = ref<any>({});
 const uploadFile = async (file: any, fileList: any) => {
-  const { maxFiles, fileLimit } =
-    props.applicationDetails.file_upload_setting || {};
+  const { maxFiles, fileLimit } = props.applicationDetails.file_upload_setting;
+  // 单次上传文件数量限制
   const file_limit_once =
     uploadImageList.value.length +
     uploadDocumentList.value.length +
@@ -205,12 +189,18 @@ const uploadFile = async (file: any, fileList: any) => {
     uploadVideoList.value.length +
     uploadOtherList.value.length;
   if (file_limit_once >= maxFiles) {
-    ElMessage.warning(`最多上传 ${maxFiles} 个文件`);
+    MsgWarning(
+      $t('aiChat.uploadFile.limitMessage1') +
+        maxFiles +
+        $t('aiChat.uploadFile.limitMessage2'),
+    );
     fileList.splice(0, fileList.length, ...fileList.slice(0, maxFiles));
     return;
   }
   if (fileList.some((f: any) => f.size === 0)) {
-    ElMessage.warning('不能上传空文件');
+    // MB
+    MsgWarning($t('aiChat.uploadFile.sizeLimit2'));
+    // 空文件上传过滤
     fileList.splice(
       0,
       fileList.length,
@@ -219,7 +209,9 @@ const uploadFile = async (file: any, fileList: any) => {
     return;
   }
   if (fileList.some((f: any) => f.size > fileLimit * 1024 * 1024)) {
-    ElMessage.warning(`文件大小不能超过 ${fileLimit}MB`);
+    // MB
+    MsgWarning(`${$t('aiChat.uploadFile.sizeLimit') + fileLimit}MB`);
+    // 只保留未超出大小限制的文件
     fileList.splice(
       0,
       fileList.length,
@@ -233,229 +225,80 @@ const uploadFile = async (file: any, fileList: any) => {
   if (!chatId_context.value) {
     chatId_context.value = await props.openChatId();
   }
-  // Upload file to server (same pattern as MaxKB: use injected upload function)
-  if (uploadFn) {
-    uploadFn(file.raw)
-      .then((ok: any) => {
-        inner.url = ok.data ?? ok;
-        const split_path = (inner.url || '').split('/');
-        inner.file_id = split_path[split_path.length - 1];
-        delete filePromisionDict.value[file.uid];
-      })
-      .catch(() => {
-        delete filePromisionDict.value[file.uid];
-      });
-  } else {
-    // Fallback: local blob URL when upload is not provided
-    inner.url = URL.createObjectURL(file.raw);
-    const split_path = inner.url.split('/');
+  const api =
+    props.type === 'debug-ai-chat'
+      ? applicationApi.postUploadFile(
+          file.raw,
+          'TEMPORARY_120_MINUTE',
+          'TEMPORARY_120_MINUTE',
+        )
+      : chatAPI.postUploadFile(file.raw, chatId_context.value, 'CHAT');
+
+  api.then((ok) => {
+    inner.url = ok.data;
+    const split_path = ok.data.split('/');
     inner.file_id = split_path[split_path.length - 1];
     delete filePromisionDict.value[file.uid];
-  }
+  });
   showURLSetting.value = false;
 };
-
+// 粘贴处理
 const handlePaste = (event: ClipboardEvent) => {
   if (!props.applicationDetails.file_upload_enable) return;
   const clipboardData = event.clipboardData;
   if (!clipboardData) return;
+
+  // 获取剪贴板中的文件
   const files = clipboardData.files;
   if (files.length === 0) return;
+
+  // 转换 FileList 为数组并遍历处理
   [...files].forEach((rawFile: File) => {
+    // 创建符合 el-upload 要求的文件对象
     const elFile = {
-      uid: Date.now(),
+      uid: Date.now(), // 生成唯一ID
       name: rawFile.name,
-      raw: rawFile,
       size: rawFile.size,
-      status: 'ready',
-      percentage: 0,
+      raw: rawFile, // 原始文件对象
+      status: 'ready', // 文件状态
+      percentage: 0, // 上传进度
     };
+
+    // 手动触发上传逻辑（模拟 on-change 事件）
     uploadFile(elFile, [elFile]);
   });
+
+  // 阻止默认粘贴行为
   event.preventDefault();
 };
-
+// 新增拖拽处理
 const handleDrop = (event: DragEvent) => {
   if (!props.applicationDetails.file_upload_enable) return;
   event.preventDefault();
   const files = event.dataTransfer?.files;
   if (!files) return;
+
   [...files].forEach((rawFile) => {
     const elFile = {
       uid: Date.now(),
       name: rawFile.name,
-      raw: rawFile,
       size: rawFile.size,
+      raw: rawFile,
       status: 'ready',
       percentage: 0,
     };
     uploadFile(elFile, [elFile]);
   });
 };
-
-// --- STT Recording (recorder-core) ---
+// 语音录制任务id
 const intervalId = ref<any | null>(null);
+// 语音录制开始秒数
 const recorderTime = ref(0);
+// START:开始录音 TRANSCRIBING:转换文字中
 const recorderStatus = ref<'START' | 'STOP' | 'TRANSCRIBING'>('STOP');
-const isMicrophone = ref(false);
-
-class RecorderManage {
-  recorder: any = undefined;
-  uploadRecording: (blob: Blob, duration: number) => void;
-
-  constructor(uploadRecording: (blob: Blob, duration: number) => void) {
-    this.uploadRecording = uploadRecording;
-  }
-
-  close() {
-    this.recorder?.close();
-    this.recorder = undefined;
-  }
-
-  open(callback?: () => void) {
-    const recorder = new Recorder({
-      type: 'mp3',
-      bitRate: 128,
-      sampleRate: 16_000,
-    });
-    if (this.recorder) {
-      callback?.();
-    } else {
-      recorder.open(
-        () => {
-          this.recorder = recorder;
-          callback?.();
-        },
-        (_err: string) => {
-          ElMessage.warning('麦克风权限获取失败');
-          recorderStatus.value = 'STOP';
-        },
-      );
-    }
-  }
-
-  start() {
-    if (this.recorder) {
-      this.recorder.start();
-      recorderStatus.value = 'START';
-      handleTimeChange();
-    } else {
-      this.open(() => {
-        this.recorder?.start();
-        recorderStatus.value = 'START';
-        handleTimeChange();
-      });
-    }
-  }
-
-  stop() {
-    if (!this.recorder) {
-      recorderStatus.value = 'STOP';
-      stopTimer();
-      return;
-    }
-    this.recorder.stop(
-      (blob: Blob, duration: number) => {
-        // On mobile, keep recorder alive for repeated use
-        const mobileMode = /Mobi|Android|iPhone|iPad/i.test(
-          navigator.userAgent,
-        );
-        if (!mobileMode) this.close();
-        this.uploadRecording(blob, duration);
-      },
-      (_err: string) => {
-        ElMessage.warning('录音停止失败');
-        recorderStatus.value = 'STOP';
-        stopTimer();
-      },
-    );
-  }
-}
-
-const uploadRecording = async (audioBlob: Blob, _duration: number) => {
-  // 非自动发送切换输入框
-  const isAutoSend =
-    props.applicationDetails.stt_autosend ||
-    props.applicationDetails.sttAutosend;
-  if (!isAutoSend) {
-    switchMicrophone(false);
-  }
-  recorderStatus.value = 'TRANSCRIBING';
-  if (isAutoSend) {
-    aiChatBus.emit('on:transcribing', true);
-  }
-
-  try {
-    const res = await sttFn(audioBlob);
-    const text =
-      typeof res?.data === 'string' ? res.data : (res?.data?.data ?? '');
-    if (text) {
-      inputValue.value = text;
-    }
-    // 自动发送
-    if (isAutoSend) {
-      nextTick(() => autoSendMessage());
-    } else {
-      switchMicrophone(false);
-    }
-  } catch {
-    ElMessage.warning('语音识别失败');
-  } finally {
-    recorderStatus.value = 'STOP';
-    aiChatBus.emit('on:transcribing', false);
-    stopTimer();
-  }
-};
-
-const recorderManage = new RecorderManage(uploadRecording);
-
-const startRecording = () => {
-  recorderManage.start();
-};
-
-const stopRecording = () => {
-  recorderManage.stop();
-};
-
-const handleTimeChange = () => {
-  recorderTime.value = 0;
-  if (intervalId.value) return;
-  intervalId.value = setInterval(() => {
-    if (recorderStatus.value === 'STOP') {
-      clearInterval(intervalId.value!);
-      intervalId.value = null;
-      return;
-    }
-    recorderTime.value++;
-    // 桌面端 60 秒自动停止，移动端不限制
-    if (recorderTime.value === 60 && mode !== 'mobile') {
-      stopRecording();
-      clearInterval(intervalId.value!);
-      intervalId.value = null;
-    }
-  }, 1000);
-};
-
-const stopTimer = () => {
-  if (intervalId.value !== null) {
-    clearInterval(intervalId.value);
-    recorderTime.value = 0;
-    intervalId.value = null;
-  }
-};
-
-const switchMicrophone = (status: boolean) => {
-  if (status) {
-    recorderManage.open(() => {
-      isMicrophone.value = true;
-    });
-  } else {
-    recorderManage.close();
-    isMicrophone.value = false;
-  }
-};
 
 const inputValue = ref<string>('');
+
 const fileAllList = ref<Array<any>>([]);
 
 const fileFilter = (fileList: Array<any>, extensionList: Array<string>) => {
@@ -497,14 +340,217 @@ const isDisabledChat = computed(
     ),
 );
 
+// 是否显示移动端语音按钮
+const isMicrophone = ref(false);
+const switchMicrophone = (status: boolean) => {
+  if (status) {
+    // 如果显示就申请麦克风权限
+    recorderManage.open(() => {
+      isMicrophone.value = true;
+    });
+  } else {
+    // 关闭麦克风
+    recorderManage.close();
+    isMicrophone.value = false;
+  }
+};
+
 const TouchEnd = (bool?: boolean) => {
   if (bool) {
-    // Touch ended normally — stop recording and send for transcription
     stopRecording();
+    recorderStatus.value = 'STOP';
   } else {
-    // Swipe-up cancel — stop timer and reset status without sending
     stopTimer();
     recorderStatus.value = 'STOP';
+  }
+};
+// 取消录音控制台日志
+Recorder.CLog = function () {};
+
+class RecorderManage {
+  recorder?: any;
+  uploadRecording: (blob: Blob, duration: number) => void;
+
+  constructor(uploadRecording: (blob: Blob, duration: number) => void) {
+    this.uploadRecording = uploadRecording;
+  }
+
+  close() {
+    if (this.recorder) {
+      this.recorder.close();
+      this.recorder = undefined;
+    }
+  }
+
+  open(callback?: () => void) {
+    const recorder = new Recorder({
+      type: 'mp3',
+      bitRate: 128,
+      sampleRate: 16_000,
+    });
+    if (!this.recorder) {
+      recorder.open(() => {
+        this.recorder = recorder;
+        if (callback) {
+          callback();
+        }
+      }, this.errorCallBack);
+    }
+  }
+
+  start() {
+    if (this.recorder) {
+      this.recorder.start();
+      recorderStatus.value = 'START';
+      handleTimeChange();
+    } else {
+      const recorder = new Recorder({
+        type: 'mp3',
+        bitRate: 128,
+        sampleRate: 16_000,
+      });
+      recorder.open(() => {
+        this.recorder = recorder;
+        recorder.start();
+        recorderStatus.value = 'START';
+        handleTimeChange();
+      }, this.errorCallBack);
+    }
+  }
+
+  stop() {
+    if (this.recorder) {
+      this.recorder.stop(
+        (blob: Blob, duration: number) => {
+          if (mode !== 'mobile') {
+            this.close();
+          }
+          this.uploadRecording(blob, duration);
+        },
+        (err: any) => {
+          MsgAlert($t('common.tip'), err, {
+            confirmButtonText: $t('aiChat.tip.confirm'),
+            dangerouslyUseHTMLString: true,
+            customClass: 'record-tip-confirm',
+          });
+        },
+      );
+    }
+  }
+
+  private errorCallBack(err: any, isUserNotAllow: boolean) {
+    if (isUserNotAllow) {
+      MsgAlert($t('common.tip'), err, {
+        confirmButtonText: $t('aiChat.tip.confirm'),
+        dangerouslyUseHTMLString: true,
+        customClass: 'record-tip-confirm',
+      });
+    } else {
+      MsgAlert(
+        $t('common.tip'),
+        `${err}
+        <div style="width: 100%;height:1px;border-top:1px var(--el-border-color) var(--el-border-style);margin:10px 0;"></div>
+        ${$t('aiChat.tip.recorderTip')}
+    <img src="${new URL(`/tipIMG.jpg`, import.meta.url).href}" style="width: 100%;" />`,
+        {
+          confirmButtonText: $t('aiChat.tip.confirm'),
+          dangerouslyUseHTMLString: true,
+          customClass: 'record-tip-confirm',
+        },
+      );
+    }
+  }
+}
+
+const getSpeechToTextAPI = () => {
+  return props.type === 'ai-chat'
+    ? (id?: any, data?: any, loading?: Ref<boolean>) => {
+        return chatAPI.speechToText(data, loading);
+      }
+    : applicationApi.speechToText;
+};
+const speechToTextAPI = getSpeechToTextAPI();
+// 上传录音文件
+const uploadRecording = async (audioBlob: Blob) => {
+  try {
+    // 非自动发送切换输入框
+    if (!props.applicationDetails.stt_autosend) {
+      switchMicrophone(false);
+    }
+    recorderStatus.value = 'TRANSCRIBING';
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.mp3');
+    if (props.applicationDetails.stt_autosend) {
+      bus.emit('on:transcribing', true);
+    }
+    speechToTextAPI(
+      props.applicationDetails.id as string,
+      formData,
+      localLoading,
+    )
+      .then((response) => {
+        inputValue.value =
+          typeof response.data === 'string' ? response.data : '';
+        // 自动发送
+        if (props.applicationDetails.stt_autosend) {
+          nextTick(() => {
+            autoSendMessage();
+          });
+        } else {
+          switchMicrophone(false);
+        }
+      })
+      .catch((error) => {
+        console.error(`${$t('aiChat.uploadFile.errorMessage')}:`, error);
+      })
+      .finally(() => {
+        recorderStatus.value = 'STOP';
+        bus.emit('on:transcribing', false);
+      });
+  } catch (error) {
+    recorderStatus.value = 'STOP';
+    console.error(`${$t('aiChat.uploadFile.errorMessage')}:`, error);
+  }
+};
+const recorderManage = new RecorderManage(uploadRecording);
+// 开始录音
+const startRecording = () => {
+  recorderManage.start();
+};
+
+// 停止录音
+const stopRecording = () => {
+  recorderManage.stop();
+};
+
+const handleTimeChange = () => {
+  recorderTime.value = 0;
+  if (intervalId.value) {
+    return;
+  }
+  intervalId.value = setInterval(() => {
+    if (recorderStatus.value === 'STOP') {
+      clearInterval(intervalId.value!);
+      intervalId.value = null;
+      return;
+    }
+
+    recorderTime.value++;
+
+    if (recorderTime.value === 60 && mode !== 'mobile') {
+      stopRecording();
+      clearInterval(intervalId.value!);
+      intervalId.value = null;
+      recorderStatus.value = 'STOP';
+    }
+  }, 1000);
+};
+// 停止计时的函数
+const stopTimer = () => {
+  if (intervalId.value !== null) {
+    clearInterval(intervalId.value);
+    recorderTime.value = 0;
+    intervalId.value = null;
   }
 };
 
@@ -518,19 +564,20 @@ const getQuestion = () => {
       uploadOtherList.value.length > 0,
     ];
     if (fileLength.filter(Boolean).length > 1) {
-      return '发送文件';
+      return $t('aiChat.uploadFile.otherMessage');
     } else if (fileLength[0]) {
-      return '发送图片';
+      return $t('aiChat.uploadFile.imageMessage');
     } else if (fileLength[1]) {
-      return '发送文档';
+      return $t('aiChat.uploadFile.documentMessage');
     } else if (fileLength[2]) {
-      return '发送音频';
+      return $t('aiChat.uploadFile.audioMessage');
     } else if (fileLength[3]) {
-      return '发送视频';
+      return $t('aiChat.uploadFile.videoMessage');
     } else if (fileLength[4]) {
-      return '发送文件';
+      return $t('aiChat.uploadFile.otherMessage');
     }
   }
+
   return inputValue.value.trim();
 };
 
@@ -539,17 +586,18 @@ function autoSendMessage() {
     .validate()
     .then(() => {
       props.sendMessage(getQuestion(), {
-        audio_list: uploadAudioList.value,
-        document_list: uploadDocumentList.value,
         image_list: uploadImageList.value,
-        other_list: uploadOtherList.value,
+        document_list: uploadDocumentList.value,
+        audio_list: uploadAudioList.value,
         video_list: uploadVideoList.value,
+        other_list: uploadOtherList.value,
       });
       inputValue.value = '';
       fileAllList.value = [];
       if (upload.value) {
         upload.value.clearFiles();
       }
+
       if (quickInputRef.value) {
         quickInputRef.value.textarea.style.height = '45px';
       }
@@ -562,7 +610,9 @@ function sendChatHandle(event?: any) {
     /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
       navigator.userAgent,
     );
-  if (isMobile && event?.key === 'Enter') {
+  // 如果是移动端，且按下回车键，不直接发送
+  if ((isMobile || mode === 'mobile') && event?.key === 'Enter') {
+    // 阻止默认事件
     return;
   }
   if (
@@ -571,6 +621,7 @@ function sendChatHandle(event?: any) {
     !event?.altKey &&
     !event?.metaKey
   ) {
+    // 如果没有按下组合键，则会阻止默认事件
     event?.preventDefault();
     if (
       !isDisabledChat.value &&
@@ -582,6 +633,7 @@ function sendChatHandle(event?: any) {
       autoSendMessage();
     }
   } else {
+    // 如果同时按下ctrl/shift/cmd/opt +enter，则会换行
     insertNewlineAtCursor(event);
   }
 }
@@ -592,10 +644,12 @@ const insertNewlineAtCursor = (event?: any) => {
   ) as HTMLTextAreaElement;
   const startPos = textarea.selectionStart;
   const endPos = textarea.selectionEnd;
+  // 阻止默认行为（避免额外的换行符）
   event.preventDefault();
+  // 在光标处插入换行符
   inputValue.value = `${inputValue.value.slice(0, startPos)}\n${inputValue.value.slice(endPos)}`;
   nextTick(() => {
-    textarea.setSelectionRange(startPos + 1, startPos + 1);
+    textarea.setSelectionRange(startPos + 1, startPos + 1); // 光标定位到换行后位置
   });
 };
 
@@ -612,270 +666,22 @@ function mouseleave() {
 }
 
 function stopChat() {
-  aiChatBus.emit('chat:stop');
-}
-
-const fileUploadOptions = computed(() => [
-  {
-    label: '图片',
-    value: 'image',
-    visible: props.applicationDetails.file_upload_setting?.image,
-  },
-  {
-    label: '文档',
-    value: 'document',
-    visible: props.applicationDetails.file_upload_setting?.document,
-  },
-  {
-    label: '视频',
-    value: 'video',
-    visible: props.applicationDetails.file_upload_setting?.video,
-  },
-  {
-    label: '音频',
-    value: 'audio',
-    visible: props.applicationDetails.file_upload_setting?.audio,
-  },
-  {
-    label: '其他',
-    value: 'other',
-    visible: props.applicationDetails.file_upload_setting?.other,
-  },
-]);
-
-function openUrlSetting() {
-  showURLSetting.value = true;
-  const visibleOptions = fileUploadOptions.value.filter(
-    (option) => option.visible,
-  );
-  if (visibleOptions.length > 0 && visibleOptions[0]) {
-    urlForm.type = visibleOptions[0].value;
-  }
-}
-
-// MIME type mapping for URL import validation
-const mimeTypes: Record<string, string> = {
-  JPG: 'image/jpeg',
-  JPEG: 'image/jpeg',
-  PNG: 'image/png',
-  GIF: 'image/gif',
-  BMP: 'image/bmp',
-  PDF: 'application/pdf',
-  DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  DOC: 'application/msword',
-  TXT: 'text/plain',
-  XLS: 'application/vnd.ms-excel',
-  XLSX: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  MD: 'text/markdown',
-  HTML: 'text/html',
-  CSV: 'text/csv',
-  MP4: 'video/mp4',
-  AVI: 'video/x-msvideo',
-  MKV: 'video/x-matroska',
-  MOV: 'video/quicktime',
-  FLV: 'video/x-flv',
-  WMV: 'video/x-ms-wmv',
-  MP3: 'audio/mpeg',
-  WAV: 'audio/wav',
-  OGG: 'audio/ogg',
-  AAC: 'audio/aac',
-  M4A: 'audio/mp4',
-  PPT: 'application/vnd.ms-powerpoint',
-  PPTX: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-};
-
-// Reverse-lookup: extension from MIME type
-function getExtensionByMimeType(mimeType: string): string | undefined {
-  for (const [ext, mime] of Object.entries(mimeTypes)) {
-    if (mime === mimeType) return ext.toLowerCase();
-  }
-  return undefined;
-}
-
-async function saveUrl() {
-  const urls = urlForm.source_url
-    .split('\n')
-    .map((u: string) => u.trim())
-    .filter((u: string) => u.length > 0);
-  if (urls.length === 0) return;
-
-  const { maxFiles, fileLimit } =
-    props.applicationDetails.file_upload_setting || {};
-  const fileLimitMb = fileLimit || 50;
-
-  // Validate max file count
-  const currentCount =
-    uploadImageList.value.length +
-    uploadDocumentList.value.length +
-    uploadAudioList.value.length +
-    uploadVideoList.value.length +
-    uploadOtherList.value.length;
-  if (currentCount + urls.length > (maxFiles || 3)) {
-    ElMessage.warning(`最多上传 ${maxFiles || 3} 个文件`);
-    return;
-  }
-
-  // Build allowed MIME types for the selected category
-  const mimeLookup = (ext: string): string | undefined => mimeTypes[ext];
-  const allowedTypes: Record<string, string[]> = {
-    image: imageExtensions.map((ext) => mimeLookup(ext)).filter(Boolean),
-    document: documentExtensions.map((ext) => mimeLookup(ext)).filter(Boolean),
-    audio: audioExtensions.map((ext) => mimeLookup(ext)).filter(Boolean),
-    video: videoExtensions.map((ext) => mimeLookup(ext)).filter(Boolean),
-    other: otherExtensions.value.map((ext) => mimeLookup(ext)).filter(Boolean),
-  };
-
-  const type = urlForm.type;
-  const expectedTypes = allowedTypes[type] || [];
-
-  const validFiles: any[] = [];
-  const errors: string[] = [];
-
-  // Process URLs in parallel
-  const results = await Promise.allSettled(
-    urls.map(async (url: string) => {
-      // Validate URL structure
-      try {
-        void new URL(url);
-      } catch {
-        throw new Error(`${url}: URL格式无效`);
-      }
-
-      // Call backend to fetch remote URL
-      const res = await getUrlFn(url);
-      const data = res?.data ?? res;
-
-      // Validate response status
-      if (data.statusCode !== 200) {
-        throw new Error(`${url}: URL返回状态码 ${data.statusCode}`);
-      }
-
-      const contentType: string = data.contentType || '';
-      const contentLength: number = data.contentLength || 0;
-
-      // Validate content type
-      if (
-        expectedTypes.length > 0 &&
-        !expectedTypes.some((t: string) => contentType.includes(t))
-      ) {
-        throw new Error(`${url}: 文件类型不匹配`);
-      }
-
-      // Validate file size
-      if (contentLength > fileLimitMb * 1024 * 1024) {
-        throw new Error(`${url}: 文件大小超过 ${fileLimitMb}MB`);
-      }
-
-      // Derive filename from URL
-      let fileName =
-        url.slice(Math.max(0, url.lastIndexOf('/') + 1)) ||
-        `file_${Date.now()}`;
-      // Add extension from MIME type if missing
-      if (!fileName.includes('.')) {
-        const ext = getExtensionByMimeType(contentType);
-        if (ext) fileName += `.${ext}`;
-      }
-
-      // Branch: image/video → direct URL; document/audio/other → re-upload
-      if (type === 'image' || type === 'video') {
-        // Use URL directly
-        return reactive({
-          uid: `${Date.now()}_${Math.random()}`,
-          name: fileName,
-          url,
-          type: contentType,
-          size: contentLength,
-          status: 'success',
-        });
-      } else {
-        // Decode base64 → File blob → upload via existing upload function
-        const base64Data = data.content;
-        let blob: Blob;
-
-        if (contentType.includes('text') || contentType.includes('json')) {
-          // Text content is raw string
-          blob = new Blob([base64Data], { type: contentType });
-        } else {
-          // Binary content is base64-encoded (handle both data URL and raw base64)
-          const byteString = base64Data.includes(',')
-            ? // Data URL format: data:image/png;base64,iVBOR...
-              atob(base64Data.split(',')[1] || base64Data)
-            : // Raw base64
-              atob(base64Data);
-          const ab = new ArrayBuffer(byteString.length);
-          const ia = new Uint8Array(ab);
-          for (let i = 0; i < byteString.length; i++)
-            ia[i] = byteString.codePointAt(i) ?? 0;
-          blob = new Blob([ab], { type: contentType });
-        }
-
-        const fileObj = new File([blob], fileName, { type: contentType });
-
-        // Upload via the injected upload function
-        if (uploadFn) {
-          try {
-            const ok = await uploadFn(fileObj);
-            const uploadedUrl = ok.data ?? (ok as unknown as string);
-            const splitPath = (uploadedUrl || '').split('/');
-            const fileId = splitPath[splitPath.length - 1];
-            return reactive({
-              uid: `${Date.now()}_${Math.random()}`,
-              name: fileName,
-              url: uploadedUrl,
-              file_id: fileId,
-              size: contentLength,
-              status: 'success',
-            });
-          } catch {
-            throw new Error(`${url}: 文件上传失败`);
-          }
-        }
-
-        // Fallback: no upload function available
-        return reactive({
-          uid: `${Date.now()}_${Math.random()}`,
-          name: fileName,
-          url,
-          type: contentType,
-          size: contentLength,
-          status: 'success',
-        });
-      }
-    }),
-  );
-
-  // Collect results
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      validFiles.push(result.value);
-    } else {
-      errors.push(result.reason?.message || '未知错误');
-    }
-  }
-
-  // Push valid files to fileAllList
-  fileAllList.value.push(...validFiles);
-
-  // Show errors if any
-  if (errors.length > 0) {
-    ElMessage.warning(`URL导入部分失败: ${errors.join('; ')}`);
-  }
-
-  showURLSetting.value = false;
-  urlForm.source_url = '';
-  urlForm.type = '';
+  bus.emit('chat:stop');
 }
 
 onMounted(() => {
-  aiChatBus.on('chat-input', (message: string) => {
+  bus.on('chat-input', (message: string) => {
     inputValue.value = message;
   });
   if (question) {
-    inputValue.value = decodeURIComponent((question as string).trim());
+    inputValue.value = decodeURIComponent(question.trim());
     sendChatHandle();
     setTimeout(() => {
+      // 获取当前路由信息
       const route = router.currentRoute.value;
+      // 复制query对象
       const query = { ...route.query };
+      // 删除特定的参数
       delete query.question;
       const newRoute =
         Object.entries(query)?.length > 0
@@ -883,6 +689,7 @@ onMounted(() => {
               .map(([key, value]) => `${key}=${value}`)
               .join('&')}`
           : route.path;
+
       history.pushState(null, '', `/chat${newRoute}`);
     }, 100);
   }
@@ -893,31 +700,345 @@ onMounted(() => {
   }, 800);
 });
 
-onBeforeUnmount(() => {
-  recorderManage.close();
-});
-</script>
+const mime_types = {
+  html: 'text/html',
+  htm: 'text/html',
+  shtml: 'text/html',
+  css: 'text/css',
+  xml: 'text/xml',
+  gif: 'image/gif',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  js: 'application/javascript',
+  atom: 'application/atom+xml',
+  rss: 'application/rss+xml',
+  mml: 'text/mathml',
+  txt: 'text/plain',
+  jad: 'text/vnd.sun.j2me.app-descriptor',
+  wml: 'text/vnd.wap.wml',
+  htc: 'text/x-component',
+  avif: 'image/avif',
+  png: 'image/png',
+  svg: 'image/svg+xml',
+  svgz: 'image/svg+xml',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  wbmp: 'image/vnd.wap.wbmp',
+  webp: 'image/webp',
+  ico: 'image/x-icon',
+  jng: 'image/x-jng',
+  bmp: 'image/x-ms-bmp',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  jar: 'application/java-archive',
+  war: 'application/java-archive',
+  ear: 'application/java-archive',
+  json: 'application/json',
+  hqx: 'application/mac-binhex40',
+  doc: 'application/msword',
+  pdf: 'application/pdf',
+  ps: 'application/postscript',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  eps: 'application/postscript',
+  ai: 'application/postscript',
+  rtf: 'application/rtf',
+  m3u8: 'application/vnd.apple.mpegurl',
+  kml: 'application/vnd.google-earth.kml+xml',
+  kmz: 'application/vnd.google-earth.kmz',
+  xls: 'application/vnd.ms-excel',
+  eot: 'application/vnd.ms-fontobject',
+  ppt: 'application/vnd.ms-powerpoint',
+  odg: 'application/vnd.oasis.opendocument.graphics',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  odt: 'application/vnd.oasis.opendocument.text',
+  wmlc: 'application/vnd.wap.wmlc',
+  wasm: 'application/wasm',
+  '7z': 'application/x-7z-compressed',
+  cco: 'application/x-cocoa',
+  jardiff: 'application/x-java-archive-diff',
+  jnlp: 'application/x-java-jnlp-file',
+  run: 'application/x-makeself',
+  pl: 'application/x-perl',
+  pm: 'application/x-perl',
+  prc: 'application/x-pilot',
+  pdb: 'application/x-pilot',
+  rar: 'application/x-rar-compressed',
+  rpm: 'application/x-redhat-package-manager',
+  sea: 'application/x-sea',
+  swf: 'application/x-shockwave-flash',
+  sit: 'application/x-stuffit',
+  tcl: 'application/x-tcl',
+  tk: 'application/x-tcl',
+  der: 'application/x-x509-ca-cert',
+  pem: 'application/x-x509-ca-cert',
+  crt: 'application/x-x509-ca-cert',
+  xpi: 'application/x-xpinstall',
+  xhtml: 'application/xhtml+xml',
+  xspf: 'application/xspf+xml',
+  zip: 'application/zip',
+  bin: 'application/octet-stream',
+  exe: 'application/octet-stream',
+  dll: 'application/octet-stream',
+  deb: 'application/octet-stream',
+  dmg: 'application/octet-stream',
+  iso: 'application/octet-stream',
+  img: 'application/octet-stream',
+  msi: 'application/octet-stream',
+  msp: 'application/octet-stream',
+  msm: 'application/octet-stream',
+  mid: 'audio/midi',
+  midi: 'audio/midi',
+  kar: 'audio/midi',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  m4a: 'audio/x-m4a',
+  ra: 'audio/x-realaudio',
+  '3gpp': 'video/3gpp',
+  '3gp': 'video/3gpp',
+  ts: 'video/mp2t',
+  mp4: 'video/mp4',
+  mpeg: 'video/mpeg',
+  mpg: 'video/mpeg',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  flv: 'video/x-flv',
+  m4v: 'video/x-m4v',
+  mng: 'video/x-mng',
+  asx: 'video/x-ms-asf',
+  asf: 'video/x-ms-asf',
+  wmv: 'video/x-ms-wmv',
+  avi: 'video/x-msvideo',
+  wav: 'audio/wav',
+  flac: 'audio/flac',
+  aac: 'audio/aac',
+  opus: 'audio/opus',
+  csv: 'text/csv',
+  tsv: 'text/tab-separated-values',
+  ics: 'text/calendar',
+};
 
+function getExtensionsByMime(mime: string): string[] {
+  return Object.entries(mime_types)
+    .filter(([_key, value]) => value === mime)
+    .map(([_key]) => _key);
+}
+
+const fileUploadOptions = computed(() => [
+  {
+    label: $t('common.fileUpload.image'),
+    value: 'image',
+    visible: props.applicationDetails.file_upload_setting.image,
+  },
+  {
+    label: $t('common.fileUpload.document'),
+    value: 'document',
+    visible: props.applicationDetails.file_upload_setting.document,
+  },
+  {
+    label: $t('common.fileUpload.video'),
+    value: 'video',
+    visible: props.applicationDetails.file_upload_setting.video,
+  },
+  {
+    label: $t('common.fileUpload.audio'),
+    value: 'audio',
+    visible: props.applicationDetails.file_upload_setting.audio,
+  },
+  {
+    label: $t('common.fileUpload.other'),
+    value: 'other',
+    visible: props.applicationDetails.file_upload_setting.other,
+  },
+]);
+
+function openUrlSetting() {
+  showURLSetting.value = true;
+  const visibleOptions = fileUploadOptions.value.filter(
+    (option) => option.visible,
+  );
+  if (visibleOptions.length > 0) {
+    urlForm.type = visibleOptions[0].value;
+  }
+}
+
+async function saveUrl() {
+  const urls = urlForm.source_url.split('\n');
+  if (urls.length === 0) {
+    MsgWarning($t('aiChat.uploadFile.invalidUrl'));
+    return;
+  }
+  const { maxFiles, fileLimit } = props.applicationDetails.file_upload_setting;
+  const file_limit_once =
+    uploadImageList.value.length +
+    uploadDocumentList.value.length +
+    uploadAudioList.value.length +
+    uploadVideoList.value.length +
+    uploadOtherList.value.length;
+  if (
+    file_limit_once >= maxFiles ||
+    urls.length + file_limit_once >= fileLimit ||
+    urls.length > fileLimit
+  ) {
+    MsgWarning(
+      $t('aiChat.uploadFile.limitMessage1') +
+        maxFiles +
+        $t('aiChat.uploadFile.limitMessage2'),
+    );
+    return;
+  }
+  // 允许的 MIME 类型
+  const allowedTypes: Record<string, string[]> = {
+    image: imageExtensions
+      .map((ext) => mime_types[ext.toLowerCase() as keyof typeof mime_types])
+      .filter(Boolean) as string[],
+    document: documentExtensions
+      .map((ext) => mime_types[ext.toLowerCase() as keyof typeof mime_types])
+      .filter(Boolean) as string[],
+    audio: audioExtensions
+      .map((ext) => mime_types[ext.toLowerCase() as keyof typeof mime_types])
+      .filter(Boolean) as string[],
+    video: videoExtensions
+      .map((ext) => mime_types[ext.toLowerCase() as keyof typeof mime_types])
+      .filter(Boolean) as string[],
+    other: otherExtensions.value
+      .map((ext) => mime_types[ext.toLowerCase() as keyof typeof mime_types])
+      .filter(Boolean) as string[],
+  };
+
+  // 校验 URL 是否有效
+  const validUrls = urls
+    .map((u) => u.trim())
+    .filter((u) => {
+      try {
+        new URL(u).toString();
+        return u !== '';
+      } catch {
+        return false;
+      }
+    });
+
+  if (validUrls.length === 0) {
+    MsgWarning($t('aiChat.uploadFile.invalidUrl'));
+    return;
+  }
+
+  const type = urlForm.type;
+  const expectedTypes = allowedTypes[type] || [];
+  const validFiles: any[] = [];
+
+  // 异步校验单个 URL
+  async function processUrl(url: string) {
+    try {
+      const appId = props.appId || props.applicationDetails?.id;
+      const res =
+        props.type === 'debug-ai-chat'
+          ? await applicationApi.getFile(appId, { url })
+          : await chatAPI.getFile(appId, { url });
+
+      if (res.data.status_code !== 200) {
+        MsgWarning(`${url} ${$t('aiChat.uploadFile.invalidUrl')}`);
+        return;
+      }
+
+      const contentType = res.data['Content-Type'] || '';
+      const contentLength = res.data['Content-Length'];
+      const fileSize = contentLength ? Number.parseInt(contentLength, 10) : 0;
+
+      // 类型校验
+      if (
+        expectedTypes.length > 0 &&
+        !expectedTypes.some((type) => contentType.includes(type))
+      ) {
+        MsgWarning(`${url} ${$t('aiChat.uploadFile.urlErrorMessage')}`);
+        return;
+      }
+
+      if (fileSize > fileLimit * 1024 * 1024) {
+        MsgWarning(`${url} ${$t('aiChat.uploadFile.sizeLimit')}${fileLimit}MB`);
+        return;
+      }
+
+      // 文件名处理
+      let fileName = url.slice(Math.max(0, url.lastIndexOf('/') + 1));
+      if (!fileName) fileName = `file_${Date.now()}`;
+      if (!fileName.includes('.') && getExtensionsByMime(contentType)) {
+        fileName += `.${getExtensionsByMime(contentType)[0]}`;
+      }
+
+      const fileItem = {
+        uid: `${Date.now()}_${Math.random()}`,
+        name: fileName,
+        url,
+        type: contentType,
+        size: fileSize,
+        status: 'success',
+      };
+
+      // 文档/音频类型需要下载后上传
+      if (type === 'document' || type === 'audio' || type === 'other') {
+        const base64Data = res.data.content;
+        const byteString = atob(base64Data.split(',')[1] || base64Data);
+        const mimeString =
+          base64Data.split(',')[0]?.split(':')[1]?.split(';')[0] || contentType;
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++)
+          ia[i] = byteString.codePointAt(i) || 0;
+
+        const fileBlob = new Blob([ab], { type: mimeString });
+        const fileObj = new File([fileBlob], fileName, { type: mimeString });
+
+        const uploadFileItem = {
+          uid: fileItem.uid,
+          name: fileName,
+          size: fileSize,
+          raw: fileObj,
+          status: 'ready',
+          percentage: 0,
+        };
+
+        await uploadFile(uploadFileItem, [uploadFileItem]);
+      } else {
+        validFiles.push(reactive(fileItem));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  // 并行处理所有 URL
+  await Promise.all(validUrls.map((url) => processUrl(url)));
+
+  if (validFiles.length > 0) {
+    fileAllList.value.push(...validFiles);
+  }
+
+  showURLSetting.value = false;
+  urlForm.source_url = '';
+  urlForm.type = '';
+}
+</script>
 <template>
   <div
-    class="ai-chat__operate p-[16px]"
+    class="ai-chat__operate p-4"
     @drop.prevent="handleDrop"
     @dragover.prevent
   >
-    <div v-if="loading" class="g-mb-8 text-center">
+    <div class="mb-2 text-center" v-if="loading">
       <ElButton class="video-stop-button border-primary" @click="stopChat">
-        <ElIcon class="g-mr-8">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="2" />
-          </svg>
-        </ElIcon>
-        停止回答
+        <app-icon icon-name="app-video-stop" class="mr-2" />
+        {{ $$t('aiChat.operation.stopChat') }}
       </ElButton>
     </div>
 
     <div class="operate-textarea">
       <ElScrollbar max-height="136">
         <div
+          class="p-8-12"
+          v-loading="uploadLoading"
           v-if="
             uploadDocumentList.length > 0 ||
             uploadImageList.length > 0 ||
@@ -925,24 +1046,21 @@ onBeforeUnmount(() => {
             uploadVideoList.length > 0 ||
             uploadOtherList.length > 0
           "
-          class="g-p-8-12"
-          v-loading="uploadLoading"
         >
           <ElRow :gutter="10">
             <ElCol
               v-for="(item, index) in uploadDocumentList"
-              :key="`doc-${index}`"
+              :key="index"
               :xs="24"
               :sm="props.type === 'debug-ai-chat' ? 24 : 12"
               :md="props.type === 'debug-ai-chat' ? 24 : 12"
               :lg="props.type === 'debug-ai-chat' ? 24 : 12"
               :xl="props.type === 'debug-ai-chat' ? 24 : 12"
-              class="g-mb-8"
+              class="mb-2"
             >
               <ElCard
                 shadow="never"
                 style="
-
                   --el-card-padding: 8px;
 
                   max-width: 100%;
@@ -960,14 +1078,14 @@ onBeforeUnmount(() => {
                       alt=""
                       width="24"
                     />
-                    <div class="ellipsis-1 g-ml-4" :title="item && item?.name">
+                    <div class="ellipsis-1 ml-1" :title="item && item?.name">
                       {{ item && item?.name }}
                     </div>
                   </div>
                   <div
-                    v-if="showDelete === item.url"
-                    class="delete-icon color-secondary"
                     @click="deleteFile(item)"
+                    class="delete-icon color-secondary"
+                    v-if="showDelete === item.url"
                   >
                     <ElIcon style="top: 2px; font-size: 16px">
                       <CircleCloseFilled />
@@ -978,18 +1096,17 @@ onBeforeUnmount(() => {
             </ElCol>
             <ElCol
               v-for="(item, index) in uploadOtherList"
-              :key="`other-${index}`"
+              :key="index"
               :xs="24"
               :sm="props.type === 'debug-ai-chat' ? 24 : 12"
               :md="props.type === 'debug-ai-chat' ? 24 : 12"
               :lg="props.type === 'debug-ai-chat' ? 24 : 12"
               :xl="props.type === 'debug-ai-chat' ? 24 : 12"
-              class="g-mb-8"
+              class="mb-2"
             >
               <ElCard
                 shadow="never"
                 style="
-
                   --el-card-padding: 8px;
 
                   max-width: 100%;
@@ -1007,14 +1124,14 @@ onBeforeUnmount(() => {
                       alt=""
                       width="24"
                     />
-                    <div class="ellipsis-1 g-ml-4" :title="item && item?.name">
+                    <div class="ellipsis-1 ml-1" :title="item && item?.name">
                       {{ item && item?.name }}
                     </div>
                   </div>
                   <div
-                    v-if="showDelete === item.url"
-                    class="delete-icon color-secondary"
                     @click="deleteFile(item)"
+                    class="delete-icon color-secondary"
+                    v-if="showDelete === item.url"
                   >
                     <ElIcon style="top: 2px; font-size: 16px">
                       <CircleCloseFilled />
@@ -1023,21 +1140,20 @@ onBeforeUnmount(() => {
                 </div>
               </ElCard>
             </ElCol>
+
             <ElCol
-              v-for="(item, index) in uploadAudioList"
-              :key="`audio-${index}`"
               :xs="24"
               :sm="props.type === 'debug-ai-chat' ? 24 : 12"
               :md="props.type === 'debug-ai-chat' ? 24 : 12"
               :lg="props.type === 'debug-ai-chat' ? 24 : 12"
               :xl="props.type === 'debug-ai-chat' ? 24 : 12"
-              class="g-mb-8"
+              class="mb-2"
+              v-for="(item, index) in uploadAudioList"
+              :key="index"
             >
               <ElCard
                 shadow="never"
-                style="
-
---el-card-padding: 8px"
+                style="--el-card-padding: 8px"
                 class="file cursor"
               >
                 <div
@@ -1051,14 +1167,14 @@ onBeforeUnmount(() => {
                       alt=""
                       width="24"
                     />
-                    <div class="ellipsis-1 g-ml-4" :title="item && item?.name">
+                    <div class="ellipsis-1 ml-1" :title="item && item?.name">
                       {{ item && item?.name }}
                     </div>
                   </div>
                   <div
-                    v-if="showDelete === item.url"
-                    class="delete-icon color-secondary"
                     @click="deleteFile(item)"
+                    class="delete-icon color-secondary"
+                    v-if="showDelete === item.url"
                   >
                     <ElIcon style="top: 2px; font-size: 16px">
                       <CircleCloseFilled />
@@ -1069,19 +1185,16 @@ onBeforeUnmount(() => {
             </ElCol>
           </ElRow>
           <ElSpace wrap>
-            <template
-              v-for="(item, index) in uploadImageList"
-              :key="`img-${index}`"
-            >
+            <template v-for="(item, index) in uploadImageList" :key="index">
               <div
-                class="file file-image cursor border-r-6 border"
+                class="file file-image cursor rounded-md border"
                 @mouseenter.stop="mouseenter(item)"
                 @mouseleave.stop="mouseleave()"
               >
                 <div
-                  v-if="showDelete === item.url"
-                  class="delete-icon color-secondary"
                   @click="deleteFile(item)"
+                  class="delete-icon color-secondary"
+                  v-if="showDelete === item.url"
                 >
                   <ElIcon style="top: 2px; font-size: 16px">
                     <CircleCloseFilled />
@@ -1093,25 +1206,22 @@ onBeforeUnmount(() => {
                   alt=""
                   fit="cover"
                   style="display: block; width: 40px; height: 40px"
-                  class="border-r-6"
+                  class="rounded-md"
                 />
               </div>
             </template>
           </ElSpace>
           <ElSpace wrap>
-            <template
-              v-for="(item, index) in uploadVideoList"
-              :key="`video-${index}`"
-            >
+            <template v-for="(item, index) in uploadVideoList" :key="index">
               <div
-                class="file file-image cursor border-r-6 border"
+                class="file file-image cursor rounded-md border"
                 @mouseenter.stop="mouseenter(item)"
                 @mouseleave.stop="mouseleave()"
               >
                 <div
-                  v-if="showDelete === item.url"
-                  class="delete-icon color-secondary"
                   @click="deleteFile(item)"
+                  class="delete-icon color-secondary"
+                  v-if="showDelete === item.url"
                 >
                   <ElIcon style="top: 2px; font-size: 16px">
                     <CircleCloseFilled />
@@ -1120,10 +1230,10 @@ onBeforeUnmount(() => {
                 <video
                   v-if="item.url"
                   :src="item.url"
-                  autoplay
-                  class="border-r-6"
                   controls
                   style="display: block; width: 100px"
+                  class="rounded-md"
+                  autoplay
                 ></video>
               </div>
             </template>
@@ -1133,23 +1243,23 @@ onBeforeUnmount(() => {
 
       <TouchChat
         v-if="isMicrophone"
-        :disabled="loading"
-        :start="recorderStatus === 'START'"
-        :time="recorderTime"
-        @touch-end="TouchEnd"
         @touch-start="startRecording"
+        @touch-end="TouchEnd"
+        :time="recorderTime"
+        :start="recorderStatus === 'START'"
+        :disabled="loading"
       />
       <ElInput
         v-else
         ref="quickInputRef"
         v-model="inputValue"
-        :autosize="{ maxRows: isMobile ? 4 : 10, minRows: 1 }"
+        :autosize="{ minRows: 1, maxRows: isMobile ? 4 : 10 }"
+        type="textarea"
         :placeholder="inputPlaceholder"
         :maxlength="100000"
-        class="chat-operate-textarea"
-        type="textarea"
         @keydown.enter="sendChatHandle($event)"
         @paste="handlePaste"
+        class="chat-operate-textarea"
       />
       <div class="operate flex-between">
         <div>
@@ -1157,15 +1267,32 @@ onBeforeUnmount(() => {
         </div>
         <div class="align-center flex">
           <template v-if="props.applicationDetails.stt_model_enable">
-            <span class="align-center flex" v-if="mode !== 'mobile'">
+            <span v-if="mode === 'mobile'">
+              <ElButton text @click="switchMicrophone(!isMicrophone)">
+                <!-- 键盘 -->
+                <AppIcon
+                  v-if="isMicrophone"
+                  icon-name="app-keyboard"
+                  :size="20"
+                />
+                <ElIcon v-else :size="20">
+                  <!-- 录音 -->
+                  <Microphone />
+                </ElIcon>
+              </ElButton>
+            </span>
+            <span class="align-center flex" v-else>
               <ElButton
-                v-if="recorderStatus === 'STOP'"
                 :disabled="loading"
                 text
                 @click="startRecording"
+                v-if="recorderStatus === 'STOP'"
               >
-                <ElIcon :size="20"><Microphone /></ElIcon>
+                <ElIcon :size="20">
+                  <Microphone />
+                </ElIcon>
               </ElButton>
+
               <div v-else class="operate align-center flex">
                 <ElText type="info"
                   >00:{{
@@ -1175,54 +1302,42 @@ onBeforeUnmount(() => {
                 <ElButton
                   text
                   type="primary"
-                  :loading="recorderStatus === 'TRANSCRIBING'"
                   @click="stopRecording"
+                  :loading="recorderStatus === 'TRANSCRIBING'"
                 >
-                  <ElIcon :size="20"
-                    ><svg viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="6" width="12" height="12" rx="2" /></svg
-                  ></ElIcon>
+                  <AppIcon icon-name="app-video-stop" :size="20" />
                 </ElButton>
               </div>
-            </span>
-            <span class="align-center flex" v-if="mode === 'mobile'">
-              <ElButton
-                :disabled="loading"
-                text
-                @click="switchMicrophone(!isMicrophone)"
-              >
-                <ElIcon :size="20">
-                  <svg
-                    v-if="isMicrophone"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z"
-                    />
-                  </svg>
-                  <Microphone v-else />
-                </ElIcon>
-              </ElButton>
             </span>
           </template>
 
           <template v-if="recorderStatus === 'STOP' || mode === 'mobile'">
             <span
               v-if="props.applicationDetails.file_upload_enable"
-              class="align-center g-ml-4 flex"
+              class="align-center ml-1 flex"
             >
+              <!-- 如果URL地址 -->
+              <ElButton
+                v-if="props.applicationDetails.file_upload_setting.url_upload"
+                text
+                :disabled="checkMaxFilesLimit() || loading"
+                class="mt-1"
+                @click="openUrlSetting"
+              >
+                <ElIcon :size="20"><Paperclip /></ElIcon>
+              </ElButton>
+              <!-- 没有URL地址 -->
               <ElUpload
-                v-if="!props.applicationDetails.file_upload_setting?.url_upload"
-                ref="upload"
+                v-else
                 action="#"
-                :accept="getAcceptList()"
+                multiple
                 :auto-upload="false"
+                :show-file-list="false"
+                :accept="getAcceptList()"
                 :on-change="
                   (file: any, fileList: any) => uploadFile(file, fileList)
                 "
-                :show-file-list="false"
-                multiple
+                ref="upload"
               >
                 <ElTooltip
                   :disabled="mode === 'mobile'"
@@ -1232,13 +1347,14 @@ onBeforeUnmount(() => {
                 >
                   <template #content>
                     <div class="pre-wrap break-all">
-                      上传文件：最多{{
-                        props.applicationDetails.file_upload_setting?.maxFiles
-                      }}个文件
+                      {{ $$t('aiChat.uploadFile.label') }}：{{
+                        $$t('aiChat.uploadFile.most')
+                      }}{{
+                        props.applicationDetails.file_upload_setting.maxFiles
+                      }}{{ $$t('aiChat.uploadFile.limit') }}
                       {{
-                        props.applicationDetails.file_upload_setting?.fileLimit
-                      }}MB<br />
-                      文件类型：{{
+                        props.applicationDetails.file_upload_setting.fileLimit
+                      }}MB<br />{{ $$t('aiChat.uploadFile.fileType') }}：{{
                         getAcceptList()
                           .replace(/\./g, '')
                           .replace(/,/g, '、')
@@ -1247,53 +1363,21 @@ onBeforeUnmount(() => {
                     </div>
                   </template>
                   <ElButton
-                    :disabled="checkMaxFilesLimit() || loading"
-                    class="g-mt-4"
                     text
+                    :disabled="checkMaxFilesLimit() || loading"
+                    class="mt-1"
                   >
                     <ElIcon :size="20"><Paperclip /></ElIcon>
                   </ElButton>
                 </ElTooltip>
               </ElUpload>
-              <ElTooltip
-                v-if="props.applicationDetails.file_upload_setting?.url_upload"
-                :disabled="mode === 'mobile'"
-                effect="dark"
-                placement="top"
-                popper-class="upload-tooltip-width"
-              >
-                <template #content>
-                  <div class="pre-wrap break-all">
-                    通过URL导入文件：最多{{
-                      props.applicationDetails.file_upload_setting?.maxFiles
-                    }}个文件
-                    {{
-                      props.applicationDetails.file_upload_setting?.fileLimit
-                    }}MB
-                  </div>
-                </template>
-                <ElButton
-                  :disabled="checkMaxFilesLimit() || loading"
-                  class="g-mt-4"
-                  text
-                  @click="openUrlSetting"
-                >
-                  <ElIcon :size="20">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path
-                        d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"
-                      />
-                    </svg>
-                  </ElIcon>
-                </ElButton>
-              </ElTooltip>
             </span>
             <ElDivider
+              direction="vertical"
               v-if="
                 props.applicationDetails.file_upload_enable ||
                 props.applicationDetails.stt_model_enable
               "
-              direction="vertical"
             />
             <ElButton
               text
@@ -1301,89 +1385,79 @@ onBeforeUnmount(() => {
               :disabled="isDisabledChat || loading || uploadLoading"
               @click="sendChatHandle"
             >
-              <svg
+              <img
                 v-show="isDisabledChat || loading || uploadLoading"
-                style="width: 24px; height: 24px"
-                viewBox="0 0 24 24"
-                fill="#C0C4CC"
-              >
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-              <svg
+                :src="iconSendSvg"
+                alt=""
+              />
+              <SendIcon
                 v-show="!isDisabledChat && !loading && !uploadLoading"
-                style="width: 24px; height: 24px"
-                viewBox="0 0 24 24"
-                fill="var(--el-color-primary)"
-              >
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
+              />
             </ElButton>
           </template>
         </div>
       </div>
     </div>
 
-    <div v-if="applicationDetails.disclaimer" class="g-mt-8 text-center">
-      <ElTooltip
-        :content="applicationDetails.disclaimer_value || ''"
-        placement="top"
-        :disabled="
-          !applicationDetails.disclaimer_value ||
-          (applicationDetails.disclaimer_value || '').length <= 50
-        "
+    <div class="mt-2 text-center" v-if="applicationDetails.disclaimer">
+      <ElText
+        type="info"
+        v-if="applicationDetails.disclaimer"
+        class="font-small"
       >
-        <ElText type="info" class="font-small disclaimer-text">
-          {{ applicationDetails.disclaimer_value }}
-        </ElText>
-      </ElTooltip>
+        <ElTooltip :content="applicationDetails.disclaimer_value">
+          <span>{{ applicationDetails.disclaimer_value }}</span>
+        </ElTooltip>
+      </ElText>
     </div>
 
-    <div v-if="showURLSetting" class="popperURLSetting">
+    <!-- 弹出URL设置框 -->
+    <div class="popperURLSetting" v-if="showURLSetting">
       <ElCard
-        v-if="props.applicationDetails.file_upload_setting?.url_upload"
         shadow="always"
-        style="
-
---el-card-padding: 16px"
+        class="rounded-lg"
+        style="--el-card-padding: 16px"
+        v-if="props.applicationDetails.file_upload_setting.url_upload"
       >
-        <ElForm :model="urlForm" label-position="top">
+        <ElForm label-position="top" :model="urlForm">
           <ElFormItem>
             <template #label>
               <div class="flex-between">
-                <span>URL地址</span>
+                <span>{{ $$t('aiChat.uploadFile.urlTitle') }}</span>
                 <ElSelect
-                  v-model="urlForm.type"
                   :teleported="false"
+                  v-model="urlForm.type"
                   size="small"
                   style="width: 85px"
                 >
                   <ElOption
                     v-for="option in fileUploadOptions"
                     :key="option.value"
-                    v-show="option.visible"
                     :label="option.label"
                     :value="option.value"
+                    v-show="option.visible"
                   />
                 </ElSelect>
               </div>
             </template>
             <ElInput
               v-model="urlForm.source_url"
+              :placeholder="$$t('aiChat.uploadFile.urlPlaceholder')"
               :rows="5"
-              placeholder="请输入URL地址，每行一个"
               type="textarea"
             />
           </ElFormItem>
         </ElForm>
         <div class="text-right">
-          <ElButton @click="showURLSetting = false">取消</ElButton>
-          <ElButton type="primary" @click="saveUrl">确认</ElButton>
+          <ElButton @click="showURLSetting = false">
+            {{ $$t('common.cancel') }}
+          </ElButton>
+          <ElButton type="primary" @click="saveUrl">
+            {{ $$t('common.confirm') }}
+          </ElButton>
         </div>
-        <div
-          v-if="props.applicationDetails.file_upload_setting?.local_upload"
-          style="margin-top: 16px"
-        >
-          <ElDivider style="margin: 0 0 16px" />
+        <div v-if="props.applicationDetails.file_upload_setting.local_upload">
+          <ElDivider style="margin: 16px 0" />
           <ElUpload
             action="#"
             multiple
@@ -1396,136 +1470,25 @@ onBeforeUnmount(() => {
             ref="upload"
             class="import-button"
           >
-            <ElButton class="w-full">本地上传</ElButton>
+            <ElButton class="url-upload-button w-full">
+              {{ $$t('aiChat.uploadFile.localUpload') }}
+            </ElButton>
           </ElUpload>
         </div>
       </ElCard>
     </div>
   </div>
 </template>
-
 <style lang="scss" scoped>
-@media only screen and (max-width: 768px) {
-  .ai-chat__operate {
-    position: fixed;
-    bottom: 0;
-    font-size: 1rem;
-
-    .el-icon {
-      font-size: 1.4rem !important;
-    }
-  }
-
-  .popperURLSetting {
-    right: 30px;
-  }
-}
-
-.disclaimer-text {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.g-mb-8 {
-  margin-bottom: 8px;
-}
-
-.g-mt-4 {
-  margin-top: 4px;
-}
-
-.g-mt-8 {
-  margin-top: 8px;
-}
-
-.g-mr-8 {
-  margin-right: 8px;
-}
-
-.g-ml-4 {
-  margin-left: 4px;
-}
-
-.g-p-8-12 {
-  padding: 8px 12px;
-}
-
-.flex {
-  display: flex;
-}
-
-.flex-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.align-center {
-  align-items: center;
-}
-
-.cursor {
-  cursor: pointer;
-}
-
-.border-r-6 {
-  border-radius: 6px;
-}
-
-.ellipsis-1 {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 1;
-  word-break: break-all;
-  -webkit-box-orient: vertical;
-}
-
-.color-secondary {
-  color: var(--el-text-color-secondary);
-}
-
-.border-primary {
-  color: var(--el-color-primary);
-  border: 1px solid var(--el-color-primary);
-}
-
-.pre-wrap {
-  white-space: pre-wrap;
-}
-
-.break-all {
-  word-break: break-all;
-}
-
-.text-center {
-  text-align: center;
-}
-
-.text-right {
-  text-align: right;
-}
-
-.w-full {
-  width: 100%;
-}
-
-/* ── Component styles ── */
-
 .ai-chat__operate {
   position: relative;
   z-index: 10;
   box-sizing: border-box;
   width: 100%;
 
-  /* Subtle background so the white input card stands out */
-  background-color: var(--el-bg-color);
-
   :deep(.operate-textarea) {
     box-sizing: border-box;
-    background-color: #fff;
+    background-color: var(--el-bg-color);
     border: 1px solid var(--el-border-color-light);
     border-radius: 8px;
     box-shadow: 0 6px 24px 0 rgb(var(--el-text-color-primary-rgb), 0.08);
@@ -1550,7 +1513,10 @@ onBeforeUnmount(() => {
       .sent-button {
         max-height: none;
 
-        .el-icon {
+        .el-icon,
+        svg {
+          width: 1em;
+          height: 1em;
           font-size: 24px;
         }
       }
@@ -1564,11 +1530,6 @@ onBeforeUnmount(() => {
         }
       }
     }
-  }
-
-  .file {
-    max-width: 200px;
-    cursor: pointer;
   }
 
   .file-image {
@@ -1585,6 +1546,22 @@ onBeforeUnmount(() => {
 
   .upload-tooltip-width {
     width: 300px;
+  }
+}
+
+@media only screen and (max-width: 768px) {
+  .ai-chat__operate {
+    position: fixed;
+    bottom: 0;
+    font-size: 1rem;
+
+    .el-icon {
+      font-size: 1.4rem !important;
+    }
+  }
+
+  .popperURLSetting {
+    right: 30px;
   }
 }
 

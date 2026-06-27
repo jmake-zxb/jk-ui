@@ -1,41 +1,32 @@
 <script setup lang="ts">
-import type { ChatRecord } from '#/components/ai-chat/types/application';
-
-import { CopyDocument } from '@element-plus/icons-vue';
 import { ElButton, ElText, ElTooltip } from 'element-plus';
 
-const props = withDefaults(
-  defineProps<{
-    data?: ChatRecord;
-  }>(),
-  {
-    data: undefined,
+import { copyClick } from '#/utils/clipboard';
+import { datetimeFormat } from '#/utils/time';
+
+defineProps({
+  data: {
+    type: Object,
+    default: () => {},
   },
-);
-
-async function copyText() {
-  await navigator.clipboard?.writeText(props.data?.answer_text || '');
-}
+});
 </script>
-
 <template>
-  <div class="share-operation-button">
-    <ElText type="info">
-      <span v-if="data?.create_time">{{
-        new Date(data.create_time).toLocaleString()
-      }}</span>
-    </ElText>
-    <ElTooltip content="复制" placement="top">
-      <ElButton text :icon="CopyDocument" @click="copyText" />
-    </ElTooltip>
+  <div>
+    <div class="flex-between mt-2">
+      <div>
+        <ElText type="info">
+          <span class="ml-1">{{ datetimeFormat(data.create_time) }}</span>
+        </ElText>
+      </div>
+      <div>
+        <ElTooltip effect="dark" :content="$$t('common.copy')" placement="top">
+          <ElButton text @click="copyClick(data?.answer_text)">
+            <AppIcon icon-name="app-copy" class="color-secondary" />
+          </ElButton>
+        </ElTooltip>
+      </div>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.share-operation-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 8px;
-}
-</style>
+<style lang="scss" scoped></style>

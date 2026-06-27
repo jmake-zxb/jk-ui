@@ -1,184 +1,112 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ElCard, ElScrollbar, ElText } from 'element-plus';
 
-import { ElCard, ElMessage, ElScrollbar, ElText } from 'element-plus';
-import { MdPreview } from 'md-editor-v3';
+import { $t } from '#/locales';
+import { getFileUrl, getImgUrl } from '#/utils/common';
+import { MsgInfo } from '#/utils/message';
 
-import { getImgUrl } from '#/utils/file-util';
-
-import CardBox from './CardBox.vue';
-import KnowledgeIcon from './KnowledgeIcon.vue';
-
-import 'md-editor-v3/lib/preview.css';
-
-const props = withDefaults(
-  defineProps<{
-    content?: string;
-    data?: Record<string, any>;
-    index?: number;
-    score?: null | number;
-  }>(),
-  {
-    content: '',
-    data: () => ({}),
-    index: 0,
-    score: null,
+defineProps({
+  data: {
+    type: Object,
+    default: () => {},
   },
-);
-
-const meta = computed<Record<string, any>>(() => {
-  if (typeof props.data.meta === 'string') {
-    try {
-      return JSON.parse(props.data.meta);
-    } catch {
-      return {};
-    }
-  }
-  return props.data.meta && typeof props.data.meta === 'object'
-    ? props.data.meta
-    : {};
+  content: {
+    type: String,
+    default: '',
+  },
+  index: {
+    type: Number,
+    default: 0,
+  },
+  score: {
+    type: Number,
+    default: null,
+  },
 });
-
-const documentName = computed(
-  () => `${props.data.document_name || props.data.title || '知识段落'}`,
-);
-const scoreText = computed(() =>
-  (props.score ?? props.data.similarity ?? props.data.score)?.toFixed?.(3),
-);
-
-const hasLink = computed(
-  () => !!meta.value.source_file_id || !!meta.value.source_url,
-);
-
-function getFileUrl(fileId?: number | string) {
-  if (!fileId) return '';
-  return `/admin/sys-file/details?id=${encodeURIComponent(`${fileId}`)}`;
-}
-
-function handleDocClick() {
-  if (!hasLink.value) {
-    if (meta.value.allow_download === false) {
-      ElMessage.info('暂无权限下载该文档');
-    } else {
-      ElMessage.info('暂无可预览文档');
-    }
+function infoMessage(data: any) {
+  if (data?.meta?.allow_download === false) {
+    MsgInfo($t('aiChat.noPermissionDownload'));
+  } else {
+    MsgInfo($t('aiChat.noDocument'));
   }
 }
 </script>
-
 <template>
   <CardBox
-    :title="`${index + 1}.${data.title || documentName || '-'}`"
-    class="paragraph-source-card"
-    :class="data.is_active === false ? 'is-disabled' : ''"
+    shadow="never"
+    :title="`${index + 1}.${data.title}` || '-'"
+    class="paragraph-source-card cursor paragraph-source-card-height mb-2"
+    :style="{ height: data?.document_name?.trim() ? '300px' : '260px' }"
+    :class="data.is_active ? '' : 'disabled'"
+    :show-icon="false"
   >
     <template #tag>
-      <div class="score">{{ scoreText || '-' }}</div>
+      <div class="color-primary">
+        {{ score?.toFixed(3) || data.similarity?.toFixed(3) }}
+      </div>
     </template>
 
     <ElScrollbar height="150">
       <MdPreview
-        :editor-id="`paragraph-${index}`"
+        editor-id="preview-only"
         :model-value="content"
-        no-iconfont
-        no-prettier
-        :code-foldable="false"
+        no-img-zoom-in
       />
     </ElScrollbar>
 
     <template #footer>
-      <ElCard v-if="documentName.trim()" shadow="never" class="doc-card">
-        <ElText class="doc-row">
-          <img :src="getImgUrl(documentName.trim())" alt="" width="20" />
-          <a
-            v-if="hasLink"
-            :href="getFileUrl(meta.source_file_id) || meta.source_url"
-            target="_blank"
-            rel="noopener noreferrer"
-            :title="documentName.trim()"
-          >
-            {{ documentName.trim() }}
-          </a>
-          <span
-            v-else
-            :title="documentName.trim()"
-            class="doc-link-disabled"
-            @click="handleDocClick"
-            >{{ documentName.trim() }}</span
-          >
-        </ElText>
-      </ElCard>
-      <div class="knowledge-row">
-        <KnowledgeIcon :type="data.knowledge_type" :size="18" />
-        <span :title="data.knowledge_name">{{
-          data.knowledge_name || '-'
-        }}</span>
-      </div>
+      <slot name="footer">
+        <ElCard
+          shadow="never"
+          style="--el-card-padding: 8px"
+          class="mb-3 w-full"
+          v-if="data?.document_name?.trim()"
+        >
+          <ElText class="align-center item flex">
+            <img
+              :src="getImgUrl(data?.document_name?.trim())"
+              alt=""
+              width="20"
+              class="mr-1"
+            />
+            <div class="ml-2">
+              <div
+                class="ml-1"
+                v-if="data?.meta?.source_file_id || data?.meta?.source_url"
+              >
+                <a
+                  :href="
+                    getFileUrl(data?.meta?.source_file_id) ||
+                    data?.meta?.source_url
+                  "
+                  target="_blank"
+                  class="ellipsis-1"
+                  :title="data?.document_name?.trim()"
+                >
+                  <span :title="data?.document_name?.trim()">{{
+                    data?.document_name
+                  }}</span>
+                </a>
+              </div>
+              <div v-else @click="infoMessage(data)">
+                <span
+                  class="ellipsis-1 break-all"
+                  :title="data?.document_name?.trim()"
+                >
+                  {{ data?.document_name?.trim() }}
+                </span>
+              </div>
+            </div>
+          </ElText>
+        </ElCard>
+        <div class="align-center flex border-t" style="padding: 12px 0 8px">
+          <KnowledgeIcon :type="data?.knowledge_type" :size="18" class="mr-2" />
+          <span class="ellipsis-1 break-all" :title="data?.knowledge_name">
+            {{ data?.knowledge_name || '-' }}
+          </span>
+        </div>
+      </slot>
     </template>
   </CardBox>
 </template>
-
-<style scoped>
-.paragraph-source-card {
-  height: 300px;
-  margin-bottom: 8px;
-}
-
-.paragraph-source-card.is-disabled {
-  opacity: 0.65;
-}
-
-.score {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--el-color-primary);
-}
-
-.doc-card {
-  width: 100%;
-  margin-bottom: 12px;
-}
-
-.doc-card :deep(.el-card__body) {
-  padding: 8px;
-}
-
-.doc-row,
-.knowledge-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-}
-
-.doc-row a,
-.doc-row span,
-.knowledge-row span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.doc-row a {
-  color: var(--el-color-primary);
-  text-decoration: none;
-}
-
-.doc-link-disabled {
-  cursor: pointer;
-}
-
-.doc-link-disabled:hover {
-  color: var(--el-color-primary);
-}
-
-.knowledge-row {
-  padding-top: 10px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-:deep(.md-editor-preview) {
-  background: transparent;
-}
-</style>
+<style lang="scss" scoped></style>

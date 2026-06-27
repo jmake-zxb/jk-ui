@@ -1,276 +1,242 @@
 <script setup lang="ts">
-import type { ChatAnswerBlock, ChatRecord } from '../../types/application';
+import type { chatType } from '#/api/ai/types';
 
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 
-import { Loading } from '@element-plus/icons-vue';
-import { ElCard, ElIcon } from 'element-plus';
+import { InfoFilled as LogoIcon } from '@element-plus/icons-vue';
+import { ElCard } from 'element-plus';
 
+import KnowledgeSourceComponent from '#/components/ai-chat/component/knowledge-source-component/index.vue';
+import OperationButton from '#/components/ai-chat/component/operation-button/index.vue';
 import MdRenderer from '#/components/markdown/MdRenderer.vue';
-import { nodeTypeIcon } from '#/views/ai/orchestration/workflow/designer/common/node-type-icons';
-
-import { ChatManagement } from '../../types/application';
-import { aiChatBus } from '../../utils/bus';
-import KnowledgeSourceComponent from '../knowledge-source-component/index.vue';
-import OperationButton from '../operation-button/index.vue';
+import { $t } from '#/locales';
+import bus from '#/utils/bus';
+import { iconComponent } from '#/workflow/icons/utils';
 
 const props = defineProps<{
-  application: Record<string, any>;
-  chatManagement: typeof ChatManagement;
-  chatRecord: ChatRecord;
+  application: any;
+  chatManagement: any;
+  chatRecord: chatType;
   executionIsRightPanel?: boolean;
   loading: boolean;
   selection?: boolean;
   sendMessage: (
     question: string,
-    otherParamsData?: unknown,
-    chat?: ChatRecord,
+    other_params_data?: any,
+    chat?: chatType,
   ) => Promise<boolean>;
-  shareAvailable?: boolean;
   type: 'ai-chat' | 'debug-ai-chat' | 'log' | 'share';
 }>();
 
-const emit = defineEmits<{
-  openExecutionDetail: [value: unknown];
-  openParagraph: [value: Record<string, any>];
-  openParagraphDocument: [value: Record<string, any>];
-  'update:chatRecord': [value: ChatRecord];
-}>();
+const emit = defineEmits([
+  'update:chatRecord',
+  'openExecutionDetail',
+  'openParagraph',
+  'openParagraphDocument',
+]);
 
-const showAvatar = computed(() =>
-  props.application.show_avatar === undefined
+const showAvatar = computed(() => {
+  return props.application.show_avatar === undefined
     ? true
-    : props.application.show_avatar,
-);
-const showUserAvatar = computed(() =>
-  props.application.show_user_avatar === undefined
-    ? true
-    : props.application.show_user_avatar,
-);
-
-const progress = computed(() => {
-  if (!props.chatRecord.currentChunk) return null;
-  return {
-    content: `执行中 ${props.chatRecord.currentChunk.node_name || ''}`,
-    node_type: props.chatRecord.currentChunk.node_type || '',
-  };
+    : props.application.show_avatar;
 });
-
-const progressIcon = computed(() =>
-  progress.value ? nodeTypeIcon(progress.value.node_type) : Loading,
-);
-
-const answerTextList = computed(() =>
-  props.chatRecord.answer_text_list.map((item) => {
-    if (typeof item === 'string') {
-      return [{ content: item }] as ChatAnswerBlock[];
-    }
-    if (Array.isArray(item)) return item;
-    return [item] as ChatAnswerBlock[];
-  }),
-);
-
-function addAnswerTextList(answerTextListValue: ChatAnswerBlock[][]) {
-  answerTextListValue.push([]);
-}
-
-function chatMessage(
+const progress = computed(() => {
+  if (props.chatRecord.currentChunk) {
+    return {
+      content: `${$t('aiChat.executing')} ${props.chatRecord.currentChunk.node_name}`,
+      node_type: props.chatRecord.currentChunk.node_type,
+    };
+  }
+  return null;
+});
+const showUserAvatar = computed(() => {
+  return props.application.show_user_avatar === undefined
+    ? true
+    : props.application.show_user_avatar;
+});
+const chatMessage = (
   question: string,
   type: 'new' | 'old',
-  otherParamsData?: unknown,
-) {
+  other_params_data?: any,
+) => {
   if (type === 'old') {
-    addAnswerTextList(props.chatRecord.answer_text_list);
+    add_answer_text_list(props.chatRecord.answer_text_list);
     props
-      .sendMessage(question, otherParamsData, props.chatRecord)
+      .sendMessage(question, other_params_data, props.chatRecord)
       .then(() => {
         props.chatManagement.open(props.chatRecord.id);
         props.chatManagement.write(props.chatRecord.id);
-      })
-      .catch(() => {
-        // sendMessage rejected (loading guard, validation failure, etc.)
-        // — silently handled to avoid unhandled rejection
       });
   } else {
-    props.sendMessage(question, otherParamsData);
+    props.sendMessage(question, other_params_data);
   }
-}
+};
+const add_answer_text_list = (answer_text_list: Array<any>) => {
+  answer_text_list.push([]);
+};
 
-function openControl(event: MouseEvent) {
-  if (props.type !== 'log') aiChatBus.emit('open-control', event);
-}
+const openControl = (event: any) => {
+  if (props.type !== 'log') {
+    bus.emit('open-control', event);
+  }
+};
 
-function showSource(row: ChatRecord) {
-  if (props.type === 'log') return true;
-  if (row.write_ed && row.status !== 500) return true;
+const answer_text_list = computed(() => {
+  return props.chatRecord.answer_text_list.map((item) => {
+    if (typeof item === 'string') {
+      return [
+        {
+          content: item,
+          chat_record_id: undefined,
+          child_node: undefined,
+          runtime_node_id: undefined,
+          reasoning_content: undefined,
+        },
+      ];
+    } else if (Array.isArray(item)) {
+      return item;
+    } else {
+      return [item];
+    }
+  });
+});
+
+function showSource(row: any) {
+  if (props.type === 'log') {
+    return true;
+  } else if (row.write_ed && row.status !== 500) {
+    return true;
+  }
   return false;
 }
 
-function regenerationChart(chat: ChatRecord) {
-  let container = chat.upload_meta;
-  if (!container && Array.isArray(chat.execution_details)) {
-    const startNode = chat.execution_details.find(
-      (item: any) =>
-        item.type === 'start-node' || item.step_type === 'start_step',
-    ) as Record<string, any> | undefined;
-    if (startNode?.upload_meta) {
-      container = startNode.upload_meta;
-    }
-  }
+const regenerationChart = (chat: chatType) => {
+  const container =
+    props.chatRecord?.upload_meta ||
+    props.chatRecord.execution_details?.find(
+      (detail) => detail.type === 'start-node',
+    );
+
   props.sendMessage(chat.problem_text, {
-    audio_list: container?.audio_list || [],
-    document_list: container?.document_list || [],
-    image_list: container?.image_list || [],
-    other_list: container?.other_list || [],
     re_chat: true,
+    image_list: container?.image_list || [],
+    document_list: container?.document_list || [],
+    audio_list: container?.audio_list || [],
     video_list: container?.video_list || [],
+    other_list: container?.other_list || [],
   });
-}
-
-function stopChat(chat: ChatRecord) {
+};
+const stopChat = (chat: chatType) => {
   props.chatManagement.stop(chat.id);
-}
-
-function startChat(chat: ChatRecord) {
+};
+const startChat = (chat: chatType) => {
   props.chatManagement.write(chat.id);
-}
-
-function handleChatStop() {
-  stopChat(props.chatRecord);
-}
+};
 
 onMounted(() => {
-  aiChatBus.on('chat:stop', handleChatStop);
-});
-
-onBeforeUnmount(() => {
-  aiChatBus.off('chat:stop', handleChatStop);
+  bus.on('chat:stop', () => {
+    stopChat(props.chatRecord);
+  });
 });
 </script>
-
 <template>
-  <div class="answer-content">
+  <div class="item-content lighter">
     <div
-      v-for="(answerText, index) in answerTextList"
+      v-for="(answer_text, index) in answer_text_list"
       :key="index"
-      class="answer-row"
+      class="mb-2 flex"
     >
-      <div v-if="showAvatar" class="avatar">
-        <img v-if="application.avatar" :src="application.avatar" alt="" />
-        <svg
-          v-else
-          class="avatar-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect
-            x="3"
-            y="5"
-            width="18"
-            height="14"
-            rx="3"
-            fill="currentColor"
-            opacity="0.2"
-          />
-          <rect
-            x="3"
-            y="5"
-            width="18"
-            height="14"
-            rx="3"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
-          <circle cx="9" cy="12" r="1.5" fill="currentColor" />
-          <circle cx="15" cy="12" r="1.5" fill="currentColor" />
-          <path
-            d="M8 18v2M16 18v2"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-          />
-        </svg>
+      <div class="avatar mr-2" v-if="showAvatar">
+        <img
+          v-if="application.avatar"
+          :src="application.avatar"
+          height="28px"
+          width="28px"
+        />
+        <LogoIcon v-else height="28px" width="28px" />
       </div>
       <div
-        class="content"
-        :style="{
-          paddingRight: showUserAvatar ? 'var(--answer-avatar-offset)' : '0',
-        }"
+        class="content w-full"
         @mouseup="openControl"
+        :style="{
+          'padding-right': showUserAvatar ? 'var(--padding-left)' : '0',
+        }"
       >
         <ElCard
           v-if="!chatRecord.write_ed && progress"
           shadow="always"
-          class="progress-card"
+          class="mb-2 rounded-lg"
           style="
-
             --el-card-padding: 1px 16px;
 
             width: fit-content;
           "
         >
-          <div class="progress-inner">
-            <ElIcon class="progress-icon">
-              <component :is="progressIcon" />
-            </ElIcon>
+          <div class="align-center flex">
+            <component
+              :is="iconComponent(`${progress.node_type}-icon`)"
+              class="mr-2"
+              :size="16"
+              style="--el-avatar-border-radius: 3px"
+            />
             <MdRenderer :source="progress.content" />
           </div>
         </ElCard>
         <ElCard
           shadow="always"
-          class="answer-card"
-          style="
-
---el-card-padding: 6px 16px"
+          class="rounded-lg"
+          style="--el-card-padding: 6px 16px"
         >
           <MdRenderer
             v-if="
               (chatRecord.write_ed === undefined ||
                 chatRecord.write_ed === true) &&
-              answerText.length === 0 &&
-              answerText
+              answer_text.length === 0 &&
+              answer_text
                 .map((item) => item.content)
                 .join('')
                 .trim().length === 0
             "
-            source="AI 暂无回复"
+            :source="$$t('aiChat.tip.answerMessage')"
           />
-          <template v-else-if="answerText.length > 0">
+          <template v-else-if="answer_text.length > 0">
             <MdRenderer
-              v-for="(answer, answerIndex) in answerText"
-              :key="answerIndex"
+              v-for="(answer, ansIdx) in answer_text"
+              :key="ansIdx"
               :chat-record-id="answer.chat_record_id"
               :child-node="answer.child_node"
-              :disabled="loading || type === 'log'"
-              :reasoning-content="answer.reasoning_content"
               :runtime-node-id="answer.runtime_node_id"
-              :send-message="chatMessage"
+              :reasoning-content="answer.reasoning_content"
+              :disabled="loading || type === 'log'"
               :source="answer.content"
-              :type="type"
+              :send-message="chatMessage"
             />
           </template>
-          <p v-else-if="chatRecord.is_stop" class="message-line">已停止回答</p>
-          <p v-else class="message-line">
-            回答生成中 <span class="dotting"></span>
+          <p
+            v-else-if="chatRecord.is_stop"
+            shadow="always"
+            style="margin: 0.5rem 0"
+          >
+            {{ $$t('aiChat.tip.stopAnswer') }}
           </p>
-
+          <p v-else shadow="always" style="margin: 0.5rem 0">
+            {{ $$t('aiChat.tip.answerLoading') }} <span class="dotting"></span>
+          </p>
+          <!-- 知识来源 -->
           <KnowledgeSourceComponent
+            :data="chatRecord"
+            :application="application"
+            :type="type"
+            :app-type="application.type"
+            :execution-is-right-panel="props.executionIsRightPanel"
+            @open-execution-detail="emit('openExecutionDetail', chatRecord)"
+            @open-paragraph="emit('openParagraph')"
+            @open-paragraph-document="
+              (val: string) => emit('openParagraphDocument', val)
+            "
             v-if="
               showSource(chatRecord) &&
               index === chatRecord.answer_text_list.length - 1
-            "
-            :app-type="application.type"
-            :application="application"
-            :data="chatRecord"
-            :execution-is-right-panel="props.executionIsRightPanel"
-            :type="type"
-            @open-execution-detail="
-              (value) => emit('openExecutionDetail', value)
-            "
-            @open-paragraph="(value) => emit('openParagraph', value)"
-            @open-paragraph-document="
-              (value) => emit('openParagraphDocument', value)
             "
           />
         </ElCard>
@@ -278,106 +244,24 @@ onBeforeUnmount(() => {
     </div>
 
     <div
-      v-if="!selection"
-      class="content operation-content"
+      class="content"
       :style="{
-        paddingLeft: showAvatar ? 'var(--answer-avatar-offset)' : '0',
-        paddingRight: showUserAvatar ? 'var(--answer-avatar-offset)' : '0',
+        'padding-left': showAvatar ? 'var(--padding-left)' : '0',
+        'padding-right': showUserAvatar ? 'var(--padding-left)' : '0',
       }"
+      v-if="!selection"
     >
       <OperationButton
+        :type="type"
         :application="application"
         :chat-record="chatRecord"
+        @update:chat-record="(event: any) => emit('update:chatRecord', event)"
         :loading="loading"
-        :regeneration-chart="regenerationChart"
-        :share-available="shareAvailable"
         :start-chat="startChat"
         :stop-chat="stopChat"
-        :type="type"
-        @update:chat-record="(event) => emit('update:chatRecord', event)"
+        :regeneration-chart="regenerationChart"
       />
     </div>
   </div>
 </template>
-
-<style scoped lang="scss">
-.answer-content {
-  --answer-avatar-offset: 36px;
-}
-
-.answer-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.avatar {
-  display: flex;
-  flex: 0 0 28px;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--el-color-primary);
-  border-radius: 6px;
-}
-
-.avatar img {
-  width: 28px;
-  height: 28px;
-  object-fit: cover;
-}
-
-.avatar-icon {
-  width: 28px;
-  height: 28px;
-}
-
-.content {
-  width: 100%;
-  min-width: 0;
-}
-
-.progress-card {
-  margin-bottom: 8px;
-  border-radius: 8px;
-}
-
-.progress-inner {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.progress-icon {
-  flex-shrink: 0;
-  color: var(--el-color-primary);
-}
-
-.answer-card {
-  border-radius: 8px;
-}
-
-.message-line {
-  margin: 0.5rem 0;
-}
-
-.dotting::after {
-  display: inline-block;
-  width: 1.5em;
-  overflow: hidden;
-  vertical-align: bottom;
-  content: '...';
-  animation: dot 1.4s steps(4, end) infinite;
-}
-
-@keyframes dot {
-  from {
-    width: 0;
-  }
-}
-</style>
+<style lang="scss" scoped></style>

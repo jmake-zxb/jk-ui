@@ -12,14 +12,16 @@ import {
 
 import { FullScreen, Loading } from '@element-plus/icons-vue';
 import { ElButton, ElIcon } from 'element-plus';
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
 
 const props = defineProps<{
-  detail?: Record<string, any>;
+  detail?: any;
 }>();
-// 设置 worker 路径
-const pdfjsVersion = '4.10.38';
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 type PdfDocumentProxy = any;
 type RenderTask = any;
@@ -38,25 +40,11 @@ const loadingTaskRef = shallowRef<null | PdfLoadingTask>(null);
 const renderTasks = shallowRef<RenderTask[]>([]);
 const requestToken = ref(0);
 
-const meta = computed<Record<string, any>>(() => {
-  const raw = props.detail?.meta ?? props.detail?.metadata;
-  if (typeof raw === 'string') {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return {};
-    }
-  }
-  return raw && typeof raw === 'object' ? raw : {};
-});
-
-const isPdf = computed(() => !!meta.value.source_file_id);
+const isPdf = computed(() => !!props.detail?.meta?.source_file_id);
 
 const pdfSrc = computed(() => {
-  const fileId = meta.value.source_file_id;
-  return fileId
-    ? `/admin/sys-file/details?id=${encodeURIComponent(`${fileId}`)}`
-    : '';
+  const fileId = props.detail?.meta?.source_file_id;
+  return fileId ? `${window.MaxKB.prefix}/oss/file/${fileId}` : '';
 });
 
 const overlayText = computed(() => {
@@ -191,7 +179,9 @@ async function loadPdf(url: string) {
   clearPages();
 
   try {
-    const loadingTask = pdfjsLib.getDocument({ url });
+    const loadingTask = pdfjsLib.getDocument({
+      url,
+    });
 
     loadingTaskRef.value = markRaw(loadingTask);
     const doc = await loadingTask.promise;
@@ -315,7 +305,7 @@ onBeforeUnmount(async () => {
 
 <template>
   <div ref="viewerRef" class="pdf-viewer">
-    <div ref="stageRef" class="pdf-stage">
+    <div class="pdf-stage" ref="stageRef">
       <div class="pdf-actions">
         <ElButton size="small" type="primary" plain @click="toggleFullscreen">
           <ElIcon><FullScreen /></ElIcon>
