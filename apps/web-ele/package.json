@@ -26,6 +26,7 @@
     "#/*": "./src/*"
   },
   "dependencies": {
+    "@antv/layout": "catalog:",
     "@codemirror/commands": "catalog:",
     "@codemirror/lang-java": "catalog:",
     "@codemirror/lang-javascript": "catalog:",
