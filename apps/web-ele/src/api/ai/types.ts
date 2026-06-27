@@ -57,7 +57,13 @@ export interface OrchestrationRequest {
   splitConfig?: string;
   message?: string;
   query?: string;
+  queryText?: string;
+  query_text?: string;
+  searchMode?: string;
+  search_mode?: string;
+  similarity?: number;
   topK?: number;
+  top_number?: number;
   similarityThreshold?: number;
   knowledgeIds?: Array<number | string>;
   documentIds?: Array<number | string>;

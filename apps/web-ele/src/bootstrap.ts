@@ -10,6 +10,7 @@ import '@vben/styles/ele';
 import { useTitle } from '@vueuse/core';
 import { ElLoading } from 'element-plus';
 
+import AppIconPlugin from '#/components/app-icon';
 import DynamicsFormItems from '#/components/dynamics-form/items';
 import { vSafeHtml } from '#/directives/safe-html';
 import { $t, setupI18n } from '#/locales';
@@ -19,6 +20,7 @@ import { initSetupVbenForm } from './adapter/form';
 import App from './app.vue';
 import { router } from './router';
 
+import 'element-plus/theme-chalk/dark/css-vars.css';
 import 'element-ai-vue/dist/index.css';
 
 async function bootstrap(namespace: string) {
@@ -50,6 +52,9 @@ async function bootstrap(namespace: string) {
   // 国际化 i18n 配置
   await setupI18n(app);
 
+  // 注册全局 $$t 函数（用于 ai-chat 组件）
+  app.config.globalProperties.$$t = $t;
+
   // 配置 pinia-tore
   await initStores(app, { namespace });
 
@@ -68,6 +73,9 @@ async function bootstrap(namespace: string) {
 
   // 注册动态表单组件为全局组件（FormItem.vue 通过 <component :is="input_type"> 动态渲染）
   app.use(DynamicsFormItems);
+
+  // 注册 AppIcon 为全局组件
+  app.use(AppIconPlugin);
 
   // 配置Motion插件
   const { MotionPlugin } = await import('@vben/plugins/motion');

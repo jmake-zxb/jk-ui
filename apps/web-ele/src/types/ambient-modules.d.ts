@@ -41,9 +41,9 @@ declare module '#/component/FormTable/index.vue' {
   export default component;
 }
 
-// Vue 类型扩展：v-safe-html 自定义指令
+// Vue 类型扩展：v-html 自定义指令
 declare module 'vue' {
   interface HTMLAttributes {
-    'v-safe-html'?: string;
+    'v-html'?: string;
   }
 }

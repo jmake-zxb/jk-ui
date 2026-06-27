@@ -131,6 +131,23 @@ export function pageChatRecords(
 }
 
 /**
+ * 获取单条对话记录详情（含 execution_details）
+ * 后端: GET /api/applications/{id}/chats/{chatId}/records/{recordId}
+ * @param applicationId 应用ID
+ * @param chatId 对话ID
+ * @param recordId 记录ID
+ */
+export function getChatRecord(
+  applicationId: string,
+  chatId: string,
+  recordId: string,
+) {
+  return requestClient.get(
+    `${base}/applications/${applicationId}/chats/${chatId}/records/${recordId}`,
+  );
+}
+
+/**
  * 点赞/点踩
  * 后端: POST /api/public/applications/{id}/records/{recordId}/vote
  * @param applicationId 应用ID
@@ -194,25 +211,32 @@ export function getShareLink(shareToken: string) {
 /**
  * 上传文件
  * @param file 文件对象
- * @param sourceId 资源ID
- * @param sourceType 资源类型
+ * @param sourceId 资源ID (deprecated, kept for backward compat)
+ * @param sourceType 资源类型 (deprecated, kept for backward compat)
+ */
+export interface SysFileUploadResult {
+  bucketName: string;
+  fileName: string;
+  /** sys_file.id — Long 序列化为字符串 */
+  id: string;
+  original: string;
+  url: string;
+}
+
+/**
+ * 上传文件到系统文件服务 (SysFileController)。
+ * @param file 文件
+ * @param _sourceId 资源ID (deprecated, kept for backward compat)
+ * @param _sourceType 资源类型 (deprecated, kept for backward compat)
  */
 export function postUploadFile(
   file: File,
-  sourceId: string,
-  sourceType:
-    | 'APPLICATION'
-    | 'KNOWLEDGE'
-    | 'LLM'
-    | 'TEMPORARY_1_DAY'
-    | 'TEMPORARY_30_MINUTE'
-    | 'TEMPORARY_120_MINUTE',
+  _sourceId?: string,
+  _sourceType?: string,
 ) {
   const fd = new FormData();
   fd.append('file', file);
-  fd.append('source_id', sourceId);
-  fd.append('source_type', sourceType);
-  return requestClient.post<string>(`${base}/oss/file`, fd, {
+  return requestClient.post<SysFileUploadResult>('/admin/sys-file/upload', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 }
@@ -372,3 +396,29 @@ export function resetPassword(data: {
 }) {
   return requestClient.post(`${base}/chat_user/current/reset_password`, data);
 }
+
+export default {
+  chatSSE,
+  workflowDebugSSE,
+  workflowResumeSSE,
+  openChat,
+  pageChatRecords,
+  getChatRecord,
+  vote,
+  postShareChat,
+  getShareLink,
+  postUploadFile,
+  getFileUrl,
+  speechToText,
+  textToSpeech,
+  applicationProfile,
+  anonymousAuth,
+  passwordAuth,
+  pageChats,
+  getChatHistory,
+  deleteChat,
+  clearChats,
+  renameChat,
+  getChatUserProfile,
+  resetPassword,
+};

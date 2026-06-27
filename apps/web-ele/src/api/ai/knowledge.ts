@@ -6,9 +6,13 @@ const base = '/ai/api/knowledge';
 
 type Id = number | string;
 
-export type KnowledgeType = 'BASE' | 'WEB' | 'WORKFLOW';
+export type KnowledgeType = 'BASE' | 'LARK' | 'WEB' | 'WORKFLOW';
 
 export interface KnowledgeRequest extends OrchestrationRequest {
+  appId?: string;
+  app_id?: string;
+  appSecret?: string;
+  app_secret?: string;
   clearFolder?: boolean;
   clear_folder?: boolean;
   embeddingModelId?: Id;
@@ -17,12 +21,18 @@ export interface KnowledgeRequest extends OrchestrationRequest {
   fileSizeLimit?: number;
   file_count_limit?: number;
   file_size_limit?: number;
+  folderToken?: string;
+  folder_token?: string;
   folderId?: Id;
   folder_id?: Id;
   idList?: Id[];
   id_list?: Id[];
   parentId?: Id;
   parent_id?: Id;
+  rerankModelId?: Id;
+  rerank_model_id?: Id;
+  searchConfigJson?: string;
+  search_config_json?: string;
   selector?: string;
   sourceUrl?: string;
   source_url?: string;
@@ -30,6 +40,8 @@ export interface KnowledgeRequest extends OrchestrationRequest {
   type?: KnowledgeType | string;
   workFlow?: Record<string, unknown> | string;
   work_flow?: Record<string, unknown> | string;
+  workFlowTemplate?: Record<string, unknown>;
+  work_flow_template?: Record<string, unknown>;
   workspaceId?: string;
   workspace_id?: string;
 }
@@ -128,14 +140,15 @@ export function getKnowledgeStats(id: number | string) {
   return requestClient.get(`${base}/${id}/stats`);
 }
 
-export function createKnowledge(data: OrchestrationRequest) {
+export function createKnowledge(data: KnowledgeRequest) {
   return requestClient.post(base, withKnowledgePayload(data));
 }
 
-export function updateKnowledge(
-  id: number | string,
-  data: OrchestrationRequest,
-) {
+export function createLarkKnowledge(data: KnowledgeRequest) {
+  return requestClient.post(`${base}/lark`, withKnowledgePayload(data));
+}
+
+export function updateKnowledge(id: number | string, data: KnowledgeRequest) {
   return requestClient.put(`${base}/${id}`, withKnowledgePayload(data));
 }
 
@@ -172,6 +185,22 @@ export function exportKnowledge(id: number | string) {
   return requestClient.get(`${base}/${id}/export`);
 }
 
+export function exportZipKnowledge(id: number | string) {
+  return requestClient.get(`${base}/${id}/export-zip`, {
+    responseType: 'blob',
+  });
+}
+
+export function exportKnowledgeBundle(id: number | string) {
+  return requestClient.get(`${base}/${id}/export-knowledge`, {
+    responseType: 'blob',
+  });
+}
+
+export function syncKnowledge(id: number | string, method: string) {
+  return requestClient.put(`${base}/${id}/sync`, { method });
+}
+
 export function searchKnowledge(
   id: number | string,
   data: OrchestrationRequest,
@@ -206,7 +235,7 @@ export function createDocument(
 
 export function createDocumentFromFile(
   knowledgeId: number | string,
-  data: OrchestrationRequest,
+  data: DocumentRequest,
 ) {
   return requestClient.post(`${base}/${knowledgeId}/documents/from-file`, data);
 }
@@ -432,13 +461,65 @@ export function unbindDocumentTag(
 
 export function saveKnowledgeWorkflowDraft(
   knowledgeId: number | string,
-  data: OrchestrationRequest,
+  data: KnowledgeRequest,
 ) {
   return requestClient.put(`${base}/${knowledgeId}/workflow/draft`, data);
 }
 
 export function publishKnowledgeWorkflow(knowledgeId: number | string) {
   return requestClient.post(`${base}/${knowledgeId}/workflow/publish`);
+}
+
+export function exportKnowledgeWorkflow(knowledgeId: number | string) {
+  return requestClient.get(`${base}/${knowledgeId}/workflow/export`);
+}
+
+export function importKnowledgeWorkflow(
+  knowledgeId: number | string,
+  data: FormData,
+) {
+  return requestClient.post(`${base}/${knowledgeId}/workflow/import`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+}
+
+export function debugKnowledgeWorkflow(
+  knowledgeId: number | string,
+  data: KnowledgeRequest,
+) {
+  return requestClient.post(`${base}/${knowledgeId}/workflow/debug`, data);
+}
+
+export function uploadKnowledgeWorkflowDocument(
+  knowledgeId: number | string,
+  data: KnowledgeRequest,
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/workflow/upload-document`,
+    data,
+  );
+}
+
+export function getKnowledgeWorkflowFormList(
+  knowledgeId: number | string,
+  type: 'local' | 'tool',
+  id: string,
+  data: Record<string, unknown> = {},
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/workflow/datasource/${type}/${id}/form_list`,
+    data,
+  );
+}
+
+export function workflowUploadDocument(
+  knowledgeId: number | string,
+  data: Record<string, unknown>,
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/workflow/upload_document`,
+    data,
+  );
 }
 
 export function pageKnowledgeWorkflowActions(
@@ -448,4 +529,319 @@ export function pageKnowledgeWorkflowActions(
   return requestClient.get(`${base}/${knowledgeId}/workflow/actions/page`, {
     params: query,
   });
+}
+
+export function getKnowledgeWorkflowAction(
+  knowledgeId: number | string,
+  actionId: number | string,
+) {
+  return requestClient.get(
+    `${base}/${knowledgeId}/workflow/actions/${actionId}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Document functions
+// ---------------------------------------------------------------------------
+
+export function getDocument(
+  knowledgeId: number | string,
+  documentId: number | string,
+) {
+  return requestClient.get(`${base}/${knowledgeId}/documents/${documentId}`);
+}
+
+export function createWebDocument(
+  knowledgeId: number | string,
+  data: {
+    content?: string;
+    name?: string;
+    selector?: string;
+    source_url?: string;
+    sourceUrl?: string;
+  },
+) {
+  return requestClient.post(`${base}/${knowledgeId}/documents/web`, data);
+}
+
+export function downloadSourceFile(
+  knowledgeId: number | string,
+  documentId: number | string,
+) {
+  return requestClient.get(
+    `${base}/${knowledgeId}/documents/${documentId}/download-source-file`,
+    { responseType: 'blob' },
+  );
+}
+
+export function replaceSourceFile(
+  knowledgeId: number | string,
+  documentId: number | string,
+  file: File,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return requestClient.post(
+    `${base}/${knowledgeId}/documents/${documentId}/replace-source-file`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+}
+
+export function cancelDocumentTask(
+  knowledgeId: number | string,
+  documentId: number | string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/${documentId}/cancel-task`,
+  );
+}
+
+export function batchCancelDocumentTask(
+  knowledgeId: number | string,
+  ids: Id[],
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/batch-cancel-task`,
+    {
+      idList: ids,
+      id_list: ids,
+    },
+  );
+}
+
+export function batchHitHandling(
+  knowledgeId: number | string,
+  ids: Id[],
+  hitHandlingMethod: string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/batch-hit-handling`,
+    {
+      hitHandlingMethod,
+      hit_handling_method: hitHandlingMethod,
+      idList: ids,
+      id_list: ids,
+    },
+  );
+}
+
+export function tokenizeDocument(
+  knowledgeId: number | string,
+  documentId: number | string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/${documentId}/tokenize`,
+  );
+}
+
+export function batchTokenizeDocuments(
+  knowledgeId: number | string,
+  ids: Id[],
+) {
+  return requestClient.put(`${base}/${knowledgeId}/documents/batch-tokenize`, {
+    idList: ids,
+    id_list: ids,
+  });
+}
+
+export function syncWebDocument(
+  knowledgeId: number | string,
+  documentId: number | string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/${documentId}/sync`,
+  );
+}
+
+export function batchGenerateRelatedDocuments(
+  knowledgeId: number | string,
+  ids: Id[],
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/documents/batch-generate-related`,
+    {
+      idList: ids,
+      id_list: ids,
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Paragraph functions
+// ---------------------------------------------------------------------------
+
+export function listParagraphProblems(
+  knowledgeId: number | string,
+  documentId: number | string,
+  paragraphId: number | string,
+) {
+  return requestClient.get(
+    `${base}/${knowledgeId}/documents/${documentId}/paragraphs/${paragraphId}/problems`,
+  );
+}
+
+export function createParagraphProblem(
+  knowledgeId: number | string,
+  documentId: number | string,
+  paragraphId: number | string,
+  data: OrchestrationRequest,
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/documents/${documentId}/paragraphs/${paragraphId}/problems`,
+    data,
+  );
+}
+
+export function associateProblemToParagraph(
+  knowledgeId: number | string,
+  documentId: number | string,
+  paragraphId: number | string,
+  problemId: number | string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/${documentId}/paragraphs/association`,
+    null,
+    {
+      params: {
+        paragraphId,
+        paragraph_id: paragraphId,
+        problemId,
+        problem_id: problemId,
+      },
+    },
+  );
+}
+
+export function unassociateProblemFromParagraph(
+  knowledgeId: number | string,
+  documentId: number | string,
+  paragraphId: number | string,
+  problemId: number | string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/${documentId}/paragraphs/unassociation`,
+    null,
+    {
+      params: {
+        paragraphId,
+        paragraph_id: paragraphId,
+        problemId,
+        problem_id: problemId,
+      },
+    },
+  );
+}
+
+export function adjustParagraphPosition(
+  knowledgeId: number | string,
+  documentId: number | string,
+  paragraphId: number | string,
+  position: number | string,
+) {
+  return requestClient.put(
+    `${base}/${knowledgeId}/documents/${documentId}/paragraphs/adjust-position`,
+    null,
+    { params: { paragraphId, paragraph_id: paragraphId, position } },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Problem functions
+// ---------------------------------------------------------------------------
+
+export function batchDeleteProblems(knowledgeId: number | string, ids: Id[]) {
+  return requestClient.delete(`${base}/${knowledgeId}/problems/batch-delete`, {
+    data: { idList: ids, id_list: ids },
+  });
+}
+
+export function batchAssociateProblems(
+  knowledgeId: number | string,
+  problemIds: Id[],
+  paragraphIds: Id[],
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/problems/batch-association`,
+    {
+      idList: problemIds,
+      id_list: problemIds,
+      paragraphIdList: paragraphIds,
+      paragraph_id_list: paragraphIds,
+    },
+  );
+}
+
+export function getProblemParagraphs(
+  knowledgeId: number | string,
+  problemId: number | string,
+) {
+  return requestClient.get(
+    `${base}/${knowledgeId}/problems/${problemId}/paragraphs`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tag functions
+// ---------------------------------------------------------------------------
+
+export function batchDeleteTags(knowledgeId: number | string, ids: Id[]) {
+  return requestClient.delete(`${base}/${knowledgeId}/tags/batch-delete`, {
+    data: { idList: ids, id_list: ids },
+  });
+}
+
+export function batchAddDocumentTag(
+  knowledgeId: number | string,
+  documentIds: Id[],
+  tagId: number | string,
+) {
+  return requestClient.post(`${base}/${knowledgeId}/documents/batch-add-tag`, {
+    idList: documentIds,
+    id_list: documentIds,
+    tagId,
+  });
+}
+
+export function batchDeleteDocumentTags(
+  knowledgeId: number | string,
+  documentId: number | string,
+  tagIds: Id[],
+) {
+  return requestClient.delete(
+    `${base}/${knowledgeId}/documents/${documentId}/tags/batch-delete`,
+    { data: { idList: tagIds, id_list: tagIds } },
+  );
+}
+
+export function deleteTagFromDocs(
+  knowledgeId: number | string,
+  tagId: number | string,
+) {
+  return requestClient.delete(`${base}/${knowledgeId}/tags/${tagId}/docs`);
+}
+
+// ---------------------------------------------------------------------------
+// Workflow functions
+// ---------------------------------------------------------------------------
+
+export function transformKnowledgeToWorkflow(knowledgeId: number | string) {
+  return requestClient.post(`${base}/${knowledgeId}/transform-workflow`);
+}
+
+export function cancelWorkflowAction(
+  knowledgeId: number | string,
+  actionId: number | string,
+) {
+  return requestClient.post(
+    `${base}/${knowledgeId}/workflow/actions/${actionId}/cancel`,
+  );
+}
+
+export function generateRelatedKnowledge(knowledgeId: number | string) {
+  return requestClient.post(`${base}/${knowledgeId}/generate-related`);
+}
+
+export function generateRelatedKnowledgeAsync(knowledgeId: number | string) {
+  return requestClient.post(`${base}/${knowledgeId}/generate-related-async`);
 }
