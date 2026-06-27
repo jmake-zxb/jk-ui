@@ -55,9 +55,7 @@ const selectedIds = computed({
         :value="item.id"
       >
         <ElSpace :size="8">
-          <ElIcon :size="20" style="
-
---el-avatar-border-radius: 6px">
+          <ElIcon :size="20" style="--el-avatar-border-radius: 6px">
             <Collection />
           </ElIcon>
           <span>{{ item.name }}</span>
@@ -65,9 +63,7 @@ const selectedIds = computed({
       </ElOption>
       <template #label="{ label }">
         <ElSpace :size="8">
-          <ElIcon :size="14" style="
-
---el-avatar-border-radius: 4px">
+          <ElIcon :size="14" style="--el-avatar-border-radius: 4px">
             <Collection />
           </ElIcon>
           <span>{{ label }}</span>

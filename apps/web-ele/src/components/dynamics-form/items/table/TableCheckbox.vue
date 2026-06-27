@@ -139,9 +139,7 @@ const activeText = computed(() => {
         :validate-event="false"
         placeholder="搜索"
         class="input-with-select"
-        style="
-
---el-color-danger: #c0c4cc"
+        style="--el-color-danger: #c0c4cc"
         clearable
       >
         <template #prepend>
@@ -154,7 +152,6 @@ const activeText = computed(() => {
       :data="tableData"
       highlight-current-row
       style="
-
         --el-bg-color: #f5f6f7;
 
         width: 100%;
@@ -174,7 +171,7 @@ const activeText = computed(() => {
             <TableColumn :column="column" :row="scope.row" />
           </template>
           <template v-else-if="column.type === 'eval'">
-            <span v-safe-html="evalF(column.property, scope.row)"></span>
+            <span v-html="evalF(column.property, scope.row)"></span>
           </template>
           <template v-else>
             <span>{{ scope.row[column.property] }}</span>

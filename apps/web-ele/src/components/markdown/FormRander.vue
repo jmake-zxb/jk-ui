@@ -73,6 +73,12 @@ function submit() {
     .then(() => {
       _submit.value = true;
       if (props.sendMessage) {
+        // console.log(
+        //   '[FormRander] submitting with chatRecordId:',
+        //   props.chatRecordId,
+        //   'runtimeNodeId:',
+        //   props.runtimeNodeId,
+        // );
         props.sendMessage('', 'old', {
           child_node: props.childNode,
           form_data: formData.value,

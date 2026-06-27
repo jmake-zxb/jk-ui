@@ -112,9 +112,7 @@ const uploadFile = async (file: any, fileList: Array<any>) => {
   </ElUpload>
   <ElSpace wrap class="media-file-width upload-content mt-16 w-full">
     <template v-for="(file, index) in model_value" :key="index">
-      <ElCard style="
-
---el-card-padding: 0" shadow="never">
+      <ElCard style="--el-card-padding: 0" shadow="never">
         <div
           class="flex-between"
           :class="[inputDisabled ? 'is-disabled' : '']"

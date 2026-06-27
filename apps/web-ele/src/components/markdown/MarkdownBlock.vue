@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 
+import { usePreferences } from '@vben/preferences';
+
 import { MdPreview } from 'md-editor-v3';
 import mediumZoom from 'medium-zoom';
 
@@ -14,6 +16,8 @@ const props = withDefaults(
     source: '',
   },
 );
+
+const { isDark } = usePreferences();
 
 const mdRef = ref<HTMLElement>();
 
@@ -47,18 +51,26 @@ watch(
       no-prettier
       :code-foldable="false"
       preview-theme="default"
+      :theme="isDark ? 'dark' : 'light'"
     />
   </div>
 </template>
 
 <style scoped lang="scss">
 .maxkb-md {
+  font-size: 14px;
   line-height: 1.65;
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
 }
 
+.maxkb-md :deep(.md-editor) {
+  background: transparent;
+  border: none;
+}
+
 .maxkb-md :deep(.md-editor-preview) {
+  font-size: 14px;
   background: transparent;
 }
 
@@ -93,8 +105,19 @@ watch(
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+  scrollbar-width: thin;
   background: var(--el-fill-color-light);
   border-radius: 6px;
+}
+
+.maxkb-md :deep(pre::-webkit-scrollbar) {
+  width: 4px;
+  height: 4px;
+}
+
+.maxkb-md :deep(pre::-webkit-scrollbar-thumb) {
+  background: var(--md-scrollbar-thumb-color, var(--el-border-color));
+  border-radius: 4px;
 }
 
 .maxkb-md :deep(code) {
@@ -107,7 +130,18 @@ watch(
 
 .maxkb-md :deep(pre code) {
   padding: 0;
+  scrollbar-width: thin;
   background: transparent;
+}
+
+.maxkb-md :deep(pre code::-webkit-scrollbar) {
+  width: 4px;
+  height: 4px;
+}
+
+.maxkb-md :deep(pre code::-webkit-scrollbar-thumb) {
+  background: var(--md-scrollbar-thumb-color, var(--el-border-color));
+  border-radius: 4px;
 }
 
 .maxkb-md :deep(a) {

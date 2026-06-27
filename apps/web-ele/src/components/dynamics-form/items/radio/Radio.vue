@@ -37,7 +37,7 @@ const label = (option: any) => {
       :key="index"
       :label="item[valueField]"
     >
-      <div v-safe-html="label(item)"></div>
+      <div v-html="label(item)"></div>
     </ElRadio>
   </ElRadioGroup>
 </template>
